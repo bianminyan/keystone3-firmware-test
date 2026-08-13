@@ -31,6 +31,7 @@
 #include "task.h"                       // ARM.FreeRTOS::RTOS:Core
 #include "event_groups.h"               // ARM.FreeRTOS::RTOS:Event Groups
 #include "semphr.h"                     // ARM.FreeRTOS::RTOS:Core
+#include "user_memory.h"
 
 /*---------------------------------------------------------------------------*/
 #ifndef __ARM_ARCH_6M__

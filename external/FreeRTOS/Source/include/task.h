@@ -3792,6 +3792,12 @@ void vTaskInternalSetTimeOutState( TimeOut_t * const pxTimeOut ) PRIVILEGED_FUNC
 
 #endif /* #if ( ( portUSING_MPU_WRAPPERS == 1 ) && ( configUSE_MPU_WRAPPERS_V1 == 0 ) && ( configENABLE_ACCESS_CONTROL_LIST == 1 ) ) */
 
+/* Project diagnostics used by CmBacktrace and the task status screen. */
+uint32_t * vTaskStackAddr( void );
+uint32_t vTaskStackSize( void );
+char * vTaskName( void );
+UBaseType_t vTaskGetStackSize( TaskHandle_t xTask );
+
 /* *INDENT-OFF* */
 #ifdef __cplusplus
     }

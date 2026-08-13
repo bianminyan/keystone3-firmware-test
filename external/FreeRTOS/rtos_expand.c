@@ -5,6 +5,7 @@
 #include "portmacro.h"
 #include "cmsis_os2.h"
 #include "string.h"
+#include "user_memory.h"
 
 volatile uint32_t FreeRTOSRunTimeTicks;
 uint32_t FreeRTOSRunTimeTicksBak;

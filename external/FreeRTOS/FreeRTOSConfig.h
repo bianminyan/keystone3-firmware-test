@@ -1,6 +1,6 @@
 /* USER CODE BEGIN Header */
 /*
- * FreeRTOS Kernel V10.0.1
+ * FreeRTOS Kernel V11.3.0
  * Copyright (C) 2017 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of
@@ -43,7 +43,7 @@
  *----------------------------------------------------------*/
 
 /* USER CODE BEGIN Includes */
-/* Section where include file can be added */
+#include "rtos_expand.h"
 /* USER CODE END Includes */
 
 /* Ensure definitions are only used by the compiler, and not by the assembler. */
@@ -66,6 +66,7 @@ extern uint32_t SystemCoreClock;
 #define configMAX_TASK_NAME_LEN                     ( 16 )
 #define configUSE_TRACE_FACILITY                    1
 #define configUSE_16_BIT_TICKS                      0
+#define configRECORD_STACK_HIGH_ADDRESS             1
 #define configUSE_MUTEXES                           1
 #define configQUEUE_REGISTRY_SIZE                   8
 #define configUSE_RECURSIVE_MUTEXES                 1

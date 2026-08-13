@@ -8870,3 +8870,26 @@ void vTaskResetState( void )
     #endif /* #if ( configGENERATE_RUN_TIME_STATS == 1 ) */
 }
 /*-----------------------------------------------------------*/
+
+uint32_t * vTaskStackAddr( void )
+{
+    return ( uint32_t * ) pxCurrentTCB->pxStack;
+}
+
+uint32_t vTaskStackSize( void )
+{
+    return ( uint32_t ) ( pxCurrentTCB->pxEndOfStack - pxCurrentTCB->pxStack + 1 );
+}
+
+char * vTaskName( void )
+{
+    return pxCurrentTCB->pcTaskName;
+}
+
+UBaseType_t vTaskGetStackSize( TaskHandle_t xTask )
+{
+    const TCB_t * const pxTCB = prvGetTCBFromHandle( xTask );
+
+    return ( UBaseType_t ) ( pxTCB->pxEndOfStack - pxTCB->pxStack + 1 );
+}
+/*-----------------------------------------------------------*/
