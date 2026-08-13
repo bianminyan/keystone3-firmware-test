@@ -46,6 +46,15 @@ static PassphraseInfo_t g_passphraseInfo[3] = {0};
 static int32_t SaveAccountSecret(uint8_t accountIndex, const AccountSecret_t *accountSecret, const char *password, bool newAccount);
 static int32_t LoadAccountSecret(uint8_t accountIndex, AccountSecret_t *accountSecret, const char *password);
 #ifndef COMPILE_SIMULATOR
+typedef struct {
+    uint8_t accountEncryptData[ACCOUNT_TOTAL_LEN];
+    uint8_t param[PARAM_LEN];
+    uint8_t preOtpEncryptKey[AES_KEY_LEN];
+} VerifiedAccountBlob_t;
+
+static int32_t VerifyAccountBlobFromSE(uint8_t accountIndex, const char *password,
+                                       VerifiedAccountBlob_t *verified);
+static int32_t DecryptAccountBlob(const VerifiedAccountBlob_t *verified, AccountSecret_t *accountSecret);
 static int32_t LoadAccountSecretFromSE(uint8_t accountIndex, AccountSecret_t *accountSecret, const char *password);
 #endif
 static int32_t AccountExists(uint8_t accountIndex, bool *exists);
@@ -321,7 +330,6 @@ int32_t ChangePassword(uint8_t accountIndex, const char *newPassword, const char
 /// @return err code.
 int32_t FindAccountByPassword(uint8_t *matchedAccountIndex, const char *password)
 {
-    AccountSecret_t accountSecret;
     uint8_t tryOrder[3];
     uint8_t lastAccountIndex;
     bool exists;
@@ -350,15 +358,14 @@ int32_t FindAccountByPassword(uint8_t *matchedAccountIndex, const char *password
             continue;
         }
 
-        ret = LoadAccountSecret(tryOrder[i], &accountSecret, password);
-        CLEAR_OBJECT(accountSecret);
+        ret = VerifyAccountPassword(tryOrder[i], password);
         if (ret == SUCCESS_CODE) {
             if (matchedAccountIndex != NULL) {
                 *matchedAccountIndex = tryOrder[i];
             }
             break;
         }
-        if (ret == ERR_KEYSTORE_AUTH) {
+        if (ret == ERR_KEYSTORE_AUTH || ret == ERR_KEYSTORE_PASSWORD_ERR) {
             ret = ERR_KEYSTORE_PASSWORD_ERR;
             continue;
         }
@@ -370,12 +377,17 @@ int32_t FindAccountByPassword(uint8_t *matchedAccountIndex, const char *password
 
 int32_t VerifyAccountPassword(uint8_t accountIndex, const char *password)
 {
-    AccountSecret_t accountSecret;
     int32_t ret;
 
     ASSERT(accountIndex <= 2);
-    ret = LoadAccountSecret(accountIndex, &accountSecret, password);
-    CLEAR_OBJECT(accountSecret);
+#ifdef COMPILE_SIMULATOR
+    ret = SimulatorVerifyCurrentPassword(accountIndex, password);
+#else
+    VerifiedAccountBlob_t verified;
+    CLEAR_OBJECT(verified);
+    ret = VerifyAccountBlobFromSE(accountIndex, password, &verified);
+    CLEAR_OBJECT(verified);
+#endif
     return (ret == ERR_KEYSTORE_AUTH) ? ERR_KEYSTORE_PASSWORD_ERR : ret;
 }
 
@@ -647,23 +659,26 @@ static int32_t SaveAccountSecret(uint8_t accountIndex, const AccountSecret_t *ac
     return ret;
 }
 
-/// @brief Load account secret with the SE PIN gate.
-/// @param[in] accountIndex Account index, 0~2.
-/// @param[out] accountSecret Account secret data.
-/// @param[in] password Password string.
-/// @return err code.
 #ifndef COMPILE_SIMULATOR
-static int32_t LoadAccountSecretFromSE(uint8_t accountIndex, AccountSecret_t *accountSecret, const char *password)
+/// @brief Verify the PIN-gated account blob without decrypting its secret fields.
+/// @param[in] accountIndex Account index, 0~2.
+/// @param[in] password Password string.
+/// @param[out] verified Authenticated ciphertext for a subsequent explicit decrypt or immediate clear.
+/// @return err code.
+static int32_t VerifyAccountBlobFromSE(uint8_t accountIndex, const char *password,
+                                       VerifiedAccountBlob_t *verified)
 {
     uint8_t pieces[KEY_PIECE_LEN * 2], hash[32], sha512Hash[64], hmacCalc[32];
     uint8_t *enKey, *authKey;
     uint8_t *iv, *encryptEntropy, *encryptSeed, *slip39EmsOrTonEntropyL32, *encryptReservedData, *hmac;
-    uint8_t accountEncryptData[ACCOUNT_TOTAL_LEN], param[32];
-    AccountInfo_t *pAccountInfo = (AccountInfo_t *)param;
+    uint8_t *accountEncryptData, *param;
     int32_t ret;
-    AES256_CBC_ctx ctx;
 
     ASSERT(accountIndex <= 2);
+    ASSERT(verified != NULL);
+    CLEAR_OBJECT(*verified);
+    accountEncryptData = verified->accountEncryptData;
+    param = verified->param;
     enKey = sha512Hash;
     authKey = sha512Hash + AES_KEY_LEN;
     iv = accountEncryptData;
@@ -704,27 +719,61 @@ static int32_t LoadAccountSecretFromSE(uint8_t accountIndex, AccountSecret_t *ac
         // PIN proven correct here -> notify the SE backend of a successful unlock (gen-1: no-op).
         ret = SE_OnUnlockSuccess(accountIndex);
         CHECK_ERRCODE_BREAK("on unlock success", ret);
-        accountSecret->entropyLen = (pAccountInfo->entropyLen == 0) ? 32 : pAccountInfo->entropyLen; // 32 bytes as default.
-        CombineInnerAesKey(enKey);
-        AES256_CBC_init(&ctx, enKey, iv);
-        AES256_CBC_decrypt(&ctx, ENTROPY_MAX_LEN / AES_BLOCK_SIZE, accountSecret->entropy, encryptEntropy);
-        AES256_CBC_decrypt(&ctx, SEED_LEN / AES_BLOCK_SIZE, accountSecret->seed, encryptSeed);
-        AES256_CBC_decrypt(&ctx, SLIP39_EMS_LEN / AES_BLOCK_SIZE, accountSecret->slip39EmsOrTonEntropyL32, slip39EmsOrTonEntropyL32);
-        AES256_CBC_decrypt(&ctx, SE_DATA_RESERVED_LEN / AES_BLOCK_SIZE, accountSecret->reservedData, encryptReservedData);
-        KEYSTORE_PRINT_ARRAY("iv", iv, AES_IV_LEN);
-        KEYSTORE_PRINT_ARRAY("enKey", enKey, AES_KEY_LEN);
-        KEYSTORE_PRINT_ARRAY("encryptEntropy", encryptEntropy, ENTROPY_MAX_LEN);
-        KEYSTORE_PRINT_ARRAY("encryptSeed", encryptSeed, SEED_LEN);
-        KEYSTORE_PRINT_ARRAY("slip39EmsOrTonEntropyL32", slip39EmsOrTonEntropyL32, SLIP39_EMS_LEN);
-        KEYSTORE_PRINT_ARRAY("encryptReservedData", encryptReservedData, SE_DATA_RESERVED_LEN);
+        memcpy_s(verified->preOtpEncryptKey, sizeof(verified->preOtpEncryptKey), enKey, AES_KEY_LEN);
     } while (0);
 
-    CLEAR_OBJECT(ctx);
     CLEAR_ARRAY(pieces);
     CLEAR_ARRAY(hash);
     CLEAR_ARRAY(sha512Hash);
-    CLEAR_ARRAY(accountEncryptData);
     CLEAR_ARRAY(hmacCalc);
+    if (ret != SUCCESS_CODE) {
+        CLEAR_OBJECT(*verified);
+    }
+    return ret;
+}
+
+/// @brief Decrypt a blob whose PIN and HMAC were already verified.
+static int32_t DecryptAccountBlob(const VerifiedAccountBlob_t *verified, AccountSecret_t *accountSecret)
+{
+    uint8_t encryptKey[AES_KEY_LEN];
+    const uint8_t *iv = verified->accountEncryptData;
+    const uint8_t *encryptEntropy = iv + AES_IV_LEN;
+    const uint8_t *encryptSeed = encryptEntropy + ENTROPY_MAX_LEN;
+    const uint8_t *slip39EmsOrTonEntropyL32 = encryptSeed + SEED_LEN;
+    const uint8_t *encryptReservedData = slip39EmsOrTonEntropyL32 + SLIP39_EMS_LEN;
+    const AccountInfo_t *pAccountInfo = (const AccountInfo_t *)verified->param;
+    AES256_CBC_ctx ctx;
+
+    memcpy_s(encryptKey, sizeof(encryptKey), verified->preOtpEncryptKey, sizeof(encryptKey));
+    CombineInnerAesKey(encryptKey);
+    AES256_CBC_init(&ctx, encryptKey, iv);
+    AES256_CBC_decrypt(&ctx, ENTROPY_MAX_LEN / AES_BLOCK_SIZE, accountSecret->entropy, encryptEntropy);
+    AES256_CBC_decrypt(&ctx, SEED_LEN / AES_BLOCK_SIZE, accountSecret->seed, encryptSeed);
+    AES256_CBC_decrypt(&ctx, SLIP39_EMS_LEN / AES_BLOCK_SIZE, accountSecret->slip39EmsOrTonEntropyL32, slip39EmsOrTonEntropyL32);
+    AES256_CBC_decrypt(&ctx, SE_DATA_RESERVED_LEN / AES_BLOCK_SIZE, accountSecret->reservedData, encryptReservedData);
+    accountSecret->entropyLen = (pAccountInfo->entropyLen == 0) ? 32 : pAccountInfo->entropyLen;
+
+    CLEAR_OBJECT(ctx);
+    CLEAR_ARRAY(encryptKey);
+    return SUCCESS_CODE;
+}
+
+/// @brief Load account secret with the SE PIN gate.
+/// @param[in] accountIndex Account index, 0~2.
+/// @param[out] accountSecret Account secret data.
+/// @param[in] password Password string.
+/// @return err code.
+static int32_t LoadAccountSecretFromSE(uint8_t accountIndex, AccountSecret_t *accountSecret, const char *password)
+{
+    VerifiedAccountBlob_t verified;
+    int32_t ret;
+
+    CLEAR_OBJECT(verified);
+    ret = VerifyAccountBlobFromSE(accountIndex, password, &verified);
+    if (ret == SUCCESS_CODE) {
+        ret = DecryptAccountBlob(&verified, accountSecret);
+    }
+    CLEAR_OBJECT(verified);
     return ret;
 }
 #endif
@@ -767,6 +816,7 @@ static void CombineInnerAesKey(uint8_t *aesKey)
     for (uint32_t i = 0; i < AES_KEY_LEN; i++) {
         aesKey[i] ^= aesPiece[i];
     }
+    CLEAR_ARRAY(aesPiece);
 }
 
 /// @brief Get seed generated by passphrase.

@@ -326,8 +326,10 @@ int32_t SimulatorVerifyPassword(uint8_t *accountIndex, const char *password)
             continue;
         }
         cJSON *item = cJSON_GetObjectItem(rootJson, "password");
-        if (item != NULL && strncmp(item->valuestring, password, strlen(password)) == 0) {
-            *accountIndex = i;
+        if (item != NULL && strcmp(item->valuestring, password) == 0) {
+            if (accountIndex != NULL) {
+                *accountIndex = i;
+            }
             cJSON_Delete(rootJson);
             return SUCCESS_CODE;
         }
@@ -347,7 +349,7 @@ int32_t SimulatorVerifyCurrentPassword(uint8_t accountIndex, const char *passwor
         return ERR_KEYSTORE_PASSWORD_ERR;
     }
     cJSON *item = cJSON_GetObjectItem(rootJson, "password");
-    if (item != NULL && strncmp(item->valuestring, password, strlen(password)) == 0) {
+    if (item != NULL && strcmp(item->valuestring, password) == 0) {
         cJSON_Delete(rootJson);
         return SUCCESS_CODE;
     }
