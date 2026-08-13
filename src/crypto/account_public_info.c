@@ -27,6 +27,10 @@
 #define PUB_KEY_MAX_LENGTH                  1024 + 1
 #define VERSION_MAX_LENGTH                  64
 #define INVALID_ACCOUNT_INDEX               255
+#ifndef BTC_ONLY
+#define ZCASH_SFP_HEX_LEN                   (ZCASH_SFP_LEN * 2)
+#define ZCASH_SFP_JSON_KEY                  "zcash_seed_fingerprint"
+#endif
 
 typedef struct {
     char *value;
@@ -62,10 +66,18 @@ static void FreePublicKeyRam(void);
 static int32_t GetChainTableIndex(ChainType chain);
 static void PrintInfo(void);
 static void SetIsTempAccount(bool isTemp);
-static void SaveCurrentPublicInfoToFlash(uint8_t accountIndex, uint32_t addr);
+static int32_t SaveCurrentPublicInfoToFlash(uint8_t accountIndex, uint32_t addr);
+#ifndef BTC_ONLY
+static int32_t CalculateAndStoreZcashSFP(uint8_t *seed, int seedLen);
+#endif
 #ifdef CYPHERPUNK_VERSION
 static bool IsValidZcashUfvkBlob(const char *value);
-static SimpleResponse_c_char *DeriveEncryptedZcashUFVK(const uint8_t *seed, int seedLen, const char *password, char *ufvkOut, uint32_t ufvkOutLen);
+static SimpleResponse_c_char *DeriveEncryptedZcashUFVKV2(
+    const uint8_t *seed, int seedLen, const char *password, char *ufvkOut, uint32_t ufvkOutLen);
+static SimpleResponse_c_char *DeriveEncryptedZcashUFVKV3(
+    uint8_t accountIndex, const uint8_t *seed, int seedLen, const char *password,
+    char *ufvkOut, uint32_t ufvkOutLen);
+static int32_t ReplaceStoredZcashUFVK(uint8_t accountIndex, const SimpleResponse_c_char *encryptResult);
 #endif
 
 #ifdef BTC_ONLY
@@ -300,6 +312,10 @@ static cJSON *g_tempParsePhraseJson = NULL;
 static AccountPublicKeyItem_t g_accountPublicInfo[XPUB_TYPE_NUM] = {0};
 static uint8_t g_tempPublicKeyAccountIndex = INVALID_ACCOUNT_INDEX;
 static bool g_isTempAccount = false;
+#ifndef BTC_ONLY
+static uint8_t g_zcashSeedFingerprint[ZCASH_SFP_LEN] = {0};
+static bool g_zcashSeedFingerprintValid = false;
+#endif
 
 // 1.0.1 support slip39 for ada
 static const char g_xpubInfoVersion[] = "1.0.1";
@@ -914,7 +930,7 @@ int32_t AccountPublicSavePublicInfo(uint8_t accountIndex, const char *password, 
 #ifdef CYPHERPUNK_VERSION
             //encrypt zcash ufvk
             if (g_chainTable[i].cryptoKey == ZCASH_UFVK_ENCRYPTED) {
-                xPubResult = DeriveEncryptedZcashUFVK(seed, seedLen, password, NULL, 0);
+                xPubResult = DeriveEncryptedZcashUFVKV3(accountIndex, seed, seedLen, password, NULL, 0);
             } else {
                 xPubResult = ProcessKeyType(seed, seedLen, g_chainTable[i].cryptoKey, g_chainTable[i].path, icarusMasterKey, ledgerBitbox02Key);
             }
@@ -940,7 +956,14 @@ int32_t AccountPublicSavePublicInfo(uint8_t accountIndex, const char *password, 
             // printf("xPubResult=%s\r\n", xPubResult->data);
             free_simple_response_c_char(xPubResult);
         }
-        SaveCurrentPublicInfoToFlash(accountIndex, addr);
+#ifndef BTC_ONLY
+        if (ret == SUCCESS_CODE && IsZcashSupportedForCurrentMnemonic()) {
+            ret = CalculateAndStoreZcashSFP(seed, seedLen);
+            CHECK_ERRCODE_BREAK("calculate zcash sfp", ret);
+        }
+#endif
+        ret = SaveCurrentPublicInfoToFlash(accountIndex, addr);
+        CHECK_ERRCODE_BREAK("save account public info", ret);
         if (!isSlip39) {
             free_simple_response_c_char(cip3_response);
             free_simple_response_c_char(ledger_bitbox02_response);
@@ -1009,31 +1032,72 @@ bool GetIsTempAccount(void)
     return g_isTempAccount;
 }
 
-static void SaveCurrentPublicInfoToFlash(uint8_t accountIndex, uint32_t addr)
+static int32_t SaveCurrentPublicInfoToFlash(uint8_t accountIndex, uint32_t addr)
 {
     uint8_t hash[32];
-    char *jsonString;
+    uint8_t verifyBuffer[256];
+    char *jsonString = NULL;
+    int32_t ret = SUCCESS_CODE;
 
-    for (uint32_t eraseAddr = addr; eraseAddr < addr + SPI_FLASH_SIZE_USER1_DATA; eraseAddr += GD25QXX_SECTOR_SIZE) {
-        Gd25FlashSectorErase(eraseAddr);
+    do {
+        for (uint32_t eraseAddr = addr; eraseAddr < addr + SPI_FLASH_SIZE_USER1_DATA;
+                eraseAddr += GD25QXX_SECTOR_SIZE) {
+            ret = Gd25FlashSectorErase(eraseAddr);
+            CHECK_ERRCODE_BREAK("erase account public info", ret);
+        }
+        CHECK_ERRCODE_BREAK("erase account public info", ret);
+
+        jsonString = GetJsonStringFromPublicKey();
+        if (jsonString == NULL) {
+            ret = ERR_GENERAL_FAIL;
+            break;
+        }
+        uint32_t size = strlen(jsonString);
+        if (size == 0 || size > SPI_FLASH_SIZE_USER1_DATA - sizeof(size)) {
+            ret = ERR_GENERAL_FAIL;
+            break;
+        }
+
+        if (Gd25FlashWriteBuffer(addr, (uint8_t *)&size, sizeof(size)) != sizeof(size) ||
+                Gd25FlashWriteBuffer(addr + sizeof(size), (uint8_t *)jsonString, size) != size) {
+            ret = ERR_GENERAL_FAIL;
+            break;
+        }
+
+        uint32_t storedSize = 0;
+        if (Gd25FlashReadBuffer(addr, (uint8_t *)&storedSize, sizeof(storedSize)) != sizeof(storedSize) ||
+                storedSize != size) {
+            ret = ERR_GENERAL_FAIL;
+            break;
+        }
+        for (uint32_t offset = 0; offset < size; offset += sizeof(verifyBuffer)) {
+            uint32_t remaining = size - offset;
+            uint32_t chunkSize = remaining < sizeof(verifyBuffer) ? remaining : sizeof(verifyBuffer);
+            if (Gd25FlashReadBuffer(addr + sizeof(size) + offset, verifyBuffer, chunkSize) != chunkSize ||
+                    memcmp(verifyBuffer, jsonString + offset, chunkSize) != 0) {
+                ret = ERR_GENERAL_FAIL;
+                break;
+            }
+        }
+        CHECK_ERRCODE_BREAK("verify account public info", ret);
+
+        sha256((struct sha256 *)hash, jsonString, size);
+        ret = SetWalletDataHash(accountIndex, hash);
+        CHECK_ERRCODE_BREAK("save account public info hash", ret);
+    } while (0);
+
+    if (jsonString != NULL) {
+        EXT_FREE(jsonString);
     }
-    jsonString = GetJsonStringFromPublicKey();
-
-    sha256((struct sha256 *)hash, jsonString, strlen(jsonString));
-    SetWalletDataHash(accountIndex, hash);
     CLEAR_ARRAY(hash);
-    uint32_t size = strlen(jsonString);
-    int32_t len = Gd25FlashWriteBuffer(addr, (uint8_t *)&size, 4);
-    ASSERT(len == 4);
-    len = Gd25FlashWriteBuffer(addr + 4, (uint8_t *)jsonString, size);
-    ASSERT(len == size);
-    EXT_FREE(jsonString);
+    CLEAR_ARRAY(verifyBuffer);
+    return ret;
 }
 
 #ifdef CYPHERPUNK_VERSION
 /// @brief Check a stored Zcash UFVK blob has an acceptable layout.
-///        New format is "z2" || hex(IV_16) || hex(ciphertext); legacy blobs are pure hex and
-///        are accepted too so they flow into the decrypt-fail -> regenerate migration path.
+///        z2/z3 use magic || hex(IV_16) || hex(ciphertext); legacy blobs are pure hex and are
+///        accepted too so they flow into the compatibility path.
 /// @param[in] value Stored value, may be NULL.
 /// @return true if the blob layout is valid.
 static bool IsValidZcashUfvkBlob(const char *value)
@@ -1041,7 +1105,7 @@ static bool IsValidZcashUfvkBlob(const char *value)
     if (value == NULL) {
         return false;
     }
-    if (value[0] == 'z' && value[1] == '2') {
+    if (value[0] == 'z' && (value[1] == '2' || value[1] == '3')) {
         return IsHexStringWithLen(value + 2, 0);
     }
     // Legacy pure-hex blob (accepted; SetupZcashCache regenerates it on decrypt failure).
@@ -1057,10 +1121,13 @@ static bool IsValidZcashUfvkBlob(const char *value)
 /// @param[in] ufvkOutLen Size of ufvkOut.
 /// @return Encrypted UFVK hex response (hex(IV) || hex(ciphertext)), or a response carrying
 ///         the derivation/encryption error. Caller frees.
-static SimpleResponse_c_char *DeriveEncryptedZcashUFVK(const uint8_t *seed, int seedLen, const char *password, char *ufvkOut, uint32_t ufvkOutLen)
+static SimpleResponse_c_char *DeriveEncryptedZcashUFVKV2(
+    const uint8_t *seed, int seedLen, const char *password, char *ufvkOut,
+    uint32_t ufvkOutLen)
 {
     (void)password;
-    SimpleResponse_c_char *ufvkResponse = derive_zcash_ufvk((uint8_t *)seed, seedLen, g_chainTable[ZCASH_UFVK_ENCRYPTED_0].path);
+    SimpleResponse_c_char *ufvkResponse = derive_zcash_ufvk(
+        (uint8_t *)seed, seedLen, g_chainTable[ZCASH_UFVK_ENCRYPTED_0].path);
     if (ufvkResponse == NULL || ufvkResponse->error_code != 0) {
         return ufvkResponse;
     }
@@ -1087,46 +1154,101 @@ static SimpleResponse_c_char *DeriveEncryptedZcashUFVK(const uint8_t *seed, int 
     return encryptResult;
 }
 
-/// @brief Re-derive the Zcash UFVK from seed, encrypt it with a seed-derived key and replace the
-///        stored ciphertext. ChangePassword calls this to keep the blob in sync, and
-///        SetupZcashCache calls it on decrypt failure to migrate wallets whose blob went stale
-///        before the sync existed (or whose sync was interrupted).
+/// @brief Derive and encrypt the UFVK with the account-scoped key produced by a successful PIN
+///        verification. z3 can therefore be loaded without decrypting AccountSecret_t.
+static SimpleResponse_c_char *DeriveEncryptedZcashUFVKV3(
+    uint8_t accountIndex, const uint8_t *seed, int seedLen, const char *password,
+    char *ufvkOut, uint32_t ufvkOutLen)
+{
+    SimpleResponse_c_char *ufvkResponse = derive_zcash_ufvk(
+        (uint8_t *)seed, seedLen, g_chainTable[ZCASH_UFVK_ENCRYPTED_0].path);
+    if (ufvkResponse == NULL || ufvkResponse->error_code != 0) {
+        return ufvkResponse;
+    }
+
+    uint8_t keyBytes[AES_KEY_LEN];
+    int32_t ret = VerifyAccountPasswordAndGetZcashCacheKey(accountIndex, password, keyBytes);
+    if (ret != SUCCESS_CODE) {
+        CLEAR_ARRAY(keyBytes);
+        free_simple_response_c_char(ufvkResponse);
+        return NULL;
+    }
+
+    uint8_t ivBytes[16];
+    TrngGet(ivBytes, sizeof(ivBytes));
+    SimpleResponse_c_char *encryptResult = rust_encrypt_ufvk_blob_v3(ufvkResponse->data, keyBytes, sizeof(keyBytes), ivBytes, sizeof(ivBytes));
+    CLEAR_ARRAY(keyBytes);
+    CLEAR_ARRAY(ivBytes);
+    if (ufvkOut != NULL && encryptResult != NULL && encryptResult->error_code == 0) {
+        strcpy_s(ufvkOut, ufvkOutLen, ufvkResponse->data);
+    }
+    free_simple_response_c_char(ufvkResponse);
+    return encryptResult;
+}
+
+static int32_t ReplaceStoredZcashUFVK(uint8_t accountIndex, const SimpleResponse_c_char *encryptResult)
+{
+    if (encryptResult == NULL) {
+        return ERR_GENERAL_FAIL;
+    }
+    if (encryptResult->error_code != 0) {
+        printf("derive/encrypt zcash ufvk error: %s\r\n",
+               encryptResult->error_message == NULL ? "unknown" : encryptResult->error_message);
+        return encryptResult->error_code;
+    }
+
+    uint32_t valueLen = strnlen_s(encryptResult->data, SIMPLERESPONSE_C_CHAR_MAX_LEN) + 1;
+    char *newValue = SRAM_MALLOC(valueLen);
+    if (newValue == NULL) {
+        return ERR_GENERAL_FAIL;
+    }
+    strcpy_s(newValue, valueLen, encryptResult->data);
+    if (g_accountPublicInfo[ZCASH_UFVK_ENCRYPTED_0].value != NULL) {
+        SRAM_FREE(g_accountPublicInfo[ZCASH_UFVK_ENCRYPTED_0].value);
+    }
+    g_accountPublicInfo[ZCASH_UFVK_ENCRYPTED_0].value = newValue;
+    if (!GetIsTempAccount()) {
+        uint32_t addr = SPI_FLASH_ADDR_USER1_DATA + accountIndex * SPI_FLASH_ADDR_EACH_SIZE;
+        return SaveCurrentPublicInfoToFlash(accountIndex, addr);
+    }
+    return SUCCESS_CODE;
+}
+
+/// @brief Re-derive the Zcash UFVK from seed, encrypt it as a legacy z2 blob and replace the
+///        stored ciphertext. Used only by the z2/legacy compatibility path.
 /// @param[in] accountIndex Account index, 0~2.
 /// @param[in] seed Wallet seed, already fetched with a verified password.
 /// @param[in] seedLen Seed length.
-/// @param[in] password Password to encrypt the UFVK with.
+/// @param[in] password Unused by z2 encryption; kept for interface stability.
 /// @param[out] ufvkOut Optional, receives the plaintext UFVK. Can be NULL if not needed.
 /// @param[in] ufvkOutLen Size of ufvkOut.
 /// @return err code.
-int32_t RegenerateZcashUFVK(uint8_t accountIndex, const uint8_t *seed, int seedLen, const char *password, char *ufvkOut, uint32_t ufvkOutLen)
+int32_t RegenerateZcashUFVKV2(uint8_t accountIndex, const uint8_t *seed, int seedLen,
+                              const char *password, char *ufvkOut, uint32_t ufvkOutLen)
 {
-    int32_t ret = SUCCESS_CODE;
-    SimpleResponse_c_char *encryptResult = NULL;
-
     ASSERT(accountIndex <= 2);
-    do {
-        encryptResult = DeriveEncryptedZcashUFVK(seed, seedLen, password, ufvkOut, ufvkOutLen);
-        if (encryptResult == NULL) {
-            ret = ERR_GENERAL_FAIL;
-            break;
-        }
-        if (encryptResult->error_code != 0) {
-            printf("derive/encrypt zcash ufvk error: %s\r\n", encryptResult->error_message);
-            ret = encryptResult->error_code;
-            break;
-        }
-        uint32_t valueLen = strnlen_s(encryptResult->data, SIMPLERESPONSE_C_CHAR_MAX_LEN) + 1;
-        if (g_accountPublicInfo[ZCASH_UFVK_ENCRYPTED_0].value != NULL) {
-            SRAM_FREE(g_accountPublicInfo[ZCASH_UFVK_ENCRYPTED_0].value);
-        }
-        g_accountPublicInfo[ZCASH_UFVK_ENCRYPTED_0].value = SRAM_MALLOC(valueLen);
-        strcpy_s(g_accountPublicInfo[ZCASH_UFVK_ENCRYPTED_0].value, valueLen, encryptResult->data);
-        if (!GetIsTempAccount()) {
-            uint32_t addr = SPI_FLASH_ADDR_USER1_DATA + accountIndex * SPI_FLASH_ADDR_EACH_SIZE;
-            SaveCurrentPublicInfoToFlash(accountIndex, addr);
-        }
-    } while (0);
+    SimpleResponse_c_char *encryptResult = DeriveEncryptedZcashUFVKV2(
+        seed, seedLen, password, ufvkOut, ufvkOutLen);
+    int32_t ret = ReplaceStoredZcashUFVK(accountIndex, encryptResult);
+    if (encryptResult != NULL) {
+        free_simple_response_c_char(encryptResult);
+    }
+    return ret;
+}
 
+/// @brief Re-derive the Zcash UFVK after an account-key rotation, encrypt it as z3 with the
+///        newly verified account key, and persist it before the change-PIN transaction commits.
+int32_t RegenerateZcashUFVKV3(uint8_t accountIndex, const uint8_t *seed, int seedLen,
+                              const char *password)
+{
+    ASSERT(accountIndex <= 2);
+    if (GetIsTempAccount()) {
+        return ERR_GENERAL_FAIL;
+    }
+
+    SimpleResponse_c_char *encryptResult = DeriveEncryptedZcashUFVKV3(
+        accountIndex, seed, seedLen, password, NULL, 0);
+    int32_t ret = ReplaceStoredZcashUFVK(accountIndex, encryptResult);
     if (encryptResult != NULL) {
         free_simple_response_c_char(encryptResult);
     }
@@ -1191,7 +1313,7 @@ int32_t TempAccountPublicInfo(uint8_t accountIndex, const char *password, bool s
 #ifdef CYPHERPUNK_VERSION
             //encrypt zcash ufvk
             if (g_chainTable[i].cryptoKey == ZCASH_UFVK_ENCRYPTED) {
-                xPubResult = DeriveEncryptedZcashUFVK(seed, seedLen, password, NULL, 0);
+                xPubResult = DeriveEncryptedZcashUFVKV2(seed, seedLen, password, NULL, 0);
             } else {
                 xPubResult = ProcessKeyType(seed, seedLen, g_chainTable[i].cryptoKey, g_chainTable[i].path, icarusMasterKey, ledgerBitbox02Key);
             }
@@ -1401,11 +1523,18 @@ static int GetChainTableSizeFromJson(cJSON *keyJson)
 
 static bool GetPublicKeyFromJsonString(const char *string)
 {
-    cJSON *rootJson, *keyJson, *chainJson;
+    cJSON *rootJson = NULL, *keyJson, *chainJson;
+#ifndef BTC_ONLY
+    cJSON *zcashSfpJson;
+#endif
     char pubKeyString[PUB_KEY_MAX_LENGTH], versionString[VERSION_MAX_LENGTH];
     bool ret = true;
     uint32_t i;
 
+#ifndef BTC_ONLY
+    CLEAR_ARRAY(g_zcashSeedFingerprint);
+    g_zcashSeedFingerprintValid = false;
+#endif
     do {
         rootJson = cJSON_Parse(string);
         if (rootJson == NULL) {
@@ -1419,6 +1548,14 @@ static bool GetPublicKeyFromJsonString(const char *string)
             ret = false;
             break;
         }
+#ifndef BTC_ONLY
+        zcashSfpJson = cJSON_GetObjectItem(rootJson, ZCASH_SFP_JSON_KEY);
+        if (cJSON_IsString(zcashSfpJson) &&
+                IsHexStringWithLen(zcashSfpJson->valuestring, ZCASH_SFP_HEX_LEN)) {
+            StrToHex(g_zcashSeedFingerprint, zcashSfpJson->valuestring);
+            g_zcashSeedFingerprintValid = true;
+        }
+#endif
         keyJson = cJSON_GetObjectItem(rootJson, "key");
         if (keyJson == NULL) {
             ret = false;
@@ -1468,6 +1605,13 @@ static char *GetJsonStringFromPublicKey(void)
         cJSON_AddItemToObject(chainsJson, g_chainTable[i].name, jsonItem);
     }
     cJSON_AddItemToObject(rootJson, "version", cJSON_CreateString(g_xpubInfoVersion));
+#ifndef BTC_ONLY
+    if (g_zcashSeedFingerprintValid) {
+        char sfpHex[ZCASH_SFP_HEX_LEN + 1] = {0};
+        ByteArrayToHexStr(g_zcashSeedFingerprint, sizeof(g_zcashSeedFingerprint), sfpHex);
+        cJSON_AddItemToObject(rootJson, ZCASH_SFP_JSON_KEY, cJSON_CreateString(sfpHex));
+    }
+#endif
     cJSON_AddItemToObject(rootJson, "key", chainsJson);
     retStr = cJSON_PrintBuffered(rootJson, SPI_FLASH_SIZE_USER1_DATA - 4, 0);
     RemoveFormatChar(retStr);
@@ -1478,6 +1622,10 @@ static char *GetJsonStringFromPublicKey(void)
 static void FreePublicKeyRam(void)
 {
     g_tempPublicKeyAccountIndex = INVALID_ACCOUNT_INDEX;
+#ifndef BTC_ONLY
+    CLEAR_ARRAY(g_zcashSeedFingerprint);
+    g_zcashSeedFingerprintValid = false;
+#endif
     for (uint32_t i = 0; i < XPUB_TYPE_NUM; i++) {
         if (g_accountPublicInfo[i].value != NULL) {
             SRAM_FREE(g_accountPublicInfo[i].value);
@@ -1485,6 +1633,39 @@ static void FreePublicKeyRam(void)
         }
     }
 }
+
+#ifndef BTC_ONLY
+static int32_t CalculateAndStoreZcashSFP(uint8_t *seed, int seedLen)
+{
+    int32_t ret = SUCCESS_CODE;
+    SimpleResponse_u8 *response = calculate_zcash_seed_fingerprint(seed, seedLen);
+    if (response == NULL) {
+        return ERR_GENERAL_FAIL;
+    }
+    if (response->error_code != 0) {
+        ret = response->error_code;
+        if (response->error_message != NULL) {
+            printf("calculate zcash sfp error: %s\r\n", response->error_message);
+        }
+    } else {
+        memcpy_s(g_zcashSeedFingerprint, sizeof(g_zcashSeedFingerprint),
+                 response->data, sizeof(g_zcashSeedFingerprint));
+        g_zcashSeedFingerprintValid = true;
+    }
+    free_simple_response_u8(response);
+    return ret;
+}
+
+bool GetCurrentAccountZcashSFP(uint8_t *outSfp)
+{
+    ASSERT(outSfp != NULL);
+    if (!g_zcashSeedFingerprintValid) {
+        return false;
+    }
+    memcpy_s(outSfp, ZCASH_SFP_LEN, g_zcashSeedFingerprint, sizeof(g_zcashSeedFingerprint));
+    return true;
+}
+#endif
 
 static void PrintInfo(void)
 {

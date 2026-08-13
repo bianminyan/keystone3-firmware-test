@@ -270,8 +270,14 @@ typedef enum {
 } ChainType;
 
 bool GetIsTempAccount(void);
+#ifndef BTC_ONLY
+bool GetCurrentAccountZcashSFP(uint8_t *outSfp);
+#endif
 #ifdef CYPHERPUNK_VERSION
-int32_t RegenerateZcashUFVK(uint8_t accountIndex, const uint8_t *seed, int seedLen, const char *password, char *ufvkOut, uint32_t ufvkOutLen);
+int32_t RegenerateZcashUFVKV2(uint8_t accountIndex, const uint8_t *seed, int seedLen,
+                              const char *password, char *ufvkOut, uint32_t ufvkOutLen);
+int32_t RegenerateZcashUFVKV3(uint8_t accountIndex, const uint8_t *seed, int seedLen,
+                              const char *password);
 #endif
 int32_t AccountPublicInfoSwitch(uint8_t accountIndex, const char *password, bool newKey);
 int32_t TempAccountPublicInfo(uint8_t accountIndex, const char *password, bool set);
@@ -315,4 +321,3 @@ void SetAccountTestReceivePath(const char* chainName, uint32_t index);
 void DeleteAccountMultiReceiveIndex(const char* chainName, char *verifyCode);
 #endif
 #endif
-

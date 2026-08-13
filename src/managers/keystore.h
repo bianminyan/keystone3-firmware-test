@@ -54,6 +54,12 @@ int32_t GetAccountSlip39Ems(uint8_t accountIndex, uint8_t *slip39Ems, const char
 int32_t ChangePassword(uint8_t accountIndex, const char *newPassword, const char *password);
 int32_t FindAccountByPassword(uint8_t *matchedAccountIndex, const char *password);
 int32_t VerifyAccountPassword(uint8_t accountIndex, const char *password);
+#ifdef CYPHERPUNK_VERSION
+int32_t FindAccountByPasswordAndGetZcashCacheKey(uint8_t *matchedAccountIndex, const char *password,
+                                                  uint8_t cacheKey[AES_KEY_LEN]);
+int32_t VerifyAccountPasswordAndGetZcashCacheKey(uint8_t accountIndex, const char *password,
+                                                  uint8_t cacheKey[AES_KEY_LEN]);
+#endif
 int32_t GenerateTRNGRandomness(uint8_t *randomness, uint8_t len);
 bool CheckPassphraseSame(uint8_t accountIndex, const char *passphrase);
 char* GetPassphrase(uint8_t accountIndex);

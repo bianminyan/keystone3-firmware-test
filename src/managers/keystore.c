@@ -53,11 +53,19 @@ typedef struct {
 } VerifiedAccountBlob_t;
 
 static int32_t VerifyAccountBlobFromSE(uint8_t accountIndex, const char *password,
-                                       VerifiedAccountBlob_t *verified);
+                                       VerifiedAccountBlob_t *verified, uint8_t *zcashCacheKey);
 static int32_t DecryptAccountBlob(const VerifiedAccountBlob_t *verified, AccountSecret_t *accountSecret);
 static int32_t LoadAccountSecretFromSE(uint8_t accountIndex, AccountSecret_t *accountSecret, const char *password);
 #endif
 static int32_t AccountExists(uint8_t accountIndex, bool *exists);
+static int32_t FindAccountByPasswordInternal(uint8_t *matchedAccountIndex, const char *password,
+                                             uint8_t *zcashCacheKey);
+static int32_t VerifyAccountPasswordInternal(uint8_t accountIndex, const char *password, uint8_t *zcashCacheKey);
+#ifdef CYPHERPUNK_VERSION
+static void DeriveZcashCacheKeyFromAccountBlobAuthKey(
+    const uint8_t accountBlobAuthKey[AUTH_KEY_LEN], uint8_t accountIndex,
+    uint8_t cacheKey[AES_KEY_LEN]);
+#endif
 
 static void CombineInnerAesKey(uint8_t *aesKey);
 static int32_t GetPassphraseSeed(uint8_t accountIndex, uint8_t *seed, const char *passphrase, const char *password);
@@ -286,6 +294,15 @@ int32_t ChangePassword(uint8_t accountIndex, const char *newPassword, const char
     AccountSecret_t accountSecret;
 
     ASSERT(accountIndex <= 2);
+#ifdef CYPHERPUNK_VERSION
+    // ChangePassword updates the persistent base-account public-info record. A temp/passphrase
+    // record, or a non-current account, cannot be updated safely through the current in-memory view.
+    // Reject before changing any SE state so an existing z3 blob can never be stranded under the old key.
+    if (accountIndex != GetCurrentAccountIndex() || GetIsTempAccount()) {
+        printf("change pin requires the current base account\r\n");
+        return ERR_GENERAL_FAIL;
+    }
+#endif
     do {
         ret = CheckPasswordExisted(newPassword, accountIndex);
         CHECK_ERRCODE_BREAK("check repeat password", ret);
@@ -300,22 +317,18 @@ int32_t ChangePassword(uint8_t accountIndex, const char *newPassword, const char
         CHECK_ERRCODE_BREAK("prepare change pin", ret);
         ret = SaveAccountSecret(accountIndex, &accountSecret, newPassword, false);
         CHECK_ERRCODE_BREAK("save account secret", ret);   // on failure: status stays CHANGING_PIN -> boot erases
-        ret = SE_SetAccountStatus(accountIndex, ACCOUNT_STATUS_CREATED);   // re-wrap committed
-        CHECK_ERRCODE_BREAK("set created status", ret);
 #ifdef CYPHERPUNK_VERSION
-        // The stored Zcash UFVK ciphertext is keyed by the login password, so keep it in sync here.
-        // Best effort after the PIN re-wrap is committed: a failure must not fail the password change,
-        // and a stale ciphertext is repaired by SetupZcashCache at the next login (which also migrates
-        // wallets whose password was changed before this sync existed). Temp (passphrase) accounts are
-        // skipped for the same reason.
-        if (accountIndex == GetCurrentAccountIndex() && !GetIsTempAccount() && IsZcashSupportedForCurrentMnemonic()) {
+        // Re-provisioning rotates the account blob auth key on both SE generations. Re-encrypt z3 with
+        // the new key before committing CREATED; failure leaves CHANGING_PIN so boot never accepts an
+        // account whose public cache is still bound to the old key.
+        if (IsZcashSupportedForCurrentMnemonic()) {
             int seedLen = GetMnemonicType() == MNEMONIC_TYPE_SLIP39 ? accountSecret.entropyLen : sizeof(accountSecret.seed);
-            int32_t zcashRet = RegenerateZcashUFVK(accountIndex, accountSecret.seed, seedLen, newPassword, NULL, 0);
-            if (zcashRet != SUCCESS_CODE) {
-                printf("regenerate zcash ufvk err=%d\r\n", zcashRet);
-            }
+            ret = RegenerateZcashUFVKV3(accountIndex, accountSecret.seed, seedLen, newPassword);
+            CHECK_ERRCODE_BREAK("regenerate zcash z3 ufvk", ret);
         }
 #endif
+        ret = SE_SetAccountStatus(accountIndex, ACCOUNT_STATUS_CREATED);   // seed re-wrap + z3 committed
+        CHECK_ERRCODE_BREAK("set created status", ret);
     } while (0);
     // SetNewKeyPieceToSE consumes the arm on the normal path; disarm here too so a change-PIN never
     // leaves it armed (e.g. if SaveAccountSecret returned before SetNewKeyPieceToSE).
@@ -330,13 +343,37 @@ int32_t ChangePassword(uint8_t accountIndex, const char *newPassword, const char
 /// @return err code.
 int32_t FindAccountByPassword(uint8_t *matchedAccountIndex, const char *password)
 {
+    return FindAccountByPasswordInternal(matchedAccountIndex, password, NULL);
+}
+
+static int32_t FindAccountByPasswordInternal(uint8_t *matchedAccountIndex, const char *password, uint8_t *zcashCacheKey)
+{
     uint8_t tryOrder[3];
     uint8_t lastAccountIndex;
     bool exists;
     int32_t ret = ERR_KEYSTORE_PASSWORD_ERR;
     uint8_t tryCount = 0;
 #ifdef COMPILE_SIMULATOR
-    return SimulatorVerifyPassword(matchedAccountIndex, password);
+    uint8_t simulatorAccountIndex;
+    uint8_t *resultAccountIndex = matchedAccountIndex == NULL ? &simulatorAccountIndex : matchedAccountIndex;
+#ifdef CYPHERPUNK_VERSION
+    uint8_t simulatorAccountBlobAuthKey[AUTH_KEY_LEN];
+    CLEAR_ARRAY(simulatorAccountBlobAuthKey);
+    if (zcashCacheKey != NULL) {
+        ret = SimulatorVerifyPasswordWithZcashAccountAuthKey(
+            resultAccountIndex, password, simulatorAccountBlobAuthKey);
+        if (ret == SUCCESS_CODE) {
+            DeriveZcashCacheKeyFromAccountBlobAuthKey(simulatorAccountBlobAuthKey, *resultAccountIndex,
+                                                       zcashCacheKey);
+        }
+    } else {
+        ret = SimulatorVerifyPassword(resultAccountIndex, password);
+    }
+    CLEAR_ARRAY(simulatorAccountBlobAuthKey);
+#else
+    ret = SimulatorVerifyPassword(resultAccountIndex, password);
+#endif
+    return ret;
 #endif
 
     lastAccountIndex = GetLastAccountIndex();
@@ -358,7 +395,7 @@ int32_t FindAccountByPassword(uint8_t *matchedAccountIndex, const char *password
             continue;
         }
 
-        ret = VerifyAccountPassword(tryOrder[i], password);
+        ret = VerifyAccountPasswordInternal(tryOrder[i], password, zcashCacheKey);
         if (ret == SUCCESS_CODE) {
             if (matchedAccountIndex != NULL) {
                 *matchedAccountIndex = tryOrder[i];
@@ -377,19 +414,73 @@ int32_t FindAccountByPassword(uint8_t *matchedAccountIndex, const char *password
 
 int32_t VerifyAccountPassword(uint8_t accountIndex, const char *password)
 {
+    return VerifyAccountPasswordInternal(accountIndex, password, NULL);
+}
+
+static int32_t VerifyAccountPasswordInternal(uint8_t accountIndex, const char *password, uint8_t *zcashCacheKey)
+{
     int32_t ret;
 
     ASSERT(accountIndex <= 2);
 #ifdef COMPILE_SIMULATOR
+#ifdef CYPHERPUNK_VERSION
+    uint8_t simulatorAccountBlobAuthKey[AUTH_KEY_LEN];
+    CLEAR_ARRAY(simulatorAccountBlobAuthKey);
+    if (zcashCacheKey != NULL) {
+        ret = SimulatorVerifyCurrentPasswordWithZcashAccountAuthKey(
+            accountIndex, password, simulatorAccountBlobAuthKey);
+        if (ret == SUCCESS_CODE) {
+            DeriveZcashCacheKeyFromAccountBlobAuthKey(
+                simulatorAccountBlobAuthKey, accountIndex, zcashCacheKey);
+        }
+    } else {
+        ret = SimulatorVerifyCurrentPassword(accountIndex, password);
+    }
+    CLEAR_ARRAY(simulatorAccountBlobAuthKey);
+#else
     ret = SimulatorVerifyCurrentPassword(accountIndex, password);
+#endif
 #else
     VerifiedAccountBlob_t verified;
     CLEAR_OBJECT(verified);
-    ret = VerifyAccountBlobFromSE(accountIndex, password, &verified);
+    ret = VerifyAccountBlobFromSE(accountIndex, password, &verified, zcashCacheKey);
     CLEAR_OBJECT(verified);
 #endif
+    if (ret != SUCCESS_CODE && zcashCacheKey != NULL) {
+        memset_s(zcashCacheKey, AES_KEY_LEN, 0, AES_KEY_LEN);
+    }
     return (ret == ERR_KEYSTORE_AUTH) ? ERR_KEYSTORE_PASSWORD_ERR : ret;
 }
+
+#ifdef CYPHERPUNK_VERSION
+int32_t FindAccountByPasswordAndGetZcashCacheKey(uint8_t *matchedAccountIndex, const char *password,
+                                                  uint8_t cacheKey[AES_KEY_LEN])
+{
+    ASSERT(cacheKey != NULL);
+    memset_s(cacheKey, AES_KEY_LEN, 0, AES_KEY_LEN);
+    return FindAccountByPasswordInternal(matchedAccountIndex, password, cacheKey);
+}
+
+int32_t VerifyAccountPasswordAndGetZcashCacheKey(uint8_t accountIndex, const char *password,
+                                                  uint8_t cacheKey[AES_KEY_LEN])
+{
+    ASSERT(cacheKey != NULL);
+    memset_s(cacheKey, AES_KEY_LEN, 0, AES_KEY_LEN);
+    return VerifyAccountPasswordInternal(accountIndex, password, cacheKey);
+}
+
+static void DeriveZcashCacheKeyFromAccountBlobAuthKey(
+    const uint8_t accountBlobAuthKey[AUTH_KEY_LEN], uint8_t accountIndex,
+    uint8_t cacheKey[AES_KEY_LEN])
+{
+    // HMAC is used only for key separation here. accountBlobAuthKey is the 256-bit value recovered from
+    // SE-protected key pieces after PIN verification; a PIN/password must never be passed here.
+    uint8_t context[] = "zcash-cache-v3";
+    context[sizeof(context) - 1] = accountIndex;
+    hmac_sha256(accountBlobAuthKey, AUTH_KEY_LEN, context, sizeof(context), cacheKey);
+    CLEAR_ARRAY(context);
+}
+#endif
 
 /// @brief Check if password repeat with existing others.
 /// @param[in] password Password string.
@@ -469,7 +560,7 @@ int32_t SetPassphrase(uint8_t accountIndex, const char *passphrase, const char *
         SetupZcashSFP(accountIndex, password);
 #endif
 #ifdef CYPHERPUNK_VERSION
-        SetupZcashCache(accountIndex, password);
+        SetupZcashCache(accountIndex, password, NULL);
 #endif
         SetPassphraseMark(passphrase[0] != '\0');
     } while (0);
@@ -541,7 +632,7 @@ char *GetPassphrase(uint8_t accountIndex)
 static int32_t SaveAccountSecret(uint8_t accountIndex, const AccountSecret_t *accountSecret, const char *password, bool newAccount)
 {
     uint8_t pieces[KEY_PIECE_LEN * 2], hash[32], sha512Hash[64];
-    uint8_t *enKey, *authKey;
+    uint8_t *enKey, *accountBlobAuthKey;
     uint8_t *iv, *encryptEntropy, *encryptSeed, *slip39EmsOrTonEntropyL32, *encryptReservedData, *hmac;
     uint8_t accountEncryptData[ACCOUNT_TOTAL_LEN];
     int32_t ret;
@@ -550,7 +641,7 @@ static int32_t SaveAccountSecret(uint8_t accountIndex, const AccountSecret_t *ac
 
     ASSERT(accountIndex <= 2);
     enKey = sha512Hash;
-    authKey = sha512Hash + AES_KEY_LEN;
+    accountBlobAuthKey = sha512Hash + AES_KEY_LEN;
     iv = accountEncryptData;
     encryptEntropy = iv + AES_IV_LEN;
     encryptSeed = encryptEntropy + ENTROPY_MAX_LEN;
@@ -589,9 +680,10 @@ static int32_t SaveAccountSecret(uint8_t accountIndex, const AccountSecret_t *ac
         KEYSTORE_PRINT_ARRAY("encryptSeed", encryptSeed, SEED_LEN);
         KEYSTORE_PRINT_ARRAY("slip39EmsOrTonEntropyL32", slip39EmsOrTonEntropyL32, SLIP39_EMS_LEN);
         KEYSTORE_PRINT_ARRAY("encryptReservedData", encryptReservedData, SE_DATA_RESERVED_LEN);
-        hmac_sha256(authKey, AUTH_KEY_LEN, accountEncryptData, ACCOUNT_TOTAL_LEN - HMAC_LEN, hmac);
+        hmac_sha256(accountBlobAuthKey, AUTH_KEY_LEN, accountEncryptData,
+                    ACCOUNT_TOTAL_LEN - HMAC_LEN, hmac);
         KEYSTORE_PRINT_ARRAY("accountEncryptData", accountEncryptData, ACCOUNT_TOTAL_LEN);
-        KEYSTORE_PRINT_ARRAY("authKey", authKey, AUTH_KEY_LEN);
+        KEYSTORE_PRINT_ARRAY("accountBlobAuthKey", accountBlobAuthKey, AUTH_KEY_LEN);
         // param[0] = accountSecret->entropyLen;
         ret = SE_HmacEncryptWrite(iv, accountIndex * PAGE_NUM_PER_ACCOUNT + PAGE_INDEX_IV);
         CHECK_ERRCODE_BREAK("write iv", ret);
@@ -666,10 +758,10 @@ static int32_t SaveAccountSecret(uint8_t accountIndex, const AccountSecret_t *ac
 /// @param[out] verified Authenticated ciphertext for a subsequent explicit decrypt or immediate clear.
 /// @return err code.
 static int32_t VerifyAccountBlobFromSE(uint8_t accountIndex, const char *password,
-                                       VerifiedAccountBlob_t *verified)
+                                       VerifiedAccountBlob_t *verified, uint8_t *zcashCacheKey)
 {
     uint8_t pieces[KEY_PIECE_LEN * 2], hash[32], sha512Hash[64], hmacCalc[32];
-    uint8_t *enKey, *authKey;
+    uint8_t *enKey, *accountBlobAuthKey;
     uint8_t *iv, *encryptEntropy, *encryptSeed, *slip39EmsOrTonEntropyL32, *encryptReservedData, *hmac;
     uint8_t *accountEncryptData, *param;
     int32_t ret;
@@ -677,10 +769,13 @@ static int32_t VerifyAccountBlobFromSE(uint8_t accountIndex, const char *passwor
     ASSERT(accountIndex <= 2);
     ASSERT(verified != NULL);
     CLEAR_OBJECT(*verified);
+    if (zcashCacheKey != NULL) {
+        memset_s(zcashCacheKey, AES_KEY_LEN, 0, AES_KEY_LEN);
+    }
     accountEncryptData = verified->accountEncryptData;
     param = verified->param;
     enKey = sha512Hash;
-    authKey = sha512Hash + AES_KEY_LEN;
+    accountBlobAuthKey = sha512Hash + AES_KEY_LEN;
     iv = accountEncryptData;
     encryptEntropy = iv + AES_IV_LEN;
     encryptSeed = encryptEntropy + ENTROPY_MAX_LEN;
@@ -711,14 +806,20 @@ static int32_t VerifyAccountBlobFromSE(uint8_t accountIndex, const char *passwor
         CHECK_ERRCODE_BREAK("read hmac", ret);
         ret = SE_HmacEncryptRead(param, accountIndex * PAGE_NUM_PER_ACCOUNT + PAGE_INDEX_PARAM);
         CHECK_ERRCODE_BREAK("read param", ret);
-        hmac_sha256(authKey, AUTH_KEY_LEN, accountEncryptData, ACCOUNT_TOTAL_LEN - HMAC_LEN, hmacCalc);
+        hmac_sha256(accountBlobAuthKey, AUTH_KEY_LEN, accountEncryptData,
+                    ACCOUNT_TOTAL_LEN - HMAC_LEN, hmacCalc);
         KEYSTORE_PRINT_ARRAY("accountEncryptData", accountEncryptData, ACCOUNT_TOTAL_LEN);
-        KEYSTORE_PRINT_ARRAY("authKey", authKey, AUTH_KEY_LEN);
+        KEYSTORE_PRINT_ARRAY("accountBlobAuthKey", accountBlobAuthKey, AUTH_KEY_LEN);
         ret = ((memcmp(hmacCalc, hmac, HMAC_LEN) == 0) ? SUCCESS_CODE : ERR_KEYSTORE_AUTH);
         CHECK_ERRCODE_BREAK("check hmac", ret);
         // PIN proven correct here -> notify the SE backend of a successful unlock (gen-1: no-op).
         ret = SE_OnUnlockSuccess(accountIndex);
         CHECK_ERRCODE_BREAK("on unlock success", ret);
+#ifdef CYPHERPUNK_VERSION
+        if (zcashCacheKey != NULL) {
+            DeriveZcashCacheKeyFromAccountBlobAuthKey(accountBlobAuthKey, accountIndex, zcashCacheKey);
+        }
+#endif
         memcpy_s(verified->preOtpEncryptKey, sizeof(verified->preOtpEncryptKey), enKey, AES_KEY_LEN);
     } while (0);
 
@@ -728,6 +829,9 @@ static int32_t VerifyAccountBlobFromSE(uint8_t accountIndex, const char *passwor
     CLEAR_ARRAY(hmacCalc);
     if (ret != SUCCESS_CODE) {
         CLEAR_OBJECT(*verified);
+        if (zcashCacheKey != NULL) {
+            memset_s(zcashCacheKey, AES_KEY_LEN, 0, AES_KEY_LEN);
+        }
     }
     return ret;
 }
@@ -769,7 +873,7 @@ static int32_t LoadAccountSecretFromSE(uint8_t accountIndex, AccountSecret_t *ac
     int32_t ret;
 
     CLEAR_OBJECT(verified);
-    ret = VerifyAccountBlobFromSE(accountIndex, password, &verified);
+    ret = VerifyAccountBlobFromSE(accountIndex, password, &verified, NULL);
     if (ret == SUCCESS_CODE) {
         ret = DecryptAccountBlob(&verified, accountSecret);
     }

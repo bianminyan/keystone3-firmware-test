@@ -10,5 +10,12 @@ int32_t SimulatorLoadAccountSecret(uint8_t accountIndex, AccountSecret_t *accoun
 uint8_t SimulatorGetAccountNum(void);
 int32_t SimulatorVerifyPassword(uint8_t *accountIndex, const char *password);
 int32_t SimulatorVerifyCurrentPassword(uint8_t accountIndex, const char *password);
+#ifdef CYPHERPUNK_VERSION
+int32_t SimulatorVerifyPasswordWithZcashAccountAuthKey(uint8_t *accountIndex, const char *password,
+                                                        uint8_t accountBlobAuthKey[32]);
+int32_t SimulatorVerifyCurrentPasswordWithZcashAccountAuthKey(uint8_t accountIndex,
+                                                               const char *password,
+                                                               uint8_t accountBlobAuthKey[32]);
+#endif
 
 #endif

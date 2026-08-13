@@ -150,7 +150,7 @@ int32_t CreateNewAccount(uint8_t accountIndex, const uint8_t *entropy, uint8_t e
     ret = AccountPublicInfoSwitch(g_currentAccountIndex, password, true);
     CHECK_ERRCODE_RETURN_INT(ret);
 #ifdef CYPHERPUNK_VERSION
-    ret = SetupZcashCache(accountIndex, password);
+    ret = SetupZcashCache(accountIndex, password, NULL);
     CHECK_ERRCODE_RETURN_INT(ret);
 #endif
 #ifdef WEB3_VERSION
@@ -180,7 +180,7 @@ int32_t CreateNewSlip39Account(uint8_t accountIndex, const uint8_t *ems, const u
     ret = AccountPublicInfoSwitch(g_currentAccountIndex, password, true);
     CHECK_ERRCODE_RETURN_INT(ret);
 #ifdef CYPHERPUNK_VERSION
-    ret = SetupZcashCache(accountIndex, password);
+    ret = SetupZcashCache(accountIndex, password, NULL);
     CHECK_ERRCODE_RETURN_INT(ret);
 #endif
 #ifdef WEB3_VERSION
@@ -280,8 +280,14 @@ int32_t VerifyPasswordAndLogin(uint8_t *accountIndex, const char *password)
 {
     int32_t ret;
     uint8_t tempIndex;
-
+#ifdef CYPHERPUNK_VERSION
+    uint8_t zcashCacheKey[AES_KEY_LEN];
+    CLEAR_ARRAY(zcashCacheKey);
+    ret = FindAccountByPasswordAndGetZcashCacheKey(&tempIndex, password, zcashCacheKey);
+#else
     ret = FindAccountByPassword(&tempIndex, password);
+#endif
+
     if (ret == SUCCESS_CODE) {
         g_currentAccountIndex = tempIndex;
         g_lastAccountIndex = tempIndex;
@@ -302,18 +308,27 @@ int32_t VerifyPasswordAndLogin(uint8_t *accountIndex, const char *password)
             printf("passphrase not exist, info switch\r\n");
             ret = AccountPublicInfoSwitch(g_currentAccountIndex, password, false);
         }
-        CHECK_ERRCODE_RETURN_INT(ret);
+        if (ret != SUCCESS_CODE) {
 #ifdef CYPHERPUNK_VERSION
-        ret = SetupZcashCache(*accountIndex, password);
+            CLEAR_ARRAY(zcashCacheKey);
+#endif
+            return ret;
+        }
+#ifdef CYPHERPUNK_VERSION
+        ret = SetupZcashCache(tempIndex, password, zcashCacheKey);
+        CLEAR_ARRAY(zcashCacheKey);
         CHECK_ERRCODE_RETURN_INT(ret);
 #endif
 #ifdef WEB3_VERSION
-        ret = SetupZcashSFP(*accountIndex, password);
+        ret = SetupZcashSFP(tempIndex, password);
         CHECK_ERRCODE_RETURN_INT(ret);
 #endif
     } else {
         g_publicInfo.loginPasswordErrorCount++;
     }
+#ifdef CYPHERPUNK_VERSION
+    CLEAR_ARRAY(zcashCacheKey);
+#endif
     SE_HmacEncryptWrite((uint8_t *)&g_publicInfo, PAGE_PUBLIC_INFO);
 
     return ret;
@@ -731,14 +746,16 @@ static void SetZcashSFP(uint8_t accountIndex, const uint8_t* seedFingerprint)
 {
     ASSERT(accountIndex <= 2);
     g_zcashUFVKcache.accountIndex = accountIndex;
-    memcpy_s(g_zcashUFVKcache.seedFingerprint, 32, seedFingerprint, 32);
+    memcpy_s(g_zcashUFVKcache.seedFingerprint, sizeof(g_zcashUFVKcache.seedFingerprint),
+             seedFingerprint, ZCASH_SFP_LEN);
     printf("SetZcashSFP\r\n");
 }
 
 static void ClearZcashUFVK()
 {
     memset_s(g_zcashUFVKcache.ufvkCache, sizeof(g_zcashUFVKcache.ufvkCache), '\0', sizeof(g_zcashUFVKcache.ufvkCache));
-    memset_s(g_zcashUFVKcache.seedFingerprint, 32, 0, 32);
+    memset_s(g_zcashUFVKcache.seedFingerprint, sizeof(g_zcashUFVKcache.seedFingerprint),
+             0, sizeof(g_zcashUFVKcache.seedFingerprint));
 }
 
 int32_t GetZcashUFVK(uint8_t accountIndex, char* outUFVK)
@@ -755,7 +772,7 @@ int32_t GetZcashSFP(uint8_t accountIndex, uint8_t* outSFP)
 {
     ASSERT(accountIndex <= 2);
     if (g_zcashUFVKcache.accountIndex == accountIndex) {
-        memcpy_s(outSFP, 32, g_zcashUFVKcache.seedFingerprint, 32);
+        memcpy_s(outSFP, ZCASH_SFP_LEN, g_zcashUFVKcache.seedFingerprint, ZCASH_SFP_LEN);
         return SUCCESS_CODE;
     }
     return ERR_ZCASH_INVALID_ACCOUNT_INDEX;
@@ -769,6 +786,13 @@ int32_t SetupZcashSFP(uint8_t accountIndex, const char* password)
         return SUCCESS_CODE;
     }
 
+    uint8_t sfp[ZCASH_SFP_LEN] = {0};
+    if (GetCurrentAccountZcashSFP(sfp)) {
+        SetZcashSFP(accountIndex, sfp);
+        CLEAR_ARRAY(sfp);
+        return SUCCESS_CODE;
+    }
+
     uint8_t seed[SEED_LEN];
     int len = GetMnemonicType() == MNEMONIC_TYPE_BIP39 ? sizeof(seed) : GetCurrentAccountEntropyLen();
     int32_t ret = GetAccountSeed(accountIndex, seed, password);
@@ -779,23 +803,28 @@ int32_t SetupZcashSFP(uint8_t accountIndex, const char* password)
 
     SimpleResponse_u8 *responseSFP = calculate_zcash_seed_fingerprint(seed, len);
     CLEAR_ARRAY(seed);
+    if (responseSFP == NULL) {
+        CLEAR_ARRAY(sfp);
+        return ERR_GENERAL_FAIL;
+    }
     if (responseSFP->error_code != 0) {
         ret = responseSFP->error_code;
         printf("error: %s\r\n", responseSFP->error_message);
         free_simple_response_u8(responseSFP);
+        CLEAR_ARRAY(sfp);
         return ret;
     }
 
-    uint8_t sfp[32];
-    memcpy_s(sfp, 32, responseSFP->data, 32);
+    memcpy_s(sfp, sizeof(sfp), responseSFP->data, ZCASH_SFP_LEN);
     free_simple_response_u8(responseSFP);
 
     SetZcashSFP(accountIndex, sfp);
+    CLEAR_ARRAY(sfp);
     return ret;
 }
 
 #ifdef CYPHERPUNK_VERSION
-int32_t SetupZcashCache(uint8_t accountIndex, const char* password)
+int32_t SetupZcashCache(uint8_t accountIndex, const char* password, const uint8_t *readyCacheKey)
 {
     ASSERT(accountIndex <= 2);
 
@@ -804,6 +833,57 @@ int32_t SetupZcashCache(uint8_t accountIndex, const char* password)
     }
 
     ClearZcashUFVK();
+
+    char *zcashEncrypted = GetCurrentAccountPublicKey(ZCASH_UFVK_ENCRYPTED_0);
+    if (zcashEncrypted == NULL) {
+        return ERR_GENERAL_FAIL;
+    }
+
+    if (zcashEncrypted[0] == 'z' && zcashEncrypted[1] == '3') {
+        uint8_t cacheKey[AES_KEY_LEN];
+        int32_t ret;
+        if (readyCacheKey != NULL) {
+            memcpy_s(cacheKey, sizeof(cacheKey), readyCacheKey, sizeof(cacheKey));
+            ret = SUCCESS_CODE;
+        } else {
+            ret = VerifyAccountPasswordAndGetZcashCacheKey(accountIndex, password, cacheKey);
+        }
+        if (ret != SUCCESS_CODE) {
+            CLEAR_ARRAY(cacheKey);
+            return ret;
+        }
+
+        SimpleResponse_c_char *response = rust_decrypt_ufvk_blob_v3(zcashEncrypted, cacheKey, sizeof(cacheKey));
+        CLEAR_ARRAY(cacheKey);
+        if (response != NULL && response->error_code == 0) {
+            char ufvk[ZCASH_UFVK_BUFFER_SIZE] = {'\0'};
+            strcpy_s(ufvk, sizeof(ufvk), response->data);
+            free_simple_response_c_char(response);
+            SetZcashUFVK(accountIndex, ufvk);
+            CLEAR_ARRAY(ufvk);
+
+            uint8_t sfp[ZCASH_SFP_LEN];
+            if (GetCurrentAccountZcashSFP(sfp)) {
+                SetZcashSFP(accountIndex, sfp);
+                CLEAR_ARRAY(sfp);
+                return SUCCESS_CODE;
+            }
+            CLEAR_ARRAY(sfp);
+            // z3 without the public SFP is not a ready record yet. Keep the legacy fallback so
+            // older or partially updated wallets remain usable.
+            return SetupZcashSFP(accountIndex, password);
+        }
+        if (response != NULL) {
+            ret = response->error_code;
+            printf("zcash z3 ufvk decrypt failed: %s\r\n",
+                   response->error_message == NULL ? "unknown" : response->error_message);
+            free_simple_response_c_char(response);
+        } else {
+            ret = ERR_GENERAL_FAIL;
+            printf("zcash z3 ufvk decrypt failed.\r\n");
+        }
+        return ret;
+    }
 
     uint8_t seed[SEED_LEN];
     int len = GetMnemonicType() == MNEMONIC_TYPE_BIP39 ? sizeof(seed) : GetCurrentAccountEntropyLen();
@@ -827,15 +907,7 @@ int32_t SetupZcashCache(uint8_t accountIndex, const char* password)
     memcpy_s(key_bytes, sizeof(key_bytes), key_response->data, sizeof(key_bytes));
     free_simple_response_u8(key_response);
 
-    char *zcashEncrypted = GetCurrentAccountPublicKey(ZCASH_UFVK_ENCRYPTED_0);
-    if (zcashEncrypted == NULL) {
-        CLEAR_ARRAY(seed);
-        CLEAR_ARRAY(key_bytes);
-        return ERR_GENERAL_FAIL;
-    }
-
-    // Storage format: hex(IV_16) || hex(ciphertext). Legacy blobs (no 32-char IV prefix) fail the
-    // decrypt in Rust and are regenerated from the seed instead of failing the login.
+    // z2 and legacy blobs still use the seed-derived key through this compatibility path.
     SimpleResponse_c_char *response = rust_decrypt_ufvk_blob(zcashEncrypted, key_bytes, sizeof(key_bytes));
     CLEAR_ARRAY(key_bytes);
     char ufvk[ZCASH_UFVK_BUFFER_SIZE] = {'\0'};
@@ -849,7 +921,7 @@ int32_t SetupZcashCache(uint8_t accountIndex, const char* password)
         } else {
             printf("zcash ufvk decrypt failed, regenerating from seed.\r\n");
         }
-        ret = RegenerateZcashUFVK(accountIndex, seed, len, password, ufvk, sizeof(ufvk));
+        ret = RegenerateZcashUFVKV2(accountIndex, seed, len, password, ufvk, sizeof(ufvk));
         if (ret != SUCCESS_CODE) {
             CLEAR_ARRAY(ufvk);
             CLEAR_ARRAY(seed);
@@ -871,8 +943,8 @@ int32_t SetupZcashCache(uint8_t accountIndex, const char* password)
         return ret;
     }
 
-    uint8_t sfp[32];
-    memcpy_s(sfp, 32, responseSFP->data, 32);
+    uint8_t sfp[ZCASH_SFP_LEN];
+    memcpy_s(sfp, sizeof(sfp), responseSFP->data, ZCASH_SFP_LEN);
     free_simple_response_u8(responseSFP);
 
     SetZcashSFP(accountIndex, sfp);

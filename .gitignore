@@ -16,3 +16,4 @@ pyenv
 /tools/boot.sig
 /target
 /.agents/
+/.agenthome
