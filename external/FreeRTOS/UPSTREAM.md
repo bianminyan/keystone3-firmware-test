@@ -8,7 +8,8 @@
 ## Imported components
 
 - Kernel source and public headers
-- GCC `ARM_CM4F` port
+- GCC `ARM_CM4F` and `ARM_CM4_MPU` ports
+- Common MPU wrapper sources
 - `heap_4.c`
 
 The CMSIS-RTOS v2 wrapper, `FreeRTOSConfig.h`, and `rtos_expand.*` are maintained
@@ -22,3 +23,5 @@ by this project and are not copied from the FreeRTOS Kernel repository.
   CmBacktrace and the task status screen.
 - Application allocation tracking remains in `src/ram/user_memory.*`; the
   kernel itself uses the upstream `pvPortMalloc` and `vPortFree` interfaces.
+- The MPU integration uses an application-allocated heap so the large heap is
+  not placed in the privileged-data MPU region.

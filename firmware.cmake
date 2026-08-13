@@ -96,9 +96,13 @@ file(GLOB_RECURSE FREERTOS
     "external/FreeRTOS/Source/stream_buffer.c"
     "external/FreeRTOS/Source/tasks.c"
     "external/FreeRTOS/Source/timers.c"
-    "external/FreeRTOS/Source/portable/GCC/ARM_CM4F/port.c"
+    "external/FreeRTOS/Source/portable/GCC/ARM_CM4_MPU/port.c"
+    "external/FreeRTOS/Source/portable/GCC/ARM_CM4_MPU/mpu_wrappers_v2_asm.c"
+    "external/FreeRTOS/Source/portable/Common/mpu_wrappers.c"
+    "external/FreeRTOS/Source/portable/Common/mpu_wrappers_v2.c"
     "external/FreeRTOS/CMSIS_RTOS_V2/cmsis_os2.c"
     "external/FreeRTOS/Source/portable/MemMang/heap_4.c"
+    "external/FreeRTOS/freertos_heap.c"
     "external/FreeRTOS/rtos_expand.c"
 )
 

@@ -67,6 +67,14 @@ extern uint32_t SystemCoreClock;
 #define configUSE_TRACE_FACILITY                    1
 #define configUSE_16_BIT_TICKS                      0
 #define configRECORD_STACK_HIGH_ADDRESS             1
+#define configTOTAL_MPU_REGIONS                     8
+#define configUSE_MPU_WRAPPERS_V1                   0
+#define configSYSTEM_CALL_STACK_SIZE                128
+#define configPROTECTED_KERNEL_OBJECT_POOL_SIZE     128
+#define configENABLE_ACCESS_CONTROL_LIST            0
+#define configENFORCE_SYSTEM_CALLS_FROM_KERNEL_ONLY 1
+#define configALLOW_UNPRIVILEGED_CRITICAL_SECTIONS  0
+#define configAPPLICATION_ALLOCATED_HEAP            1
 #define configUSE_MUTEXES                           1
 #define configQUEUE_REGISTRY_SIZE                   8
 #define configUSE_RECURSIVE_MUTEXES                 1

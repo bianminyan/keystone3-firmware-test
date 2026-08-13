@@ -400,6 +400,9 @@ osThreadId_t osThreadNew(osThreadFunc_t func, void *argument, const osThreadAttr
             mem = 0;
         }
 
+        /* Existing firmware tasks remain privileged during the MPU baseline phase. */
+        prio |= portPRIVILEGE_BIT;
+
         if (mem == 1) {
             hTask = xTaskCreateStatic((TaskFunction_t) func, name, stack, argument, prio, (StackType_t  *) attr->stack_mem,
                                       (StaticTask_t *) attr->cb_mem);
@@ -644,7 +647,7 @@ uint32_t osThreadEnumerate(osThreadId_t *thread_array, uint32_t array_items)
             count = uxTaskGetSystemState(task, count, NULL);
 
             for (i = 0U; (i < count) && (i < array_items); i++) {
-                thread_array[i] = (osThreadId_t) task[i].xHandle;
+                thread_array[i] = (osThreadId_t) xTaskGetHandle(task[i].pcTaskName);
             }
             count = i;
         }
@@ -1718,21 +1721,16 @@ uint32_t osMessageQueueGetCount(osMessageQueueId_t mq_id)
 
 uint32_t osMessageQueueGetSpace(osMessageQueueId_t mq_id)
 {
-    StaticQueue_t *mq = (StaticQueue_t *) mq_id;
+    QueueHandle_t hQueue = (QueueHandle_t) mq_id;
     uint32_t space;
-    uint32_t isrm;
 
-    if (mq == NULL) {
+    if (hQueue == NULL) {
         space = 0U;
     } else if (IS_IRQ()) {
-        isrm = taskENTER_CRITICAL_FROM_ISR();
-
-        /* space = pxQueue->uxLength - pxQueue->uxMessagesWaiting; */
-        space = mq->uxDummy4[1] - mq->uxDummy4[0];
-
-        taskEXIT_CRITICAL_FROM_ISR(isrm);
+        /* This project only calls this query from task context. */
+        space = 0U;
     } else {
-        space = (uint32_t) uxQueueSpacesAvailable((QueueHandle_t) mq);
+        space = (uint32_t) uxQueueSpacesAvailable(hQueue);
     }
 
     return (space);

@@ -123,7 +123,7 @@ set(EXTERNAL_INCLUDE_PATH
     external/cryptoauthlib/lib
     external/FreeRTOS
     external/FreeRTOS/Source/include
-    external/FreeRTOS/Source/portable/GCC/ARM_CM4F
+    external/FreeRTOS/Source/portable/GCC/ARM_CM4_MPU
     external/FreeRTOS/CMSIS_RTOS_V2
     external/lvgl
     external/lvgl/src
