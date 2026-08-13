@@ -303,7 +303,7 @@ int32_t VerifyPasswordAndLogin(uint8_t *accountIndex, const char *password)
         if (PassphraseExist(g_currentAccountIndex)) {
             //passphrase exist.
             printf("passphrase exist\r\n");
-            TempAccountPublicInfo(g_currentAccountIndex, password, false);
+            ret = TempAccountPublicInfo(g_currentAccountIndex, password, false);
         } else {
             printf("passphrase not exist, info switch\r\n");
             ret = AccountPublicInfoSwitch(g_currentAccountIndex, password, false);
@@ -787,38 +787,26 @@ int32_t SetupZcashSFP(uint8_t accountIndex, const char* password)
     }
 
     uint8_t sfp[ZCASH_SFP_LEN] = {0};
+    uint8_t seed[SEED_LEN] = {0};
+    int32_t ret = SUCCESS_CODE;
     if (GetCurrentAccountZcashSFP(sfp)) {
         SetZcashSFP(accountIndex, sfp);
-        CLEAR_ARRAY(sfp);
-        return SUCCESS_CODE;
+    } else {
+        int seedLen = GetCurrentAccountSeedLen();
+        do {
+            ret = GetAccountSeed(accountIndex, seed, password);
+            CHECK_ERRCODE_BREAK("load seed for zcash sfp migration", ret);
+            ret = RegenerateAndStoreCurrentZcashSFP(accountIndex, seed, seedLen);
+            CHECK_ERRCODE_BREAK("persist regenerated zcash sfp", ret);
+            if (!GetCurrentAccountZcashSFP(sfp)) {
+                ret = ERR_GENERAL_FAIL;
+                break;
+            }
+            SetZcashSFP(accountIndex, sfp);
+        } while (0);
     }
 
-    uint8_t seed[SEED_LEN];
-    int len = GetMnemonicType() == MNEMONIC_TYPE_BIP39 ? sizeof(seed) : GetCurrentAccountEntropyLen();
-    int32_t ret = GetAccountSeed(accountIndex, seed, password);
-    if (ret != SUCCESS_CODE) {
-        CLEAR_ARRAY(seed);
-        return ret;
-    }
-
-    SimpleResponse_u8 *responseSFP = calculate_zcash_seed_fingerprint(seed, len);
     CLEAR_ARRAY(seed);
-    if (responseSFP == NULL) {
-        CLEAR_ARRAY(sfp);
-        return ERR_GENERAL_FAIL;
-    }
-    if (responseSFP->error_code != 0) {
-        ret = responseSFP->error_code;
-        printf("error: %s\r\n", responseSFP->error_message);
-        free_simple_response_u8(responseSFP);
-        CLEAR_ARRAY(sfp);
-        return ret;
-    }
-
-    memcpy_s(sfp, sizeof(sfp), responseSFP->data, ZCASH_SFP_LEN);
-    free_simple_response_u8(responseSFP);
-
-    SetZcashSFP(accountIndex, sfp);
     CLEAR_ARRAY(sfp);
     return ret;
 }
@@ -839,115 +827,88 @@ int32_t SetupZcashCache(uint8_t accountIndex, const char* password, const uint8_
         return ERR_GENERAL_FAIL;
     }
 
-    if (zcashEncrypted[0] == 'z' && zcashEncrypted[1] == '3') {
-        uint8_t cacheKey[AES_KEY_LEN];
-        int32_t ret;
+    int32_t ret = ERR_GENERAL_FAIL;
+    uint8_t cacheKey[AES_KEY_LEN] = {0};
+    uint8_t seed[SEED_LEN] = {0};
+    uint8_t sfp[ZCASH_SFP_LEN] = {0};
+    char ufvk[ZCASH_UFVK_BUFFER_SIZE] = {'\0'};
+    SimpleResponse_c_char *response = NULL;
+
+    do {
         if (readyCacheKey != NULL) {
             memcpy_s(cacheKey, sizeof(cacheKey), readyCacheKey, sizeof(cacheKey));
             ret = SUCCESS_CODE;
         } else {
             ret = VerifyAccountPasswordAndGetZcashCacheKey(accountIndex, password, cacheKey);
         }
-        if (ret != SUCCESS_CODE) {
-            CLEAR_ARRAY(cacheKey);
-            return ret;
-        }
+        CHECK_ERRCODE_BREAK("get zcash cache key", ret);
 
-        SimpleResponse_c_char *response = rust_decrypt_ufvk_blob_v3(zcashEncrypted, cacheKey, sizeof(cacheKey));
-        CLEAR_ARRAY(cacheKey);
-        if (response != NULL && response->error_code == 0) {
-            char ufvk[ZCASH_UFVK_BUFFER_SIZE] = {'\0'};
-            strcpy_s(ufvk, sizeof(ufvk), response->data);
-            free_simple_response_c_char(response);
-            SetZcashUFVK(accountIndex, ufvk);
-            CLEAR_ARRAY(ufvk);
-
-            uint8_t sfp[ZCASH_SFP_LEN];
-            if (GetCurrentAccountZcashSFP(sfp)) {
-                SetZcashSFP(accountIndex, sfp);
-                CLEAR_ARRAY(sfp);
-                return SUCCESS_CODE;
+        if (strncmp(zcashEncrypted, "z3", 2) == 0) {
+            response = rust_decrypt_ufvk_blob_v3(zcashEncrypted, cacheKey, sizeof(cacheKey));
+            if (response == NULL) {
+                printf("zcash z3 ufvk decrypt failed.\r\n");
+                ret = ERR_GENERAL_FAIL;
+                break;
             }
-            CLEAR_ARRAY(sfp);
-            // z3 without the public SFP is not a ready record yet. Keep the legacy fallback so
-            // older or partially updated wallets remain usable.
-            return SetupZcashSFP(accountIndex, password);
-        }
-        if (response != NULL) {
-            ret = response->error_code;
-            printf("zcash z3 ufvk decrypt failed: %s\r\n",
-                   response->error_message == NULL ? "unknown" : response->error_message);
+            if (response->error_code != 0) {
+                ret = response->error_code;
+                printf("zcash z3 ufvk decrypt failed: %s\r\n",
+                       response->error_message == NULL ? "unknown" : response->error_message);
+                break;
+            }
+            strcpy_s(ufvk, sizeof(ufvk), response->data);
+            memset_s(response->data, strlen(response->data), 0, strlen(response->data));
             free_simple_response_c_char(response);
+            response = NULL;
+
+            if (!GetCurrentAccountZcashSFP(sfp)) {
+                int seedLen = GetCurrentAccountSeedLen();
+                ret = GetAccountSeed(accountIndex, seed, password);
+                CHECK_ERRCODE_BREAK("load seed for zcash sfp migration", ret);
+                ret = RegenerateAndStoreCurrentZcashSFP(accountIndex, seed, seedLen);
+                CLEAR_ARRAY(seed);
+                CHECK_ERRCODE_BREAK("persist regenerated zcash sfp", ret);
+                if (!GetCurrentAccountZcashSFP(sfp)) {
+                    ret = ERR_GENERAL_FAIL;
+                    break;
+                }
+            }
         } else {
-            ret = ERR_GENERAL_FAIL;
-            printf("zcash z3 ufvk decrypt failed.\r\n");
-        }
-        return ret;
-    }
-
-    uint8_t seed[SEED_LEN];
-    int len = GetMnemonicType() == MNEMONIC_TYPE_BIP39 ? sizeof(seed) : GetCurrentAccountEntropyLen();
-    int32_t ret = GetAccountSeed(accountIndex, seed, password);
-    if (ret != SUCCESS_CODE) {
-        CLEAR_ARRAY(seed);
-        return ret;
-    }
-
-    SimpleResponse_u8 *key_response = rust_derive_key_from_seed(seed, len);
-    if (key_response == NULL || key_response->error_code != 0) {
-        ret = key_response ? key_response->error_code : ERR_GENERAL_FAIL;
-        CLEAR_ARRAY(seed);
-        if (key_response != NULL) {
-            printf("error: %s\r\n", key_response->error_message);
-            free_simple_response_u8(key_response);
-        }
-        return ret;
-    }
-    uint8_t key_bytes[32];
-    memcpy_s(key_bytes, sizeof(key_bytes), key_response->data, sizeof(key_bytes));
-    free_simple_response_u8(key_response);
-
-    // z2 and legacy blobs still use the seed-derived key through this compatibility path.
-    SimpleResponse_c_char *response = rust_decrypt_ufvk_blob(zcashEncrypted, key_bytes, sizeof(key_bytes));
-    CLEAR_ARRAY(key_bytes);
-    char ufvk[ZCASH_UFVK_BUFFER_SIZE] = {'\0'};
-    if (response == NULL || response->error_code != 0) {
-        // Stale or legacy ciphertext (old password keying / no IV prefix). The entered password
-        // already passed SE verification, so regenerate the UFVK from the seed instead of failing
-        // the login and locking the user out.
-        if (response != NULL) {
-            printf("zcash ufvk decrypt failed, regenerating from seed. error: %s\r\n", response->error_message);
-            free_simple_response_c_char(response);
-        } else {
-            printf("zcash ufvk decrypt failed, regenerating from seed.\r\n");
-        }
-        ret = RegenerateZcashUFVKV2(accountIndex, seed, len, password, ufvk, sizeof(ufvk));
-        if (ret != SUCCESS_CODE) {
-            CLEAR_ARRAY(ufvk);
+            // z2 and pure-hex legacy blobs are migration markers only. Seed is authoritative;
+            // rebuild once and persist z3 + SFP together instead of decrypting or rewriting z2.
+            if (GetIsTempAccount()) {
+                ret = ERR_GENERAL_FAIL;
+                break;
+            }
+            int seedLen = GetCurrentAccountSeedLen();
+            ret = GetAccountSeed(accountIndex, seed, password);
+            CHECK_ERRCODE_BREAK("load seed for zcash z3 migration", ret);
+            ret = MigrateLegacyZcashPublicInfoToV3(
+                accountIndex, seed, seedLen, cacheKey, ufvk, sizeof(ufvk));
             CLEAR_ARRAY(seed);
-            return ret;
+            CHECK_ERRCODE_BREAK("migrate zcash public info to z3", ret);
+            if (!GetCurrentAccountZcashSFP(sfp)) {
+                ret = ERR_GENERAL_FAIL;
+                break;
+            }
         }
-    } else {
-        strcpy_s(ufvk, sizeof(ufvk), response->data);
+
+        SetZcashUFVK(accountIndex, ufvk);
+        SetZcashSFP(accountIndex, sfp);
+        ret = SUCCESS_CODE;
+    } while (0);
+
+    if (response != NULL) {
         free_simple_response_c_char(response);
     }
-    SetZcashUFVK(accountIndex, ufvk);
-    CLEAR_ARRAY(ufvk);
-
-    SimpleResponse_u8 *responseSFP = calculate_zcash_seed_fingerprint(seed, len);
+    CLEAR_ARRAY(cacheKey);
     CLEAR_ARRAY(seed);
-    if (responseSFP->error_code != 0) {
-        ret = responseSFP->error_code;
-        printf("error: %s\r\n", responseSFP->error_message);
-        free_simple_response_u8(responseSFP);
-        return ret;
+    CLEAR_ARRAY(sfp);
+    CLEAR_ARRAY(ufvk);
+    if (ret != SUCCESS_CODE) {
+        ClearZcashUFVK();
     }
 
-    uint8_t sfp[ZCASH_SFP_LEN];
-    memcpy_s(sfp, sizeof(sfp), responseSFP->data, ZCASH_SFP_LEN);
-    free_simple_response_u8(responseSFP);
-
-    SetZcashSFP(accountIndex, sfp);
     return ret;
 }
 #endif

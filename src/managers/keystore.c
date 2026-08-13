@@ -524,18 +524,25 @@ int32_t CheckPasswordExisted(const char *password, uint8_t excludeIndex)
 /// @return err code.
 int32_t SetPassphrase(uint8_t accountIndex, const char *passphrase, const char *password)
 {
-    uint8_t seed[SEED_LEN];
-    int32_t ret;
+    uint8_t seed[SEED_LEN] = {0};
+    uint8_t newMfp[4] = {0};
+    PassphraseInfo_t previousPassphraseInfo = {0};
+    SimpleResponse_u8 *simpleResponse = NULL;
+    bool passphraseStateChanged = false;
+    int32_t ret = ERR_GENERAL_FAIL;
     int len = GetMnemonicType() == MNEMONIC_TYPE_BIP39 ? sizeof(seed) : GetCurrentAccountEntropyLen();
 
     ASSERT(strnlen_s(password, PASSWORD_MAX_LEN) >= 6);
     ASSERT(accountIndex <= 2);
+    memcpy_s(&previousPassphraseInfo, sizeof(previousPassphraseInfo),
+             &g_passphraseInfo[accountIndex], sizeof(g_passphraseInfo[accountIndex]));
     do {
         ret = GetPassphraseSeed(accountIndex, seed, passphrase, password);
         CHECK_ERRCODE_BREAK("GetPassphraseSeed", ret);
-        SimpleResponse_u8 *simpleResponse = get_master_fingerprint(seed, len);
+        simpleResponse = get_master_fingerprint(seed, len);
         if (simpleResponse == NULL) {
             printf("get_master_fingerprint return NULL\r\n");
+            ret = ERR_GENERAL_FAIL;
             break;
         }
         if (simpleResponse->error_code != 0) {
@@ -544,27 +551,61 @@ int32_t SetPassphrase(uint8_t accountIndex, const char *passphrase, const char *
                 printf("error code = %d\r\nerror msg is: %s\r\n", simpleResponse->error_code, simpleResponse->error_message);
             }
         }
-        CHECK_ERRCODE_BREAK("get_master_fingerprint", simpleResponse->error_code);
-        uint8_t *masterFingerprint = simpleResponse->data;
-        memcpy_s(g_passphraseInfo[accountIndex].mfp, sizeof(g_passphraseInfo[accountIndex].mfp), masterFingerprint, 4);
+        ret = simpleResponse->error_code;
+        CHECK_ERRCODE_BREAK("get_master_fingerprint", ret);
+        memcpy_s(newMfp, sizeof(newMfp), simpleResponse->data, sizeof(newMfp));
         free_simple_response_u8(simpleResponse);
+        simpleResponse = NULL;
         if (strnlen_s(passphrase, PASSPHRASE_MAX_LEN) > 0) {
             strcpy_s(g_passphraseInfo[accountIndex].passphrase, PASSPHRASE_MAX_LEN, passphrase);
+            memcpy_s(g_passphraseInfo[accountIndex].mfp,
+                     sizeof(g_passphraseInfo[accountIndex].mfp), newMfp, sizeof(newMfp));
             g_passphraseInfo[accountIndex].passphraseExist = true;
+            passphraseStateChanged = true;
             ret = TempAccountPublicInfo(accountIndex, password, true);
         } else {
             ClearAccountPassphrase(accountIndex);
+            passphraseStateChanged = true;
             ret = AccountPublicInfoSwitch(accountIndex, password, false);
         }
+        CHECK_ERRCODE_BREAK("generate passphrase public info", ret);
 #ifdef WEB3_VERSION
-        SetupZcashSFP(accountIndex, password);
+        ret = SetupZcashSFP(accountIndex, password);
+        CHECK_ERRCODE_BREAK("setup passphrase zcash sfp", ret);
 #endif
 #ifdef CYPHERPUNK_VERSION
-        SetupZcashCache(accountIndex, password, NULL);
+        ret = SetupZcashCache(accountIndex, password, NULL);
+        CHECK_ERRCODE_BREAK("setup passphrase zcash cache", ret);
 #endif
         SetPassphraseMark(passphrase[0] != '\0');
     } while (0);
+    if (simpleResponse != NULL) {
+        free_simple_response_u8(simpleResponse);
+    }
+    if (ret != SUCCESS_CODE && passphraseStateChanged) {
+        memcpy_s(&g_passphraseInfo[accountIndex], sizeof(g_passphraseInfo[accountIndex]),
+                 &previousPassphraseInfo, sizeof(previousPassphraseInfo));
+        // Restore a coherent public-info view for the previous RAM passphrase state.
+        int32_t restoreRet = PassphraseExist(accountIndex)
+            ? TempAccountPublicInfo(accountIndex, password, true)
+            : AccountPublicInfoSwitch(accountIndex, password, false);
+#ifdef WEB3_VERSION
+        if (restoreRet == SUCCESS_CODE) {
+            restoreRet = SetupZcashSFP(accountIndex, password);
+        }
+#endif
+#ifdef CYPHERPUNK_VERSION
+        if (restoreRet == SUCCESS_CODE) {
+            restoreRet = SetupZcashCache(accountIndex, password, NULL);
+        }
+#endif
+        if (restoreRet != SUCCESS_CODE) {
+            printf("restore public info after passphrase failure err,0x%X\r\n", restoreRet);
+        }
+    }
     CLEAR_ARRAY(seed);
+    CLEAR_ARRAY(newMfp);
+    CLEAR_OBJECT(previousPassphraseInfo);
 
     return ret;
 }

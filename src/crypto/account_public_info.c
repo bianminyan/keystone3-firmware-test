@@ -65,6 +65,7 @@ static void CleanupJson(cJSON* json);
 static void FreePublicKeyRam(void);
 static int32_t GetChainTableIndex(ChainType chain);
 static void PrintInfo(void);
+static void ClearSensitiveCString(char *value);
 static void SetIsTempAccount(bool isTemp);
 static int32_t SaveCurrentPublicInfoToFlash(uint8_t accountIndex, uint32_t addr);
 #ifndef BTC_ONLY
@@ -72,13 +73,25 @@ static int32_t CalculateAndStoreZcashSFP(uint8_t *seed, int seedLen);
 #endif
 #ifdef CYPHERPUNK_VERSION
 static bool IsValidZcashUfvkBlob(const char *value);
-static SimpleResponse_c_char *DeriveEncryptedZcashUFVKV2(
-    const uint8_t *seed, int seedLen, const char *password, char *ufvkOut, uint32_t ufvkOutLen);
+static SimpleResponse_c_char *DeriveEncryptedZcashUFVKV3WithCacheKey(
+    const uint8_t *seed, int seedLen, const uint8_t *cacheKey,
+    char *ufvkOut, uint32_t ufvkOutLen);
 static SimpleResponse_c_char *DeriveEncryptedZcashUFVKV3(
     uint8_t accountIndex, const uint8_t *seed, int seedLen, const char *password,
     char *ufvkOut, uint32_t ufvkOutLen);
 static int32_t ReplaceStoredZcashUFVK(uint8_t accountIndex, const SimpleResponse_c_char *encryptResult);
 #endif
+
+static void ClearSensitiveCString(char *value)
+{
+    if (value == NULL) {
+        return;
+    }
+    size_t len = strnlen_s(value, SIMPLERESPONSE_C_CHAR_MAX_LEN);
+    if (len > 0) {
+        memset_s(value, len, 0, len);
+    }
+}
 
 #ifdef BTC_ONLY
 static void LoadCurrentAccountMultiReceiveIndex(void);
@@ -869,29 +882,25 @@ int32_t AccountPublicInfoReadFromFlash(uint8_t accountIndex, uint32_t addr)
     return ret;
 }
 
-#define CHECK_AND_FREE_XPUB(x)              ASSERT(x);          \
-            if (x->error_code != 0) {                           \
-                printf("get_extended_pubkey error\r\n");        \
-                if (x->error_message != NULL) {                 \
-                    printf("error code = %d\r\nerror msg is: %s\r\n", x->error_code, x->error_message); \
-                }                                               \
-                free_simple_response_c_char(x);                 \
-                ret = x->error_code;                            \
-                break;                                          \
-            }
-
 int32_t AccountPublicSavePublicInfo(uint8_t accountIndex, const char *password, uint32_t addr)
 {
     uint8_t entropyLen = 0;
-    uint8_t seed[64], entropy[64];
+    uint8_t seed[64] = {0};
+    uint8_t entropy[64] = {0};
     int32_t ret = SUCCESS_CODE;
     SimpleResponse_c_char *xPubResult = NULL;
+    SimpleResponse_c_char *cip3Response = NULL;
+    SimpleResponse_c_char *ledgerBitbox02Response = NULL;
+    char *mnemonic = NULL;
     MnemonicType mnemonicType = GetMnemonicType();
     bool isSlip39 = mnemonicType == MNEMONIC_TYPE_SLIP39;
     bool isBip39 = mnemonicType == MNEMONIC_TYPE_BIP39;
+    bool generationStarted = false;
     int seedLen = GetCurrentAccountSeedLen();
+
     do {
         GuiApiEmitSignal(SIG_START_GENERATE_XPUB, NULL, 0);
+        generationStarted = true;
         char* icarusMasterKey = NULL;
         char* ledgerBitbox02Key = NULL;
         printf("regenerate pub key!\r\n");
@@ -900,17 +909,25 @@ int32_t AccountPublicSavePublicInfo(uint8_t accountIndex, const char *password, 
         CHECK_ERRCODE_BREAK("get seed", ret);
         ret = GetAccountEntropy(accountIndex, entropy, &entropyLen, password);
         CHECK_ERRCODE_BREAK("get entropy", ret);
-        SimpleResponse_c_char* cip3_response = NULL;
-        SimpleResponse_c_char *ledger_bitbox02_response = NULL;
         if (isBip39) {
-            char *mnemonic = NULL;
-            bip39_mnemonic_from_bytes(NULL, entropy, entropyLen, &mnemonic);
-            cip3_response = get_icarus_master_key(entropy, entropyLen, GetPassphrase(accountIndex));
-            ledger_bitbox02_response = get_ledger_bitbox02_master_key(mnemonic, GetPassphrase(accountIndex));
-            CHECK_AND_FREE_XPUB(cip3_response);
-            CHECK_AND_FREE_XPUB(ledger_bitbox02_response);
-            icarusMasterKey = cip3_response->data;
-            ledgerBitbox02Key = ledger_bitbox02_response->data;
+            ret = bip39_mnemonic_from_bytes(NULL, entropy, entropyLen, &mnemonic);
+            CHECK_ERRCODE_BREAK("derive mnemonic", ret);
+            cip3Response = get_icarus_master_key(entropy, entropyLen, GetPassphrase(accountIndex));
+            if (cip3Response == NULL || cip3Response->error_code != 0) {
+                ret = cip3Response == NULL ? ERR_GENERAL_FAIL : cip3Response->error_code;
+                break;
+            }
+            ledgerBitbox02Response = get_ledger_bitbox02_master_key(
+                mnemonic, GetPassphrase(accountIndex));
+            if (ledgerBitbox02Response == NULL || ledgerBitbox02Response->error_code != 0) {
+                ret = ledgerBitbox02Response == NULL ? ERR_GENERAL_FAIL : ledgerBitbox02Response->error_code;
+                break;
+            }
+            icarusMasterKey = cip3Response->data;
+            ledgerBitbox02Key = ledgerBitbox02Response->data;
+            ClearSensitiveCString(mnemonic);
+            SRAM_FREE(mnemonic);
+            mnemonic = NULL;
         }
 
         for (int i = 0; i < NUMBER_OF_ARRAYS(g_chainTable); i++) {
@@ -948,14 +965,27 @@ int32_t AccountPublicSavePublicInfo(uint8_t accountIndex, const char *password, 
             if (g_chainTable[i].cryptoKey == RSA_KEY && xPubResult == NULL) {
                 continue;
             }
-            CHECK_AND_FREE_XPUB(xPubResult)
+            if (xPubResult == NULL || xPubResult->error_code != 0) {
+                ret = xPubResult == NULL ? ERR_GENERAL_FAIL : xPubResult->error_code;
+                if (xPubResult != NULL && xPubResult->error_message != NULL) {
+                    printf("get_extended_pubkey error: %s\r\n", xPubResult->error_message);
+                }
+                break;
+            }
             // printf("index=%d,path=%s,pub=%s\r\n", accountIndex, g_chainTable[i].path, xPubResult->data);
             ASSERT(xPubResult->data);
-            g_accountPublicInfo[i].value = SRAM_MALLOC(strnlen_s(xPubResult->data, SIMPLERESPONSE_C_CHAR_MAX_LEN) + 1);
-            strcpy_s(g_accountPublicInfo[i].value, strnlen_s(xPubResult->data, SIMPLERESPONSE_C_CHAR_MAX_LEN) + 1, xPubResult->data);
+            uint32_t valueLen = strnlen_s(xPubResult->data, SIMPLERESPONSE_C_CHAR_MAX_LEN) + 1;
+            g_accountPublicInfo[i].value = SRAM_MALLOC(valueLen);
+            if (g_accountPublicInfo[i].value == NULL) {
+                ret = ERR_GENERAL_FAIL;
+                break;
+            }
+            strcpy_s(g_accountPublicInfo[i].value, valueLen, xPubResult->data);
             // printf("xPubResult=%s\r\n", xPubResult->data);
             free_simple_response_c_char(xPubResult);
+            xPubResult = NULL;
         }
+        CHECK_ERRCODE_BREAK("generate account public info", ret);
 #ifndef BTC_ONLY
         if (ret == SUCCESS_CODE && IsZcashSupportedForCurrentMnemonic()) {
             ret = CalculateAndStoreZcashSFP(seed, seedLen);
@@ -964,14 +994,28 @@ int32_t AccountPublicSavePublicInfo(uint8_t accountIndex, const char *password, 
 #endif
         ret = SaveCurrentPublicInfoToFlash(accountIndex, addr);
         CHECK_ERRCODE_BREAK("save account public info", ret);
-        if (!isSlip39) {
-            free_simple_response_c_char(cip3_response);
-            free_simple_response_c_char(ledger_bitbox02_response);
-        }
-        GuiApiEmitSignal(SIG_END_GENERATE_XPUB, NULL, 0);
     } while (0);
 
+    if (xPubResult != NULL) {
+        free_simple_response_c_char(xPubResult);
+    }
+    if (cip3Response != NULL) {
+        ClearSensitiveCString(cip3Response->data);
+        free_simple_response_c_char(cip3Response);
+    }
+    if (ledgerBitbox02Response != NULL) {
+        ClearSensitiveCString(ledgerBitbox02Response->data);
+        free_simple_response_c_char(ledgerBitbox02Response);
+    }
+    if (mnemonic != NULL) {
+        ClearSensitiveCString(mnemonic);
+        SRAM_FREE(mnemonic);
+    }
     CLEAR_ARRAY(seed);
+    CLEAR_ARRAY(entropy);
+    if (generationStarted) {
+        GuiApiEmitSignal(SIG_END_GENERATE_XPUB, NULL, 0);
+    }
     return ret;
 }
 
@@ -1108,47 +1152,38 @@ static bool IsValidZcashUfvkBlob(const char *value)
     if (value[0] == 'z' && (value[1] == '2' || value[1] == '3')) {
         return IsHexStringWithLen(value + 2, 0);
     }
-    // Legacy pure-hex blob (accepted; SetupZcashCache regenerates it on decrypt failure).
+    // Legacy pure-hex blob (accepted as a one-time migration marker).
     return IsHexStringWithLen(value, 0);
 }
 
-/// @brief Derive the Zcash UFVK from seed and AES-256-CBC encrypt it with a seed-derived key
-///        and a fresh random IV (prepended to the ciphertext). Single source of the UFVK scheme.
+/// @brief Derive the Zcash UFVK from seed and encrypt it as z3 with a caller-provided cache key.
 /// @param[in] seed Wallet seed.
 /// @param[in] seedLen Seed length.
-/// @param[in] password Unused by the encryption (key is seed-derived); kept for interface stability.
+/// @param[in] cacheKey Account-scoped key obtained only after successful PIN verification.
 /// @param[out] ufvkOut Optional, receives the plaintext UFVK. Can be NULL if not needed.
 /// @param[in] ufvkOutLen Size of ufvkOut.
-/// @return Encrypted UFVK hex response (hex(IV) || hex(ciphertext)), or a response carrying
+/// @return Encrypted z3 UFVK response, or a response carrying
 ///         the derivation/encryption error. Caller frees.
-static SimpleResponse_c_char *DeriveEncryptedZcashUFVKV2(
-    const uint8_t *seed, int seedLen, const char *password, char *ufvkOut,
+static SimpleResponse_c_char *DeriveEncryptedZcashUFVKV3WithCacheKey(
+    const uint8_t *seed, int seedLen, const uint8_t *cacheKey, char *ufvkOut,
     uint32_t ufvkOutLen)
 {
-    (void)password;
     SimpleResponse_c_char *ufvkResponse = derive_zcash_ufvk(
         (uint8_t *)seed, seedLen, g_chainTable[ZCASH_UFVK_ENCRYPTED_0].path);
     if (ufvkResponse == NULL || ufvkResponse->error_code != 0) {
         return ufvkResponse;
     }
-    SimpleResponse_u8 *keyResponse = rust_derive_key_from_seed((uint8_t *)seed, seedLen);
-    if (keyResponse == NULL || keyResponse->error_code != 0) {
-        if (keyResponse != NULL) {
-            free_simple_response_u8(keyResponse);
-        }
-        free_simple_response_c_char(ufvkResponse);
-        return NULL;
-    }
-    uint8_t keyBytes[32];
-    memcpy_s(keyBytes, sizeof(keyBytes), keyResponse->data, sizeof(keyBytes));
-    free_simple_response_u8(keyResponse);
+
     uint8_t ivBytes[16];
     TrngGet(ivBytes, sizeof(ivBytes));
-    SimpleResponse_c_char *encryptResult = rust_encrypt_ufvk_blob(ufvkResponse->data, keyBytes, sizeof(keyBytes), ivBytes, sizeof(ivBytes));
-    CLEAR_ARRAY(keyBytes);
+    SimpleResponse_c_char *encryptResult = rust_encrypt_ufvk_blob_v3(
+        ufvkResponse->data, (uint8_t *)cacheKey, AES_KEY_LEN, ivBytes, sizeof(ivBytes));
     CLEAR_ARRAY(ivBytes);
     if (ufvkOut != NULL && encryptResult != NULL && encryptResult->error_code == 0) {
         strcpy_s(ufvkOut, ufvkOutLen, ufvkResponse->data);
+    }
+    if (ufvkResponse->data != NULL) {
+        ClearSensitiveCString(ufvkResponse->data);
     }
     free_simple_response_c_char(ufvkResponse);
     return encryptResult;
@@ -1160,29 +1195,15 @@ static SimpleResponse_c_char *DeriveEncryptedZcashUFVKV3(
     uint8_t accountIndex, const uint8_t *seed, int seedLen, const char *password,
     char *ufvkOut, uint32_t ufvkOutLen)
 {
-    SimpleResponse_c_char *ufvkResponse = derive_zcash_ufvk(
-        (uint8_t *)seed, seedLen, g_chainTable[ZCASH_UFVK_ENCRYPTED_0].path);
-    if (ufvkResponse == NULL || ufvkResponse->error_code != 0) {
-        return ufvkResponse;
-    }
-
     uint8_t keyBytes[AES_KEY_LEN];
     int32_t ret = VerifyAccountPasswordAndGetZcashCacheKey(accountIndex, password, keyBytes);
     if (ret != SUCCESS_CODE) {
         CLEAR_ARRAY(keyBytes);
-        free_simple_response_c_char(ufvkResponse);
         return NULL;
     }
-
-    uint8_t ivBytes[16];
-    TrngGet(ivBytes, sizeof(ivBytes));
-    SimpleResponse_c_char *encryptResult = rust_encrypt_ufvk_blob_v3(ufvkResponse->data, keyBytes, sizeof(keyBytes), ivBytes, sizeof(ivBytes));
+    SimpleResponse_c_char *encryptResult = DeriveEncryptedZcashUFVKV3WithCacheKey(
+        seed, seedLen, keyBytes, ufvkOut, ufvkOutLen);
     CLEAR_ARRAY(keyBytes);
-    CLEAR_ARRAY(ivBytes);
-    if (ufvkOut != NULL && encryptResult != NULL && encryptResult->error_code == 0) {
-        strcpy_s(ufvkOut, ufvkOutLen, ufvkResponse->data);
-    }
-    free_simple_response_c_char(ufvkResponse);
     return encryptResult;
 }
 
@@ -1214,22 +1235,29 @@ static int32_t ReplaceStoredZcashUFVK(uint8_t accountIndex, const SimpleResponse
     return SUCCESS_CODE;
 }
 
-/// @brief Re-derive the Zcash UFVK from seed, encrypt it as a legacy z2 blob and replace the
-///        stored ciphertext. Used only by the z2/legacy compatibility path.
-/// @param[in] accountIndex Account index, 0~2.
-/// @param[in] seed Wallet seed, already fetched with a verified password.
-/// @param[in] seedLen Seed length.
-/// @param[in] password Unused by z2 encryption; kept for interface stability.
-/// @param[out] ufvkOut Optional, receives the plaintext UFVK. Can be NULL if not needed.
-/// @param[in] ufvkOutLen Size of ufvkOut.
-/// @return err code.
-int32_t RegenerateZcashUFVKV2(uint8_t accountIndex, const uint8_t *seed, int seedLen,
-                              const char *password, char *ufvkOut, uint32_t ufvkOutLen)
+/// @brief One-time migration of a base wallet's legacy Zcash public info to z3 + SFP.
+///        The caller has already verified the PIN and loaded seed for this migration.
+int32_t MigrateLegacyZcashPublicInfoToV3(uint8_t accountIndex, uint8_t *seed, int seedLen,
+                                        const uint8_t *cacheKey, char *ufvkOut,
+                                        uint32_t ufvkOutLen)
 {
     ASSERT(accountIndex <= 2);
-    SimpleResponse_c_char *encryptResult = DeriveEncryptedZcashUFVKV2(
-        seed, seedLen, password, ufvkOut, ufvkOutLen);
-    int32_t ret = ReplaceStoredZcashUFVK(accountIndex, encryptResult);
+    if (GetIsTempAccount()) {
+        return ERR_GENERAL_FAIL;
+    }
+
+    SimpleResponse_c_char *encryptResult = DeriveEncryptedZcashUFVKV3WithCacheKey(
+        seed, seedLen, cacheKey, ufvkOut, ufvkOutLen);
+    int32_t ret = ERR_GENERAL_FAIL;
+    if (encryptResult != NULL && encryptResult->error_code == 0) {
+        ret = CalculateAndStoreZcashSFP(seed, seedLen);
+        if (ret == SUCCESS_CODE) {
+            // ReplaceStoredZcashUFVK serializes the updated z3 and SFP together.
+            ret = ReplaceStoredZcashUFVK(accountIndex, encryptResult);
+        }
+    } else if (encryptResult != NULL) {
+        ret = encryptResult->error_code;
+    }
     if (encryptResult != NULL) {
         free_simple_response_c_char(encryptResult);
     }
@@ -1256,16 +1284,35 @@ int32_t RegenerateZcashUFVKV3(uint8_t accountIndex, const uint8_t *seed, int see
 }
 #endif
 
+#ifndef BTC_ONLY
+/// @brief Recalculate the SFP for the loaded public info. Base-wallet public info is persisted;
+///        passphrase public info remains RAM-only.
+int32_t RegenerateAndStoreCurrentZcashSFP(uint8_t accountIndex, uint8_t *seed, int seedLen)
+{
+    ASSERT(accountIndex <= 2);
+    int32_t ret = CalculateAndStoreZcashSFP(seed, seedLen);
+    if (ret != SUCCESS_CODE || GetIsTempAccount()) {
+        return ret;
+    }
+    uint32_t addr = SPI_FLASH_ADDR_USER1_DATA + accountIndex * SPI_FLASH_ADDR_EACH_SIZE;
+    return SaveCurrentPublicInfoToFlash(accountIndex, addr);
+}
+#endif
+
 int32_t TempAccountPublicInfo(uint8_t accountIndex, const char *password, bool set)
 {
     uint32_t i;
-    SimpleResponse_c_char *xPubResult;
+    SimpleResponse_c_char *xPubResult = NULL;
+    SimpleResponse_c_char *cip3Response = NULL;
+    SimpleResponse_c_char *ledgerBitbox02Response = NULL;
     int32_t ret = SUCCESS_CODE;
-    uint8_t seed[64];
-    uint8_t entropy[64];
-    uint8_t entropyLen;
+    uint8_t seed[64] = {0};
+    uint8_t entropy[64] = {0};
+    uint8_t entropyLen = 0;
+    char *mnemonic = NULL;
     MnemonicType mnemonicType = GetMnemonicType();
     bool isSlip39 = mnemonicType == MNEMONIC_TYPE_SLIP39;
+    bool generationStarted = false;
 
     int seedLen = GetCurrentAccountSeedLen();
 
@@ -1275,96 +1322,139 @@ int32_t TempAccountPublicInfo(uint8_t accountIndex, const char *password, bool s
         // g_accountPublicInfo stores the current temp public key.
         printf("g_accountPublicInfo stores the current temp public key.\r\n");
     } else {
-        GuiApiEmitSignal(SIG_START_GENERATE_XPUB, NULL, 0);
-        char* icarusMasterKey = NULL;
-        char* ledgerBitbox02Key = NULL;
-        FreePublicKeyRam();
-        ret = GetAccountSeed(accountIndex, seed, password);
-        CHECK_ERRCODE_RETURN_INT(ret);
-        ret = GetAccountEntropy(accountIndex, entropy, &entropyLen, password);
-        CHECK_ERRCODE_RETURN_INT(ret);
-        SimpleResponse_c_char *cip3_response = NULL;
-        SimpleResponse_c_char *ledger_bitbox02_response = NULL;
+        do {
+            GuiApiEmitSignal(SIG_START_GENERATE_XPUB, NULL, 0);
+            generationStarted = true;
+            char* icarusMasterKey = NULL;
+            char* ledgerBitbox02Key = NULL;
+            FreePublicKeyRam();
+            ret = GetAccountSeed(accountIndex, seed, password);
+            CHECK_ERRCODE_BREAK("get temp account seed", ret);
+            ret = GetAccountEntropy(accountIndex, entropy, &entropyLen, password);
+            CHECK_ERRCODE_BREAK("get temp account entropy", ret);
 
-        if (!isSlip39) {
-            do {
-                char *mnemonic = NULL;
-                bip39_mnemonic_from_bytes(NULL, entropy, entropyLen, &mnemonic);
-                cip3_response = get_icarus_master_key(entropy, entropyLen, GetPassphrase(accountIndex));
-                ledger_bitbox02_response = get_ledger_bitbox02_master_key(mnemonic, GetPassphrase(accountIndex));
-                CHECK_AND_FREE_XPUB(cip3_response);
-                CHECK_AND_FREE_XPUB(ledger_bitbox02_response);
-                icarusMasterKey = cip3_response->data;
-                ledgerBitbox02Key = ledger_bitbox02_response->data;
-            } while (0);
-        }
-
-        for (i = 0; i < NUMBER_OF_ARRAYS(g_chainTable); i++) {
-            if (isSlip39 && (g_chainTable[i].cryptoKey == LEDGER_BITBOX02
-#ifndef BTC_ONLY
-                             || (g_chainTable[i].cryptoKey == ZCASH_UFVK_ENCRYPTED && !IsZcashSupportedForCurrentMnemonic())
-#endif
-#ifdef WEB3_VERSION
-                             || (g_chainTable[i].chain == XPUB_TYPE_ZEC_TRANSPARENT_LEGACY && !IsZcashSupportedForCurrentMnemonic())
-#endif
-                            )) {
-                continue;
-            }
-#ifdef CYPHERPUNK_VERSION
-            //encrypt zcash ufvk
-            if (g_chainTable[i].cryptoKey == ZCASH_UFVK_ENCRYPTED) {
-                xPubResult = DeriveEncryptedZcashUFVKV2(seed, seedLen, password, NULL, 0);
-            } else {
-                xPubResult = ProcessKeyType(seed, seedLen, g_chainTable[i].cryptoKey, g_chainTable[i].path, icarusMasterKey, ledgerBitbox02Key);
-            }
-#endif
-#ifdef WEB3_VERSION
-            if (g_chainTable[i].cryptoKey == BIP32_ED25519 && isSlip39) {
-                // ada slip23
-                xPubResult = cardano_get_pubkey_by_slip23(seed, seedLen, g_chainTable[i].path);
-            } else {
-                xPubResult = ProcessKeyType(seed, seedLen, g_chainTable[i].cryptoKey, g_chainTable[i].path, icarusMasterKey, ledgerBitbox02Key);
-            }
-#endif
-#ifdef BTC_ONLY
-            xPubResult = ProcessKeyType(seed, seedLen, g_chainTable[i].cryptoKey, g_chainTable[i].path, icarusMasterKey, ledgerBitbox02Key);
-#endif
-            if (g_chainTable[i].cryptoKey == RSA_KEY && xPubResult == NULL) {
-                continue;
-            }
-            ASSERT(xPubResult);
-            if (xPubResult->error_code != 0) {
-                printf("get_extended_pubkey error\r\n");
-                if (xPubResult->error_message != NULL) {
-                    printf("error code = %d\r\nerror msg is: %s\r\n", xPubResult->error_code, xPubResult->error_message);
+            if (!isSlip39) {
+                ret = bip39_mnemonic_from_bytes(NULL, entropy, entropyLen, &mnemonic);
+                CHECK_ERRCODE_BREAK("derive temp account mnemonic", ret);
+                cip3Response = get_icarus_master_key(
+                    entropy, entropyLen, GetPassphrase(accountIndex));
+                if (cip3Response == NULL || cip3Response->error_code != 0) {
+                    ret = cip3Response == NULL ? ERR_GENERAL_FAIL : cip3Response->error_code;
+                    break;
                 }
-                free_simple_response_c_char(xPubResult);
-                break;
+                ledgerBitbox02Response = get_ledger_bitbox02_master_key(
+                    mnemonic, GetPassphrase(accountIndex));
+                if (ledgerBitbox02Response == NULL || ledgerBitbox02Response->error_code != 0) {
+                    ret = ledgerBitbox02Response == NULL ? ERR_GENERAL_FAIL : ledgerBitbox02Response->error_code;
+                    break;
+                }
+                icarusMasterKey = cip3Response->data;
+                ledgerBitbox02Key = ledgerBitbox02Response->data;
+                ClearSensitiveCString(mnemonic);
+                SRAM_FREE(mnemonic);
+                mnemonic = NULL;
             }
-            ASSERT(xPubResult->data);
-            g_accountPublicInfo[i].value = SRAM_MALLOC(strnlen_s(xPubResult->data, SIMPLERESPONSE_C_CHAR_MAX_LEN) + 1);
-            strcpy(g_accountPublicInfo[i].value, xPubResult->data);
-            free_simple_response_c_char(xPubResult);
-        }
-        if (!isSlip39) {
-            free_simple_response_c_char(cip3_response);
-            free_simple_response_c_char(ledger_bitbox02_response);
-        }
-        g_tempPublicKeyAccountIndex = accountIndex;
-        GuiApiEmitSignal(SIG_END_GENERATE_XPUB, NULL, 0);
-        if (g_tempParsePhraseJson != NULL) {
-            cJSON_Delete(g_tempParsePhraseJson);
-            g_tempParsePhraseJson = NULL;
-        }
+
+            for (i = 0; i < NUMBER_OF_ARRAYS(g_chainTable); i++) {
+                if (isSlip39 && (g_chainTable[i].cryptoKey == LEDGER_BITBOX02
+#ifndef BTC_ONLY
+                                 || (g_chainTable[i].cryptoKey == ZCASH_UFVK_ENCRYPTED && !IsZcashSupportedForCurrentMnemonic())
+#endif
+#ifdef WEB3_VERSION
+                                 || (g_chainTable[i].chain == XPUB_TYPE_ZEC_TRANSPARENT_LEGACY && !IsZcashSupportedForCurrentMnemonic())
+#endif
+                                )) {
+                    continue;
+                }
+#ifdef CYPHERPUNK_VERSION
+                if (g_chainTable[i].cryptoKey == ZCASH_UFVK_ENCRYPTED) {
+                    xPubResult = DeriveEncryptedZcashUFVKV3(
+                        accountIndex, seed, seedLen, password, NULL, 0);
+                } else {
+                    xPubResult = ProcessKeyType(seed, seedLen, g_chainTable[i].cryptoKey,
+                                                g_chainTable[i].path, icarusMasterKey,
+                                                ledgerBitbox02Key);
+                }
+#endif
+#ifdef WEB3_VERSION
+                if (g_chainTable[i].cryptoKey == BIP32_ED25519 && isSlip39) {
+                    // ada slip23
+                    xPubResult = cardano_get_pubkey_by_slip23(seed, seedLen, g_chainTable[i].path);
+                } else {
+                    xPubResult = ProcessKeyType(seed, seedLen, g_chainTable[i].cryptoKey,
+                                                g_chainTable[i].path, icarusMasterKey,
+                                                ledgerBitbox02Key);
+                }
+#endif
+#ifdef BTC_ONLY
+                xPubResult = ProcessKeyType(seed, seedLen, g_chainTable[i].cryptoKey,
+                                            g_chainTable[i].path, icarusMasterKey,
+                                            ledgerBitbox02Key);
+#endif
+                if (g_chainTable[i].cryptoKey == RSA_KEY && xPubResult == NULL) {
+                    continue;
+                }
+                if (xPubResult == NULL || xPubResult->error_code != 0) {
+                    ret = xPubResult == NULL ? ERR_GENERAL_FAIL : xPubResult->error_code;
+                    if (xPubResult != NULL && xPubResult->error_message != NULL) {
+                        printf("get_extended_pubkey error: %s\r\n", xPubResult->error_message);
+                    }
+                    break;
+                }
+                ASSERT(xPubResult->data);
+                uint32_t valueLen = strnlen_s(
+                    xPubResult->data, SIMPLERESPONSE_C_CHAR_MAX_LEN) + 1;
+                g_accountPublicInfo[i].value = SRAM_MALLOC(valueLen);
+                if (g_accountPublicInfo[i].value == NULL) {
+                    ret = ERR_GENERAL_FAIL;
+                    break;
+                }
+                strcpy_s(g_accountPublicInfo[i].value, valueLen, xPubResult->data);
+                free_simple_response_c_char(xPubResult);
+                xPubResult = NULL;
+            }
+            CHECK_ERRCODE_BREAK("generate temp account public info", ret);
+#ifndef BTC_ONLY
+            if (IsZcashSupportedForCurrentMnemonic()) {
+                ret = CalculateAndStoreZcashSFP(seed, seedLen);
+                CHECK_ERRCODE_BREAK("calculate temp account zcash sfp", ret);
+            }
+#endif
+            g_tempPublicKeyAccountIndex = accountIndex;
+            if (g_tempParsePhraseJson != NULL) {
+                cJSON_Delete(g_tempParsePhraseJson);
+                g_tempParsePhraseJson = NULL;
+            }
 
 #ifdef BTC_ONLY
-        initMultiSigWalletManager();
-        ret = LoadCurrentAccountMultisigWallet(password);
-        CHECK_ERRCODE_RETURN_INT(ret);
-        LoadCurrentAccountMultiReceiveIndex();
+            initMultiSigWalletManager();
+            ret = LoadCurrentAccountMultisigWallet(password);
+            CHECK_ERRCODE_BREAK("load temp account multisig wallet", ret);
+            LoadCurrentAccountMultiReceiveIndex();
 #endif
+        } while (0);
+    }
+
+    if (xPubResult != NULL) {
+        free_simple_response_c_char(xPubResult);
+    }
+    if (cip3Response != NULL) {
+        ClearSensitiveCString(cip3Response->data);
+        free_simple_response_c_char(cip3Response);
+    }
+    if (ledgerBitbox02Response != NULL) {
+        ClearSensitiveCString(ledgerBitbox02Response->data);
+        free_simple_response_c_char(ledgerBitbox02Response);
+    }
+    if (mnemonic != NULL) {
+        ClearSensitiveCString(mnemonic);
+        SRAM_FREE(mnemonic);
     }
     CLEAR_ARRAY(seed);
+    CLEAR_ARRAY(entropy);
+    if (generationStarted) {
+        GuiApiEmitSignal(SIG_END_GENERATE_XPUB, NULL, 0);
+    }
 
     return ret;
 }

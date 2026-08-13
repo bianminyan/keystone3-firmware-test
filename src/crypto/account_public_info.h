@@ -272,10 +272,12 @@ typedef enum {
 bool GetIsTempAccount(void);
 #ifndef BTC_ONLY
 bool GetCurrentAccountZcashSFP(uint8_t *outSfp);
+int32_t RegenerateAndStoreCurrentZcashSFP(uint8_t accountIndex, uint8_t *seed, int seedLen);
 #endif
 #ifdef CYPHERPUNK_VERSION
-int32_t RegenerateZcashUFVKV2(uint8_t accountIndex, const uint8_t *seed, int seedLen,
-                              const char *password, char *ufvkOut, uint32_t ufvkOutLen);
+int32_t MigrateLegacyZcashPublicInfoToV3(uint8_t accountIndex, uint8_t *seed, int seedLen,
+                                        const uint8_t *cacheKey, char *ufvkOut,
+                                        uint32_t ufvkOutLen);
 int32_t RegenerateZcashUFVKV3(uint8_t accountIndex, const uint8_t *seed, int seedLen,
                               const char *password);
 #endif
