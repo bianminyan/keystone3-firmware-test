@@ -19,6 +19,11 @@
 #endif
 
 #define PIN_HASH_WIPED_MAGIC            0xA5
+#ifndef BUILD_PRODUCTION
+#define PIN_SEED_TRACE(fmt, args...)     printf("[PIN_SEED] " fmt "\r\n", ##args)
+#else
+#define PIN_SEED_TRACE(fmt, args...)
+#endif
 
 typedef struct {
     uint8_t loginPasswordErrorCount;
@@ -280,6 +285,7 @@ int32_t VerifyPasswordAndLogin(uint8_t *accountIndex, const char *password)
 {
     int32_t ret;
     uint8_t tempIndex;
+    PIN_SEED_TRACE("login begin");
 #ifdef CYPHERPUNK_VERSION
     uint8_t zcashCacheKey[AES_KEY_LEN];
     CLEAR_ARRAY(zcashCacheKey);
@@ -312,15 +318,25 @@ int32_t VerifyPasswordAndLogin(uint8_t *accountIndex, const char *password)
 #ifdef CYPHERPUNK_VERSION
             CLEAR_ARRAY(zcashCacheKey);
 #endif
+            PIN_SEED_TRACE("login account=%d end ret=0x%08X",
+                           tempIndex, (unsigned int)ret);
             return ret;
         }
 #ifdef CYPHERPUNK_VERSION
         ret = SetupZcashCache(tempIndex, password, zcashCacheKey);
         CLEAR_ARRAY(zcashCacheKey);
+        if (ret != SUCCESS_CODE) {
+            PIN_SEED_TRACE("login account=%d end ret=0x%08X",
+                           tempIndex, (unsigned int)ret);
+        }
         CHECK_ERRCODE_RETURN_INT(ret);
 #endif
 #ifdef WEB3_VERSION
         ret = SetupZcashSFP(tempIndex, password);
+        if (ret != SUCCESS_CODE) {
+            PIN_SEED_TRACE("login account=%d end ret=0x%08X",
+                           tempIndex, (unsigned int)ret);
+        }
         CHECK_ERRCODE_RETURN_INT(ret);
 #endif
     } else {
@@ -330,6 +346,13 @@ int32_t VerifyPasswordAndLogin(uint8_t *accountIndex, const char *password)
     CLEAR_ARRAY(zcashCacheKey);
 #endif
     SE_HmacEncryptWrite((uint8_t *)&g_publicInfo, PAGE_PUBLIC_INFO);
+
+    if (ret == SUCCESS_CODE) {
+        PIN_SEED_TRACE("login account=%d end ret=0x%08X",
+                       tempIndex, (unsigned int)ret);
+    } else {
+        PIN_SEED_TRACE("login end matched=false ret=0x%08X", (unsigned int)ret);
+    }
 
     return ret;
 }
@@ -783,6 +806,7 @@ int32_t SetupZcashSFP(uint8_t accountIndex, const char* password)
     ASSERT(accountIndex <= 2);
 
     if (!IsZcashSupportedForCurrentMnemonic()) {
+        PIN_SEED_TRACE("zcash_sfp account=%d state=skipped reason=unsupported", accountIndex);
         return SUCCESS_CODE;
     }
 
@@ -790,10 +814,13 @@ int32_t SetupZcashSFP(uint8_t accountIndex, const char* password)
     uint8_t seed[SEED_LEN] = {0};
     int32_t ret = SUCCESS_CODE;
     if (GetCurrentAccountZcashSFP(sfp)) {
+        PIN_SEED_TRACE("zcash_sfp account=%d state=ready source=public_info", accountIndex);
         SetZcashSFP(accountIndex, sfp);
     } else {
+        PIN_SEED_TRACE("zcash_sfp account=%d migration=begin reason=missing_sfp", accountIndex);
         int seedLen = GetCurrentAccountSeedLen();
         do {
+            PIN_SEED_TRACE("zcash_sfp account=%d seed_load reason=missing_sfp", accountIndex);
             ret = GetAccountSeed(accountIndex, seed, password);
             CHECK_ERRCODE_BREAK("load seed for zcash sfp migration", ret);
             ret = RegenerateAndStoreCurrentZcashSFP(accountIndex, seed, seedLen);
@@ -803,11 +830,14 @@ int32_t SetupZcashSFP(uint8_t accountIndex, const char* password)
                 break;
             }
             SetZcashSFP(accountIndex, sfp);
+            PIN_SEED_TRACE("zcash_sfp account=%d migration=done", accountIndex);
         } while (0);
     }
 
     CLEAR_ARRAY(seed);
     CLEAR_ARRAY(sfp);
+    PIN_SEED_TRACE("zcash_sfp account=%d sensitive_cleanup=done ret=0x%08X",
+                   accountIndex, (unsigned int)ret);
     return ret;
 }
 
@@ -817,6 +847,7 @@ int32_t SetupZcashCache(uint8_t accountIndex, const char* password, const uint8_
     ASSERT(accountIndex <= 2);
 
     if (!IsZcashSupportedForCurrentMnemonic()) {
+        PIN_SEED_TRACE("zcash_cache account=%d state=skipped reason=unsupported", accountIndex);
         return SUCCESS_CODE;
     }
 
@@ -824,6 +855,7 @@ int32_t SetupZcashCache(uint8_t accountIndex, const char* password, const uint8_
 
     char *zcashEncrypted = GetCurrentAccountPublicKey(ZCASH_UFVK_ENCRYPTED_0);
     if (zcashEncrypted == NULL) {
+        PIN_SEED_TRACE("zcash_cache account=%d state=failed reason=missing_public_info", accountIndex);
         return ERR_GENERAL_FAIL;
     }
 
@@ -844,6 +876,7 @@ int32_t SetupZcashCache(uint8_t accountIndex, const char* password, const uint8_
         CHECK_ERRCODE_BREAK("get zcash cache key", ret);
 
         if (strncmp(zcashEncrypted, "z3", 2) == 0) {
+            PIN_SEED_TRACE("zcash_cache account=%d path=z3", accountIndex);
             response = rust_decrypt_ufvk_blob_v3(zcashEncrypted, cacheKey, sizeof(cacheKey));
             if (response == NULL) {
                 printf("zcash z3 ufvk decrypt failed.\r\n");
@@ -862,7 +895,9 @@ int32_t SetupZcashCache(uint8_t accountIndex, const char* password, const uint8_
             response = NULL;
 
             if (!GetCurrentAccountZcashSFP(sfp)) {
+                PIN_SEED_TRACE("zcash_cache account=%d migration=begin reason=missing_sfp", accountIndex);
                 int seedLen = GetCurrentAccountSeedLen();
+                PIN_SEED_TRACE("zcash_cache account=%d seed_load reason=missing_sfp", accountIndex);
                 ret = GetAccountSeed(accountIndex, seed, password);
                 CHECK_ERRCODE_BREAK("load seed for zcash sfp migration", ret);
                 ret = RegenerateAndStoreCurrentZcashSFP(accountIndex, seed, seedLen);
@@ -872,6 +907,7 @@ int32_t SetupZcashCache(uint8_t accountIndex, const char* password, const uint8_
                     ret = ERR_GENERAL_FAIL;
                     break;
                 }
+                PIN_SEED_TRACE("zcash_cache account=%d migration=done reason=missing_sfp", accountIndex);
             }
         } else {
             // z2 and pure-hex legacy blobs are migration markers only. Seed is authoritative;
@@ -880,7 +916,9 @@ int32_t SetupZcashCache(uint8_t accountIndex, const char* password, const uint8_
                 ret = ERR_GENERAL_FAIL;
                 break;
             }
+            PIN_SEED_TRACE("zcash_cache account=%d migration=begin from=legacy to=z3", accountIndex);
             int seedLen = GetCurrentAccountSeedLen();
+            PIN_SEED_TRACE("zcash_cache account=%d seed_load reason=legacy_migration", accountIndex);
             ret = GetAccountSeed(accountIndex, seed, password);
             CHECK_ERRCODE_BREAK("load seed for zcash z3 migration", ret);
             ret = MigrateLegacyZcashPublicInfoToV3(
@@ -891,10 +929,12 @@ int32_t SetupZcashCache(uint8_t accountIndex, const char* password, const uint8_
                 ret = ERR_GENERAL_FAIL;
                 break;
             }
+            PIN_SEED_TRACE("zcash_cache account=%d migration=done from=legacy to=z3", accountIndex);
         }
 
         SetZcashUFVK(accountIndex, ufvk);
         SetZcashSFP(accountIndex, sfp);
+        PIN_SEED_TRACE("zcash_cache account=%d state=ready", accountIndex);
         ret = SUCCESS_CODE;
     } while (0);
 
@@ -905,8 +945,11 @@ int32_t SetupZcashCache(uint8_t accountIndex, const char* password, const uint8_
     CLEAR_ARRAY(seed);
     CLEAR_ARRAY(sfp);
     CLEAR_ARRAY(ufvk);
+    PIN_SEED_TRACE("zcash_cache account=%d sensitive_cleanup=done ret=0x%08X",
+                   accountIndex, (unsigned int)ret);
     if (ret != SUCCESS_CODE) {
         ClearZcashUFVK();
+        PIN_SEED_TRACE("zcash_cache account=%d runtime_cache=cleared_on_error", accountIndex);
     }
 
     return ret;
