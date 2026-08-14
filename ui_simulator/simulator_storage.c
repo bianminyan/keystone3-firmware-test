@@ -1,3 +1,4 @@
+#include "simulator_storage.h"
 #include "gui.h"
 #include "assert.h"
 #include "cjson/cJSON.h"
@@ -8,15 +9,15 @@
 #include "keystore.h"
 #include "account_manager.h"
 #include "se_interface.h"
+#include "hmac.h"
 
 #define DS28S60_DATA_ADDR                           0x1000
 #define ATECC608B_DATA_ADDR                         0x2000
 #define SIMULATOR_USER1_SECRET_ADDR                 0x3000
 #define SIMULATOR_USER2_SECRET_ADDR                 0x4000
 #define SIMULATOR_USER3_SECRET_ADDR                 0x5000
-#ifdef CYPHERPUNK_VERSION
-#define SIMULATOR_ZCASH_AUTH_KEY_JSON               "zcash_auth_key"
-#endif
+// Keep the legacy JSON field name so existing simulator accounts remain readable.
+#define SIMULATOR_ACCOUNT_BLOB_AUTH_KEY_JSON        "zcash_auth_key"
 
 typedef int32_t (*OperateStorageDataFunc)(uint32_t addr, uint8_t *buffer, uint32_t size);
 
@@ -28,9 +29,11 @@ typedef struct {
 } SimulatorFlashPath;
 
 static int32_t SimulatorVerifyPasswordInternal(uint8_t *accountIndex, const char *password,
-                                                uint8_t *accountBlobAuthKey);
+                                                const uint8_t *subkeyDomain,
+                                                uint8_t *derivedKey);
 static int32_t SimulatorVerifyCurrentPasswordInternal(uint8_t accountIndex, const char *password,
-                                                       uint8_t *accountBlobAuthKey);
+                                                       const uint8_t *subkeyDomain,
+                                                       uint8_t *derivedKey);
 
 int32_t StorageGetDataSize(uint32_t addr, uint8_t *buffer, uint32_t size);
 int32_t StorageSetDataSize(uint32_t addr, uint8_t *buffer, uint32_t size);
@@ -248,12 +251,11 @@ static int32_t WriteSimulatorAccountSecretJson(uint8_t accountIndex, cJSON *root
     return written == (int32_t)jsonLen ? SUCCESS_CODE : ERR_GENERAL_FAIL;
 }
 
-#ifdef CYPHERPUNK_VERSION
-static bool GetSimulatorZcashAccountAuthKey(cJSON *rootJson,
-                                             uint8_t accountBlobAuthKey[AUTH_KEY_LEN])
+static bool GetSimulatorAccountBlobAuthKey(cJSON *rootJson,
+                                            uint8_t accountBlobAuthKey[AUTH_KEY_LEN])
 {
     memset_s(accountBlobAuthKey, AUTH_KEY_LEN, 0, AUTH_KEY_LEN);
-    cJSON *item = cJSON_GetObjectItem(rootJson, SIMULATOR_ZCASH_AUTH_KEY_JSON);
+    cJSON *item = cJSON_GetObjectItem(rootJson, SIMULATOR_ACCOUNT_BLOB_AUTH_KEY_JSON);
     if (!cJSON_IsArray(item) || cJSON_GetArraySize(item) != AUTH_KEY_LEN) {
         return false;
     }
@@ -268,10 +270,10 @@ static bool GetSimulatorZcashAccountAuthKey(cJSON *rootJson,
     return true;
 }
 
-static int32_t EnsureSimulatorZcashAccountAuthKey(
+static int32_t EnsureSimulatorAccountBlobAuthKey(
     uint8_t accountIndex, cJSON *rootJson, uint8_t accountBlobAuthKey[AUTH_KEY_LEN])
 {
-    if (GetSimulatorZcashAccountAuthKey(rootJson, accountBlobAuthKey)) {
+    if (GetSimulatorAccountBlobAuthKey(rootJson, accountBlobAuthKey)) {
         return SUCCESS_CODE;
     }
 
@@ -279,15 +281,36 @@ static int32_t EnsureSimulatorZcashAccountAuthKey(
     // This independent stored value only models the production account-blob auth-key data flow.
     // It ensures tests never treat the low-entropy PIN itself as the z3 encryption key.
     SE_GetTRng(accountBlobAuthKey, AUTH_KEY_LEN);
-    cJSON_DeleteItemFromObject(rootJson, SIMULATOR_ZCASH_AUTH_KEY_JSON);
-    InsertJsonU8Array(rootJson, accountBlobAuthKey, AUTH_KEY_LEN, SIMULATOR_ZCASH_AUTH_KEY_JSON);
+    cJSON_DeleteItemFromObject(rootJson, SIMULATOR_ACCOUNT_BLOB_AUTH_KEY_JSON);
+    InsertJsonU8Array(rootJson, accountBlobAuthKey, AUTH_KEY_LEN,
+                      SIMULATOR_ACCOUNT_BLOB_AUTH_KEY_JSON);
     int32_t ret = WriteSimulatorAccountSecretJson(accountIndex, rootJson);
     if (ret != SUCCESS_CODE) {
         memset_s(accountBlobAuthKey, AUTH_KEY_LEN, 0, AUTH_KEY_LEN);
     }
     return ret;
 }
-#endif
+
+static int32_t DeriveSimulatorAccountSubkey(
+    uint8_t accountIndex, cJSON *rootJson,
+    const uint8_t domain[ACCOUNT_SUBKEY_DOMAIN_LEN],
+    uint8_t derivedKey[AUTH_KEY_LEN])
+{
+    uint8_t accountBlobAuthKey[AUTH_KEY_LEN] = {0};
+    uint8_t context[ACCOUNT_SUBKEY_DOMAIN_LEN + 1] = {0};
+    int32_t ret = EnsureSimulatorAccountBlobAuthKey(
+        accountIndex, rootJson, accountBlobAuthKey);
+
+    if (ret == SUCCESS_CODE) {
+        memcpy_s(context, sizeof(context), domain, ACCOUNT_SUBKEY_DOMAIN_LEN);
+        context[ACCOUNT_SUBKEY_DOMAIN_LEN] = accountIndex;
+        hmac_sha256(accountBlobAuthKey, AUTH_KEY_LEN,
+                    context, sizeof(context), derivedKey);
+    }
+    CLEAR_ARRAY(accountBlobAuthKey);
+    CLEAR_ARRAY(context);
+    return ret;
+}
 
 void ModifyJsonArrayData(cJSON *root, uint8_t *data, uint8_t len, char *key)
 {
@@ -337,13 +360,12 @@ int32_t SimulatorSaveAccountSecret(uint8_t accountIndex, const AccountSecret_t *
     cJSON_AddItemToObject(rootJson, "entropy_len", item);
     item = cJSON_CreateString(password);
     cJSON_AddItemToObject(rootJson, "password", item);
-#ifdef CYPHERPUNK_VERSION
     uint8_t simulatorAccountBlobAuthKey[AUTH_KEY_LEN];
     SE_GetTRng(simulatorAccountBlobAuthKey, sizeof(simulatorAccountBlobAuthKey));
     InsertJsonU8Array(rootJson, simulatorAccountBlobAuthKey,
-                      sizeof(simulatorAccountBlobAuthKey), SIMULATOR_ZCASH_AUTH_KEY_JSON);
+                      sizeof(simulatorAccountBlobAuthKey),
+                      SIMULATOR_ACCOUNT_BLOB_AUTH_KEY_JSON);
     CLEAR_ARRAY(simulatorAccountBlobAuthKey);
-#endif
     int32_t ret = WriteSimulatorAccountSecretJson(accountIndex, rootJson);
     cJSON_Delete(rootJson);
     return ret;
@@ -386,12 +408,14 @@ int32_t SimulatorLoadAccountSecret(uint8_t accountIndex, AccountSecret_t *accoun
 
 int32_t SimulatorVerifyPassword(uint8_t *accountIndex, const char *password)
 {
-    return SimulatorVerifyPasswordInternal(accountIndex, password, NULL);
+    return SimulatorVerifyPasswordInternal(accountIndex, password, NULL, NULL);
 }
 
 static int32_t SimulatorVerifyPasswordInternal(uint8_t *accountIndex, const char *password,
-                                                uint8_t *accountBlobAuthKey)
+                                                const uint8_t *subkeyDomain,
+                                                uint8_t *derivedKey)
 {
+    ASSERT((subkeyDomain == NULL) == (derivedKey == NULL));
     uint8_t buffer[JSON_MAX_LEN] = {0};
     for (int i = 0; i < 3; i++) {
         // func must be found
@@ -407,15 +431,10 @@ static int32_t SimulatorVerifyPasswordInternal(uint8_t *accountIndex, const char
             if (accountIndex != NULL) {
                 *accountIndex = i;
             }
-#ifdef CYPHERPUNK_VERSION
-            int32_t ret = accountBlobAuthKey == NULL ? SUCCESS_CODE :
-                EnsureSimulatorZcashAccountAuthKey(i, rootJson, accountBlobAuthKey);
+            int32_t ret = derivedKey == NULL ? SUCCESS_CODE :
+                DeriveSimulatorAccountSubkey(i, rootJson, subkeyDomain, derivedKey);
             cJSON_Delete(rootJson);
             return ret;
-#else
-            cJSON_Delete(rootJson);
-            return SUCCESS_CODE;
-#endif
         }
         cJSON_Delete(rootJson);
     }
@@ -425,12 +444,14 @@ static int32_t SimulatorVerifyPasswordInternal(uint8_t *accountIndex, const char
 
 int32_t SimulatorVerifyCurrentPassword(uint8_t accountIndex, const char *password)
 {
-    return SimulatorVerifyCurrentPasswordInternal(accountIndex, password, NULL);
+    return SimulatorVerifyCurrentPasswordInternal(accountIndex, password, NULL, NULL);
 }
 
 static int32_t SimulatorVerifyCurrentPasswordInternal(uint8_t accountIndex, const char *password,
-                                                       uint8_t *accountBlobAuthKey)
+                                                       const uint8_t *subkeyDomain,
+                                                       uint8_t *derivedKey)
 {
+    ASSERT((subkeyDomain == NULL) == (derivedKey == NULL));
     uint8_t buffer[JSON_MAX_LEN] = {0};
     OperateStorageDataFunc func = FindSimulatorStorageFunc(SIMULATOR_USER1_SECRET_ADDR + accountIndex * 0x1000, true);
     func(SIMULATOR_USER1_SECRET_ADDR + accountIndex * 0x1000, buffer, JSON_MAX_LEN);
@@ -440,38 +461,39 @@ static int32_t SimulatorVerifyCurrentPasswordInternal(uint8_t accountIndex, cons
     }
     cJSON *item = cJSON_GetObjectItem(rootJson, "password");
     if (item != NULL && strcmp(item->valuestring, password) == 0) {
-#ifdef CYPHERPUNK_VERSION
-        int32_t ret = accountBlobAuthKey == NULL ? SUCCESS_CODE :
-            EnsureSimulatorZcashAccountAuthKey(accountIndex, rootJson, accountBlobAuthKey);
+        int32_t ret = derivedKey == NULL ? SUCCESS_CODE :
+            DeriveSimulatorAccountSubkey(
+                accountIndex, rootJson, subkeyDomain, derivedKey);
         cJSON_Delete(rootJson);
         return ret;
-#else
-        cJSON_Delete(rootJson);
-        return SUCCESS_CODE;
-#endif
     }
     cJSON_Delete(rootJson);
 
     return ERR_KEYSTORE_PASSWORD_ERR;
 }
 
-#ifdef CYPHERPUNK_VERSION
-int32_t SimulatorVerifyPasswordWithZcashAccountAuthKey(
-    uint8_t *accountIndex, const char *password, uint8_t accountBlobAuthKey[AUTH_KEY_LEN])
+int32_t SimulatorVerifyPasswordAndDeriveSubkey(
+    uint8_t *accountIndex, const char *password,
+    const uint8_t domain[ACCOUNT_SUBKEY_DOMAIN_LEN],
+    uint8_t derivedKey[AUTH_KEY_LEN])
 {
-    ASSERT(accountBlobAuthKey != NULL);
-    memset_s(accountBlobAuthKey, AUTH_KEY_LEN, 0, AUTH_KEY_LEN);
-    return SimulatorVerifyPasswordInternal(accountIndex, password, accountBlobAuthKey);
+    ASSERT(domain != NULL);
+    ASSERT(derivedKey != NULL);
+    memset_s(derivedKey, AUTH_KEY_LEN, 0, AUTH_KEY_LEN);
+    return SimulatorVerifyPasswordInternal(accountIndex, password, domain, derivedKey);
 }
 
-int32_t SimulatorVerifyCurrentPasswordWithZcashAccountAuthKey(
-    uint8_t accountIndex, const char *password, uint8_t accountBlobAuthKey[AUTH_KEY_LEN])
+int32_t SimulatorVerifyCurrentPasswordAndDeriveSubkey(
+    uint8_t accountIndex, const char *password,
+    const uint8_t domain[ACCOUNT_SUBKEY_DOMAIN_LEN],
+    uint8_t derivedKey[AUTH_KEY_LEN])
 {
-    ASSERT(accountBlobAuthKey != NULL);
-    memset_s(accountBlobAuthKey, AUTH_KEY_LEN, 0, AUTH_KEY_LEN);
-    return SimulatorVerifyCurrentPasswordInternal(accountIndex, password, accountBlobAuthKey);
+    ASSERT(domain != NULL);
+    ASSERT(derivedKey != NULL);
+    memset_s(derivedKey, AUTH_KEY_LEN, 0, AUTH_KEY_LEN);
+    return SimulatorVerifyCurrentPasswordInternal(
+        accountIndex, password, domain, derivedKey);
 }
-#endif
 
 // 28S60
 #if 1

@@ -275,6 +275,18 @@ bool GetCurrentAccountZcashSFP(uint8_t *outSfp);
 int32_t RegenerateAndStoreCurrentZcashSFP(uint8_t accountIndex, uint8_t *seed, int seedLen);
 #endif
 #ifdef CYPHERPUNK_VERSION
+/// Verify password, find the account, and derive its Zcash z3 cache key. cacheKey must point to a
+/// writable 32-byte buffer. The key is valid only on SUCCESS_CODE and must be cleared by the caller
+/// immediately after use.
+int32_t FindAccountByPasswordAndDeriveZcashCacheKey(
+    uint8_t *matchedAccountIndex, const char *password,
+    uint8_t cacheKey[32]);
+/// Verify password for one account and derive its Zcash z3 cache key. cacheKey must point to a
+/// writable 32-byte buffer. The key is valid only on SUCCESS_CODE and must be cleared by the caller
+/// immediately after use.
+int32_t VerifyAccountPasswordAndDeriveZcashCacheKey(
+    uint8_t accountIndex, const char *password,
+    uint8_t cacheKey[32]);
 int32_t MigrateLegacyZcashPublicInfoToV3(uint8_t accountIndex, uint8_t *seed, int seedLen,
                                         const uint8_t *cacheKey, char *ufvkOut,
                                         uint32_t ufvkOutLen);

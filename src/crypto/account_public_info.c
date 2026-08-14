@@ -1139,6 +1139,28 @@ static int32_t SaveCurrentPublicInfoToFlash(uint8_t accountIndex, uint32_t addr)
 }
 
 #ifdef CYPHERPUNK_VERSION
+#define ZCASH_CACHE_V3_DOMAIN_TEXT "zcash-cache-v3"
+_Static_assert(sizeof(ZCASH_CACHE_V3_DOMAIN_TEXT) - 1 == ACCOUNT_SUBKEY_DOMAIN_LEN,
+               "Zcash z3 domain length must remain byte-compatible");
+static const uint8_t ZCASH_CACHE_V3_DOMAIN[ACCOUNT_SUBKEY_DOMAIN_LEN] =
+    ZCASH_CACHE_V3_DOMAIN_TEXT;
+
+int32_t FindAccountByPasswordAndDeriveZcashCacheKey(
+    uint8_t *matchedAccountIndex, const char *password,
+    uint8_t cacheKey[AES_KEY_LEN])
+{
+    return FindAccountByPasswordAndDeriveSubkey(
+        matchedAccountIndex, password, ZCASH_CACHE_V3_DOMAIN, cacheKey);
+}
+
+int32_t VerifyAccountPasswordAndDeriveZcashCacheKey(
+    uint8_t accountIndex, const char *password,
+    uint8_t cacheKey[AES_KEY_LEN])
+{
+    return VerifyAccountPasswordAndDeriveSubkey(
+        accountIndex, password, ZCASH_CACHE_V3_DOMAIN, cacheKey);
+}
+
 /// @brief Check a stored Zcash UFVK blob has an acceptable layout.
 ///        z2/z3 use magic || hex(IV_16) || hex(ciphertext); legacy blobs are pure hex and are
 ///        accepted too so they flow into the compatibility path.
@@ -1195,15 +1217,16 @@ static SimpleResponse_c_char *DeriveEncryptedZcashUFVKV3(
     uint8_t accountIndex, const uint8_t *seed, int seedLen, const char *password,
     char *ufvkOut, uint32_t ufvkOutLen)
 {
-    uint8_t keyBytes[AES_KEY_LEN];
-    int32_t ret = VerifyAccountPasswordAndGetZcashCacheKey(accountIndex, password, keyBytes);
+    uint8_t cacheKey[AES_KEY_LEN] = {0};
+    int32_t ret = VerifyAccountPasswordAndDeriveZcashCacheKey(
+        accountIndex, password, cacheKey);
     if (ret != SUCCESS_CODE) {
-        CLEAR_ARRAY(keyBytes);
+        CLEAR_ARRAY(cacheKey);
         return NULL;
     }
     SimpleResponse_c_char *encryptResult = DeriveEncryptedZcashUFVKV3WithCacheKey(
-        seed, seedLen, keyBytes, ufvkOut, ufvkOutLen);
-    CLEAR_ARRAY(keyBytes);
+        seed, seedLen, cacheKey, ufvkOut, ufvkOutLen);
+    CLEAR_ARRAY(cacheKey);
     return encryptResult;
 }
 

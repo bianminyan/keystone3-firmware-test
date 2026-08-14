@@ -283,7 +283,8 @@ int32_t VerifyPasswordAndLogin(uint8_t *accountIndex, const char *password)
 #ifdef CYPHERPUNK_VERSION
     uint8_t zcashCacheKey[AES_KEY_LEN];
     CLEAR_ARRAY(zcashCacheKey);
-    ret = FindAccountByPasswordAndGetZcashCacheKey(&tempIndex, password, zcashCacheKey);
+    ret = FindAccountByPasswordAndDeriveZcashCacheKey(
+        &tempIndex, password, zcashCacheKey);
 #else
     ret = FindAccountByPassword(&tempIndex, password);
 #endif
@@ -812,7 +813,8 @@ int32_t SetupZcashSFP(uint8_t accountIndex, const char* password)
 }
 
 #ifdef CYPHERPUNK_VERSION
-int32_t SetupZcashCache(uint8_t accountIndex, const char* password, const uint8_t *readyCacheKey)
+int32_t SetupZcashCache(uint8_t accountIndex, const char* password,
+                        const uint8_t *prederivedCacheKey)
 {
     ASSERT(accountIndex <= 2);
 
@@ -835,13 +837,14 @@ int32_t SetupZcashCache(uint8_t accountIndex, const char* password, const uint8_
     SimpleResponse_c_char *response = NULL;
 
     do {
-        if (readyCacheKey != NULL) {
-            memcpy_s(cacheKey, sizeof(cacheKey), readyCacheKey, sizeof(cacheKey));
+        if (prederivedCacheKey != NULL) {
+            memcpy_s(cacheKey, sizeof(cacheKey), prederivedCacheKey, AES_KEY_LEN);
             ret = SUCCESS_CODE;
         } else {
-            ret = VerifyAccountPasswordAndGetZcashCacheKey(accountIndex, password, cacheKey);
+            ret = VerifyAccountPasswordAndDeriveZcashCacheKey(
+                accountIndex, password, cacheKey);
+            CHECK_ERRCODE_BREAK("derive zcash cache key", ret);
         }
-        CHECK_ERRCODE_BREAK("get zcash cache key", ret);
 
         if (strncmp(zcashEncrypted, "z3", 2) == 0) {
             response = rust_decrypt_ufvk_blob_v3(zcashEncrypted, cacheKey, sizeof(cacheKey));

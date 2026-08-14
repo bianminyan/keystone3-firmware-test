@@ -14,6 +14,7 @@
 
 #define AES_KEY_LEN                             32
 #define AUTH_KEY_LEN                            32
+#define ACCOUNT_SUBKEY_DOMAIN_LEN               14
 
 #define AES_IV_LEN                              32              //Use first 16 bytes for AES key, last 16 bytes reserved for future features.
 #define ENTROPY_MAX_LEN                         32
@@ -54,12 +55,44 @@ int32_t GetAccountSlip39Ems(uint8_t accountIndex, uint8_t *slip39Ems, const char
 int32_t ChangePassword(uint8_t accountIndex, const char *newPassword, const char *password);
 int32_t FindAccountByPassword(uint8_t *matchedAccountIndex, const char *password);
 int32_t VerifyAccountPassword(uint8_t accountIndex, const char *password);
-#ifdef CYPHERPUNK_VERSION
-int32_t FindAccountByPasswordAndGetZcashCacheKey(uint8_t *matchedAccountIndex, const char *password,
-                                                  uint8_t cacheKey[AES_KEY_LEN]);
-int32_t VerifyAccountPasswordAndGetZcashCacheKey(uint8_t accountIndex, const char *password,
-                                                  uint8_t cacheKey[AES_KEY_LEN]);
-#endif
+/// Verify a password, find the matching account, and derive an account-scoped business subkey.
+///
+/// The caller must provide a stable, compile-time domain label containing exactly
+/// ACCOUNT_SUBKEY_DOMAIN_LEN bytes. The label is binary data, not a NUL-terminated string: every
+/// byte is significant. Use a unique label for each key purpose, and never use user input, secret
+/// data, ciphertext, or an AccountBlob as the domain. The keystore appends the matched account
+/// index and derives the subkey without exposing the underlying accountBlobAuthKey.
+///
+/// matchedAccountIndex may be NULL when the caller does not need the matched index. derivedKey is
+/// cleared before work and on every failure; it is valid only when SUCCESS_CODE is returned. The
+/// caller owns derivedKey and must clear it immediately after the intended operation.
+///
+/// Example (the 14-byte array intentionally has no trailing NUL):
+///   static const uint8_t domain[ACCOUNT_SUBKEY_DOMAIN_LEN] = "wallet-meta-v1";
+///   uint8_t key[AUTH_KEY_LEN] = {0};
+///   int32_t ret = FindAccountByPasswordAndDeriveSubkey(&index, password, domain, key);
+///   if (ret == SUCCESS_CODE) { /* use key only for wallet metadata */ }
+///   CLEAR_ARRAY(key);
+int32_t FindAccountByPasswordAndDeriveSubkey(
+    uint8_t *matchedAccountIndex, const char *password,
+    const uint8_t domain[ACCOUNT_SUBKEY_DOMAIN_LEN],
+    uint8_t derivedKey[AUTH_KEY_LEN]);
+
+/// Verify a password for one account and derive an account-scoped business subkey.
+///
+/// domain must be a stable, unique, compile-time ACCOUNT_SUBKEY_DOMAIN_LEN-byte label for one key
+/// purpose. It is binary data, not a NUL-terminated string; do not pass user input, secret data,
+/// ciphertext, or an AccountBlob. The keystore appends accountIndex and derives the subkey without
+/// exposing the underlying accountBlobAuthKey.
+///
+/// derivedKey is cleared before work and on every failure; it is valid only when SUCCESS_CODE is
+/// returned. The caller owns derivedKey and must clear it immediately after the intended operation.
+/// Follow the same static-domain and unconditional-cleanup pattern shown above; this variant is for
+/// callers that already know the accountIndex and must not be used with an index inferred elsewhere.
+int32_t VerifyAccountPasswordAndDeriveSubkey(
+    uint8_t accountIndex, const char *password,
+    const uint8_t domain[ACCOUNT_SUBKEY_DOMAIN_LEN],
+    uint8_t derivedKey[AUTH_KEY_LEN]);
 int32_t GenerateTRNGRandomness(uint8_t *randomness, uint8_t len);
 bool CheckPassphraseSame(uint8_t accountIndex, const char *passphrase);
 char* GetPassphrase(uint8_t accountIndex);
