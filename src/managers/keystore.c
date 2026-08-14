@@ -28,6 +28,7 @@
 #include "assert.h"
 #include "secret_cache.h"
 #include "drv_mpu.h"
+#include "background_task.h"
 #ifdef COMPILE_SIMULATOR
 #include "simulator_model.h"
 #include "simulator_storage.h"
@@ -539,17 +540,13 @@ int32_t SetPassphrase(uint8_t accountIndex, const char *passphrase, const char *
 {
     uint8_t seed[SEED_LEN] = {0};
     uint8_t newMfp[4] = {0};
-    PassphraseInfo_t previousPassphraseInfo = {0};
     SimpleResponse_u8 *simpleResponse = NULL;
-    bool passphraseStateChanged = false;
     int32_t ret = ERR_GENERAL_FAIL;
     int len = GetMnemonicType() == MNEMONIC_TYPE_BIP39 ? sizeof(seed) : GetCurrentAccountEntropyLen();
 
     ASSERT(strnlen_s(password, PASSWORD_MAX_LEN) >= 6);
     ASSERT(accountIndex <= 2);
     PIN_SEED_TRACE("passphrase account=%d setup=begin", accountIndex);
-    memcpy_s(&previousPassphraseInfo, sizeof(previousPassphraseInfo),
-             &g_passphraseInfo[accountIndex], sizeof(g_passphraseInfo[accountIndex]));
     do {
         ret = GetPassphraseSeed(accountIndex, seed, passphrase, password);
         CHECK_ERRCODE_BREAK("GetPassphraseSeed", ret);
@@ -575,11 +572,9 @@ int32_t SetPassphrase(uint8_t accountIndex, const char *passphrase, const char *
             memcpy_s(g_passphraseInfo[accountIndex].mfp,
                      sizeof(g_passphraseInfo[accountIndex].mfp), newMfp, sizeof(newMfp));
             g_passphraseInfo[accountIndex].passphraseExist = true;
-            passphraseStateChanged = true;
             ret = TempAccountPublicInfo(accountIndex, password, true);
         } else {
             ClearAccountPassphrase(accountIndex);
-            passphraseStateChanged = true;
             ret = AccountPublicInfoSwitch(accountIndex, password, false);
         }
         CHECK_ERRCODE_BREAK("generate passphrase public info", ret);
@@ -596,37 +591,23 @@ int32_t SetPassphrase(uint8_t accountIndex, const char *passphrase, const char *
     if (simpleResponse != NULL) {
         free_simple_response_u8(simpleResponse);
     }
-    if (ret != SUCCESS_CODE && passphraseStateChanged) {
-        PIN_SEED_TRACE("passphrase account=%d rollback=begin ret=0x%08X",
-                       accountIndex, (unsigned int)ret);
-        memcpy_s(&g_passphraseInfo[accountIndex], sizeof(g_passphraseInfo[accountIndex]),
-                 &previousPassphraseInfo, sizeof(previousPassphraseInfo));
-        // Restore a coherent public-info view for the previous RAM passphrase state.
-        int32_t restoreRet = PassphraseExist(accountIndex)
-            ? TempAccountPublicInfo(accountIndex, password, true)
-            : AccountPublicInfoSwitch(accountIndex, password, false);
-#ifdef WEB3_VERSION
-        if (restoreRet == SUCCESS_CODE) {
-            restoreRet = SetupZcashSFP(accountIndex, password);
-        }
-#endif
-#ifdef CYPHERPUNK_VERSION
-        if (restoreRet == SUCCESS_CODE) {
-            restoreRet = SetupZcashCache(accountIndex, password, NULL);
-        }
-#endif
-        if (restoreRet != SUCCESS_CODE) {
-            printf("restore public info after passphrase failure err,0x%X\r\n",
-                   (unsigned int)restoreRet);
-        } else {
-            PIN_SEED_TRACE("passphrase account=%d rollback=done", accountIndex);
-        }
-    }
     CLEAR_ARRAY(seed);
     CLEAR_ARRAY(newMfp);
-    CLEAR_OBJECT(previousPassphraseInfo);
     PIN_SEED_TRACE("passphrase account=%d sensitive_cleanup=done ret=0x%08X",
                    accountIndex, (unsigned int)ret);
+
+    if (ret != SUCCESS_CODE) {
+        // Passphrase public info and Zcash runtime state are RAM-only. Do not try to repair a
+        // partially changed session in place: erase all passphrase inputs, make the session
+        // unusable, and reboot. SetPassphraseMark() is the commit point above, so persistent
+        // state still describes the previous wallet when any earlier step fails.
+        ClearAccountPassphrase(accountIndex);
+        ClearSecretCache();
+        LogoutCurrentAccount();
+        PIN_SEED_TRACE("passphrase account=%d setup=failed ret=0x%08X rebooting",
+                       accountIndex, (unsigned int)ret);
+        SystemReboot();
+    }
 
     return ret;
 }

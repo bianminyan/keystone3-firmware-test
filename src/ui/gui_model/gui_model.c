@@ -1290,7 +1290,8 @@ static void ModelVerifyPassSuccess(uint16_t *param)
         }
         ret = SetPassphrase(GetCurrentAccountIndex(), SecretCacheGetPassphrase(), SecretCacheGetPassword());
 #ifdef BTC_ONLY
-        if (strnlen_s(SecretCacheGetPassphrase(), PASSPHRASE_MAX_LEN) == 0) {
+        if (ret == SUCCESS_CODE &&
+                strnlen_s(SecretCacheGetPassphrase(), PASSPHRASE_MAX_LEN) == 0) {
             AccountPublicInfoSwitch(GetCurrentAccountIndex(), SecretCacheGetPassword(), false);
         }
 #endif
