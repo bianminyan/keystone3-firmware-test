@@ -27,11 +27,6 @@
 #define PUB_KEY_MAX_LENGTH                  1024 + 1
 #define VERSION_MAX_LENGTH                  64
 #define INVALID_ACCOUNT_INDEX               255
-#ifndef BUILD_PRODUCTION
-#define PIN_SEED_TRACE(fmt, args...)         printf("[PIN_SEED] " fmt "\r\n", ##args)
-#else
-#define PIN_SEED_TRACE(fmt, args...)
-#endif
 #ifndef BTC_ONLY
 #define ZCASH_SFP_HEX_LEN                   (ZCASH_SFP_LEN * 2)
 #define ZCASH_SFP_JSON_KEY                  "zcash_seed_fingerprint"
@@ -904,14 +899,12 @@ int32_t AccountPublicSavePublicInfo(uint8_t accountIndex, const char *password, 
     int seedLen = GetCurrentAccountSeedLen();
 
     do {
-        PIN_SEED_TRACE("public_info account=%d scope=base generate=begin", accountIndex);
         GuiApiEmitSignal(SIG_START_GENERATE_XPUB, NULL, 0);
         generationStarted = true;
         char* icarusMasterKey = NULL;
         char* ledgerBitbox02Key = NULL;
         printf("regenerate pub key!\r\n");
         FreePublicKeyRam();
-        PIN_SEED_TRACE("public_info account=%d seed_load reason=base_generate", accountIndex);
         ret = GetAccountSeed(accountIndex, seed, password);
         CHECK_ERRCODE_BREAK("get seed", ret);
         ret = GetAccountEntropy(accountIndex, entropy, &entropyLen, password);
@@ -1020,8 +1013,6 @@ int32_t AccountPublicSavePublicInfo(uint8_t accountIndex, const char *password, 
     }
     CLEAR_ARRAY(seed);
     CLEAR_ARRAY(entropy);
-    PIN_SEED_TRACE("public_info account=%d scope=base sensitive_cleanup=done ret=0x%08X",
-                   accountIndex, (unsigned int)ret);
     if (generationStarted) {
         GuiApiEmitSignal(SIG_END_GENERATE_XPUB, NULL, 0);
     }
@@ -1144,8 +1135,6 @@ static int32_t SaveCurrentPublicInfoToFlash(uint8_t accountIndex, uint32_t addr)
     }
     CLEAR_ARRAY(hash);
     CLEAR_ARRAY(verifyBuffer);
-    PIN_SEED_TRACE("public_info account=%d persist=done ret=0x%08X",
-                   accountIndex, (unsigned int)ret);
     return ret;
 }
 
@@ -1195,7 +1184,6 @@ static SimpleResponse_c_char *DeriveEncryptedZcashUFVKV3WithCacheKey(
     }
     if (ufvkResponse->data != NULL) {
         ClearSensitiveCString(ufvkResponse->data);
-        PIN_SEED_TRACE("zcash_ufvk plaintext_cleanup=done");
     }
     free_simple_response_c_char(ufvkResponse);
     return encryptResult;
@@ -1216,7 +1204,6 @@ static SimpleResponse_c_char *DeriveEncryptedZcashUFVKV3(
     SimpleResponse_c_char *encryptResult = DeriveEncryptedZcashUFVKV3WithCacheKey(
         seed, seedLen, keyBytes, ufvkOut, ufvkOutLen);
     CLEAR_ARRAY(keyBytes);
-    PIN_SEED_TRACE("zcash_cache_key cleanup=done stage=encrypt");
     return encryptResult;
 }
 
@@ -1336,13 +1323,11 @@ int32_t TempAccountPublicInfo(uint8_t accountIndex, const char *password, bool s
         printf("g_accountPublicInfo stores the current temp public key.\r\n");
     } else {
         do {
-            PIN_SEED_TRACE("public_info account=%d scope=passphrase generate=begin", accountIndex);
             GuiApiEmitSignal(SIG_START_GENERATE_XPUB, NULL, 0);
             generationStarted = true;
             char* icarusMasterKey = NULL;
             char* ledgerBitbox02Key = NULL;
             FreePublicKeyRam();
-            PIN_SEED_TRACE("public_info account=%d seed_load reason=passphrase_generate", accountIndex);
             ret = GetAccountSeed(accountIndex, seed, password);
             CHECK_ERRCODE_BREAK("get temp account seed", ret);
             ret = GetAccountEntropy(accountIndex, entropy, &entropyLen, password);
@@ -1467,10 +1452,6 @@ int32_t TempAccountPublicInfo(uint8_t accountIndex, const char *password, bool s
     }
     CLEAR_ARRAY(seed);
     CLEAR_ARRAY(entropy);
-    if (generationStarted) {
-        PIN_SEED_TRACE("public_info account=%d scope=passphrase sensitive_cleanup=done ret=0x%08X",
-                       accountIndex, (unsigned int)ret);
-    }
     if (generationStarted) {
         GuiApiEmitSignal(SIG_END_GENERATE_XPUB, NULL, 0);
     }

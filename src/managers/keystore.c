@@ -35,11 +35,6 @@
 #else
 #endif
 #define KEYSTORE_DEBUG          0
-#ifndef BUILD_PRODUCTION
-#define PIN_SEED_TRACE(fmt, args...)     printf("[PIN_SEED] " fmt "\r\n", ##args)
-#else
-#define PIN_SEED_TRACE(fmt, args...)
-#endif
 
 #if KEYSTORE_DEBUG == 1
 #define KEYSTORE_PRINT_ARRAY(fmt, args...)       PrintArray(fmt, ##args)
@@ -221,7 +216,6 @@ int32_t GetAccountEntropy(uint8_t accountIndex, uint8_t *entropy, uint8_t *entro
     AccountSecret_t accountSecret;
 
     ASSERT(accountIndex <= 2);
-    PIN_SEED_TRACE("entropy_export account=%d begin", accountIndex);
     ret = LoadAccountSecret(accountIndex, &accountSecret, password);
     MnemonicType mnemonicType = GetMnemonicType();
     if (ret == SUCCESS_CODE) {
@@ -235,8 +229,6 @@ int32_t GetAccountEntropy(uint8_t accountIndex, uint8_t *entropy, uint8_t *entro
         }
     }
     CLEAR_OBJECT(accountSecret);
-    PIN_SEED_TRACE("entropy_export account=%d internal_cleanup=done ret=0x%08X",
-                   accountIndex, (unsigned int)ret);
     return ret;
 }
 
@@ -253,7 +245,6 @@ int32_t GetAccountSeed(uint8_t accountIndex, uint8_t *seed, const char *password
     uint32_t seedLen;
 
     ASSERT(accountIndex <= 2);
-    PIN_SEED_TRACE("seed_export account=%d begin", accountIndex);
     do {
         ret = LoadAccountSecret(accountIndex, &accountSecret, password);
         CHECK_ERRCODE_BREAK("LoadAccountSecret", ret);
@@ -271,8 +262,6 @@ int32_t GetAccountSeed(uint8_t accountIndex, uint8_t *seed, const char *password
 
     CLEAR_OBJECT(accountSecret);
     CLEAR_ARRAY(tempSeed);
-    PIN_SEED_TRACE("seed_export account=%d internal_cleanup=done ret=0x%08X",
-                   accountIndex, (unsigned int)ret);
     return ret;
 }
 
@@ -346,8 +335,6 @@ int32_t ChangePassword(uint8_t accountIndex, const char *newPassword, const char
     // leaves it armed (e.g. if SaveAccountSecret returned before SetNewKeyPieceToSE).
     SE_DisarmProvisionRecovery();
     CLEAR_OBJECT(accountSecret);
-    PIN_SEED_TRACE("change_pin account=%d account_secret_cleanup=done ret=0x%08X",
-                   accountIndex, (unsigned int)ret);
     return ret;
 }
 
@@ -546,7 +533,6 @@ int32_t SetPassphrase(uint8_t accountIndex, const char *passphrase, const char *
 
     ASSERT(strnlen_s(password, PASSWORD_MAX_LEN) >= 6);
     ASSERT(accountIndex <= 2);
-    PIN_SEED_TRACE("passphrase account=%d setup=begin", accountIndex);
     do {
         ret = GetPassphraseSeed(accountIndex, seed, passphrase, password);
         CHECK_ERRCODE_BREAK("GetPassphraseSeed", ret);
@@ -593,8 +579,6 @@ int32_t SetPassphrase(uint8_t accountIndex, const char *passphrase, const char *
     }
     CLEAR_ARRAY(seed);
     CLEAR_ARRAY(newMfp);
-    PIN_SEED_TRACE("passphrase account=%d sensitive_cleanup=done ret=0x%08X",
-                   accountIndex, (unsigned int)ret);
 
     if (ret != SUCCESS_CODE) {
         // Passphrase public info and Zcash runtime state are RAM-only. Do not try to repair a
@@ -604,8 +588,6 @@ int32_t SetPassphrase(uint8_t accountIndex, const char *passphrase, const char *
         ClearAccountPassphrase(accountIndex);
         ClearSecretCache();
         LogoutCurrentAccount();
-        PIN_SEED_TRACE("passphrase account=%d setup=failed ret=0x%08X rebooting",
-                       accountIndex, (unsigned int)ret);
         SystemReboot();
     }
 
@@ -891,7 +873,6 @@ static int32_t DecryptAccountBlob(const VerifiedAccountBlob_t *verified, Account
     const AccountInfo_t *pAccountInfo = (const AccountInfo_t *)verified->param;
     AES256_CBC_ctx ctx;
 
-    PIN_SEED_TRACE("account_secret_decrypt begin");
     memcpy_s(encryptKey, sizeof(encryptKey), verified->preOtpEncryptKey, sizeof(encryptKey));
     CombineInnerAesKey(encryptKey);
     AES256_CBC_init(&ctx, encryptKey, iv);
@@ -903,8 +884,6 @@ static int32_t DecryptAccountBlob(const VerifiedAccountBlob_t *verified, Account
 
     CLEAR_OBJECT(ctx);
     CLEAR_ARRAY(encryptKey);
-    PIN_SEED_TRACE("account_secret_decrypt sensitive_cleanup=done ret=0x%08X",
-                   (unsigned int)SUCCESS_CODE);
     return SUCCESS_CODE;
 }
 
