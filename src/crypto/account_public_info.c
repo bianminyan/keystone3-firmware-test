@@ -65,7 +65,6 @@ static void CleanupJson(cJSON* json);
 static void FreePublicKeyRam(void);
 static int32_t GetChainTableIndex(ChainType chain);
 static void PrintInfo(void);
-static void ClearSensitiveCString(char *value);
 static void SetIsTempAccount(bool isTemp);
 static int32_t SaveCurrentPublicInfoToFlash(uint8_t accountIndex, uint32_t addr);
 #ifndef BTC_ONLY
@@ -81,17 +80,6 @@ static SimpleResponse_c_char *DeriveEncryptedZcashUFVKV3(
     char *ufvkOut, uint32_t ufvkOutLen);
 static int32_t ReplaceStoredZcashUFVK(uint8_t accountIndex, const SimpleResponse_c_char *encryptResult);
 #endif
-
-static void ClearSensitiveCString(char *value)
-{
-    if (value == NULL) {
-        return;
-    }
-    size_t len = strnlen_s(value, SIMPLERESPONSE_C_CHAR_MAX_LEN);
-    if (len > 0) {
-        memset_s(value, len, 0, len);
-    }
-}
 
 #ifdef BTC_ONLY
 static void LoadCurrentAccountMultiReceiveIndex(void);
@@ -925,7 +913,7 @@ int32_t AccountPublicSavePublicInfo(uint8_t accountIndex, const char *password, 
             }
             icarusMasterKey = cip3Response->data;
             ledgerBitbox02Key = ledgerBitbox02Response->data;
-            ClearSensitiveCString(mnemonic);
+            ClearSensitiveCString(mnemonic, MNEMONIC_MAX_LEN);
             SRAM_FREE(mnemonic);
             mnemonic = NULL;
         }
@@ -1000,15 +988,15 @@ int32_t AccountPublicSavePublicInfo(uint8_t accountIndex, const char *password, 
         free_simple_response_c_char(xPubResult);
     }
     if (cip3Response != NULL) {
-        ClearSensitiveCString(cip3Response->data);
+        ClearSensitiveCString(cip3Response->data, SIMPLERESPONSE_C_CHAR_MAX_LEN);
         free_simple_response_c_char(cip3Response);
     }
     if (ledgerBitbox02Response != NULL) {
-        ClearSensitiveCString(ledgerBitbox02Response->data);
+        ClearSensitiveCString(ledgerBitbox02Response->data, SIMPLERESPONSE_C_CHAR_MAX_LEN);
         free_simple_response_c_char(ledgerBitbox02Response);
     }
     if (mnemonic != NULL) {
-        ClearSensitiveCString(mnemonic);
+        ClearSensitiveCString(mnemonic, MNEMONIC_MAX_LEN);
         SRAM_FREE(mnemonic);
     }
     CLEAR_ARRAY(seed);
@@ -1205,7 +1193,7 @@ static SimpleResponse_c_char *DeriveEncryptedZcashUFVKV3WithCacheKey(
         strcpy_s(ufvkOut, ufvkOutLen, ufvkResponse->data);
     }
     if (ufvkResponse->data != NULL) {
-        ClearSensitiveCString(ufvkResponse->data);
+        ClearSensitiveCString(ufvkResponse->data, SIMPLERESPONSE_C_CHAR_MAX_LEN);
     }
     free_simple_response_c_char(ufvkResponse);
     return encryptResult;
@@ -1373,7 +1361,7 @@ int32_t TempAccountPublicInfo(uint8_t accountIndex, const char *password, bool s
                 }
                 icarusMasterKey = cip3Response->data;
                 ledgerBitbox02Key = ledgerBitbox02Response->data;
-                ClearSensitiveCString(mnemonic);
+                ClearSensitiveCString(mnemonic, MNEMONIC_MAX_LEN);
                 SRAM_FREE(mnemonic);
                 mnemonic = NULL;
             }
@@ -1462,15 +1450,15 @@ int32_t TempAccountPublicInfo(uint8_t accountIndex, const char *password, bool s
         free_simple_response_c_char(xPubResult);
     }
     if (cip3Response != NULL) {
-        ClearSensitiveCString(cip3Response->data);
+        ClearSensitiveCString(cip3Response->data, SIMPLERESPONSE_C_CHAR_MAX_LEN);
         free_simple_response_c_char(cip3Response);
     }
     if (ledgerBitbox02Response != NULL) {
-        ClearSensitiveCString(ledgerBitbox02Response->data);
+        ClearSensitiveCString(ledgerBitbox02Response->data, SIMPLERESPONSE_C_CHAR_MAX_LEN);
         free_simple_response_c_char(ledgerBitbox02Response);
     }
     if (mnemonic != NULL) {
-        ClearSensitiveCString(mnemonic);
+        ClearSensitiveCString(mnemonic, MNEMONIC_MAX_LEN);
         SRAM_FREE(mnemonic);
     }
     CLEAR_ARRAY(seed);

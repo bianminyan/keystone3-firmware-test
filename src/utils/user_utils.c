@@ -107,6 +107,17 @@ bool IsHexStringWithLen(const char *value, size_t expectedLen)
     return true;
 }
 
+void ClearSensitiveCString(char *value, size_t maxLen)
+{
+    if (value == NULL || maxLen == 0) {
+        return;
+    }
+    size_t len = strnlen_s(value, maxLen);
+    if (len > 0) {
+        memset_s(value, len, 0, len);
+    }
+}
+
 void RemoveFormatChar(char *str)
 {
 #ifndef COMPILE_SIMULATOR
