@@ -19,6 +19,7 @@
 #include "motor_manager.h"
 #include "fingerprint_process.h"
 #include "account_manager.h"
+#include "account_public_info.h"
 #include "screen_manager.h"
 #ifndef COMPILE_SIMULATOR
 #include "sha256.h"
@@ -511,6 +512,11 @@ void GuiWalletSetFingerPassCodeWidget(lv_obj_t *parent)
     table[0].obj = label;
     table[1].obj = imgArrow;
     button = GuiCreateButton(parent, 456, 84, table, 2, GuiShowKeyboardHandler, &walletSetting[1]);
+    if (GetIsTempAccount()) {
+        lv_obj_clear_flag(button, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_text_opa(label, LV_OPA_30, LV_PART_MAIN);
+        lv_obj_set_style_img_opa(imgArrow, LV_OPA_30, LV_PART_MAIN);
+    }
     lv_obj_align(button, LV_ALIGN_DEFAULT, 12, 253 - GUI_MAIN_AREA_OFFSET);
 }
 
