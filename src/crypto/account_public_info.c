@@ -913,7 +913,7 @@ int32_t AccountPublicSavePublicInfo(uint8_t accountIndex, const char *password, 
             }
             icarusMasterKey = cip3Response->data;
             ledgerBitbox02Key = ledgerBitbox02Response->data;
-            ClearSensitiveCString(mnemonic, MNEMONIC_MAX_LEN);
+            ClearSensitiveCString(mnemonic);
             SRAM_FREE(mnemonic);
             mnemonic = NULL;
         }
@@ -988,15 +988,15 @@ int32_t AccountPublicSavePublicInfo(uint8_t accountIndex, const char *password, 
         free_simple_response_c_char(xPubResult);
     }
     if (cip3Response != NULL) {
-        ClearSensitiveCString(cip3Response->data, SIMPLERESPONSE_C_CHAR_MAX_LEN);
+        ClearSensitiveCString(cip3Response->data);
         free_simple_response_c_char(cip3Response);
     }
     if (ledgerBitbox02Response != NULL) {
-        ClearSensitiveCString(ledgerBitbox02Response->data, SIMPLERESPONSE_C_CHAR_MAX_LEN);
+        ClearSensitiveCString(ledgerBitbox02Response->data);
         free_simple_response_c_char(ledgerBitbox02Response);
     }
     if (mnemonic != NULL) {
-        ClearSensitiveCString(mnemonic, MNEMONIC_MAX_LEN);
+        ClearSensitiveCString(mnemonic);
         SRAM_FREE(mnemonic);
     }
     CLEAR_ARRAY(seed);
@@ -1193,7 +1193,7 @@ static SimpleResponse_c_char *DeriveEncryptedZcashUFVKV3WithCacheKey(
         strcpy_s(ufvkOut, ufvkOutLen, ufvkResponse->data);
     }
     if (ufvkResponse->data != NULL) {
-        ClearSensitiveCString(ufvkResponse->data, SIMPLERESPONSE_C_CHAR_MAX_LEN);
+        ClearSensitiveCString(ufvkResponse->data);
     }
     free_simple_response_c_char(ufvkResponse);
     return encryptResult;
@@ -1361,7 +1361,7 @@ int32_t TempAccountPublicInfo(uint8_t accountIndex, const char *password, bool s
                 }
                 icarusMasterKey = cip3Response->data;
                 ledgerBitbox02Key = ledgerBitbox02Response->data;
-                ClearSensitiveCString(mnemonic, MNEMONIC_MAX_LEN);
+                ClearSensitiveCString(mnemonic);
                 SRAM_FREE(mnemonic);
                 mnemonic = NULL;
             }
@@ -1450,15 +1450,15 @@ int32_t TempAccountPublicInfo(uint8_t accountIndex, const char *password, bool s
         free_simple_response_c_char(xPubResult);
     }
     if (cip3Response != NULL) {
-        ClearSensitiveCString(cip3Response->data, SIMPLERESPONSE_C_CHAR_MAX_LEN);
+        ClearSensitiveCString(cip3Response->data);
         free_simple_response_c_char(cip3Response);
     }
     if (ledgerBitbox02Response != NULL) {
-        ClearSensitiveCString(ledgerBitbox02Response->data, SIMPLERESPONSE_C_CHAR_MAX_LEN);
+        ClearSensitiveCString(ledgerBitbox02Response->data);
         free_simple_response_c_char(ledgerBitbox02Response);
     }
     if (mnemonic != NULL) {
-        ClearSensitiveCString(mnemonic, MNEMONIC_MAX_LEN);
+        ClearSensitiveCString(mnemonic);
         SRAM_FREE(mnemonic);
     }
     CLEAR_ARRAY(seed);
