@@ -299,7 +299,6 @@ int32_t ChangePassword(uint8_t accountIndex, const char *newPassword, const char
     AccountSecret_t accountSecret;
 
     ASSERT(accountIndex <= 2);
-#ifdef CYPHERPUNK_VERSION
     // ChangePassword updates the persistent base-account public-info record. A temp/passphrase
     // record, or a non-current account, cannot be updated safely through the current in-memory view.
     // Reject before changing any SE state so an existing z3 blob can never be stranded under the old key.
@@ -307,7 +306,6 @@ int32_t ChangePassword(uint8_t accountIndex, const char *newPassword, const char
         printf("change pin requires the current base account\r\n");
         return ERR_GENERAL_FAIL;
     }
-#endif
     do {
         ret = CheckPasswordExisted(newPassword, accountIndex);
         CHECK_ERRCODE_BREAK("check repeat password", ret);
