@@ -113,6 +113,18 @@ GetCustomContainerFunc GetOtherChainCustomFunc(char *funcName)
         return GuiShowAdaSignTxHashOverview;
     } else if (!strcmp(funcName, "GuiShowAdaSignTxHashDetails")) {
         return GuiShowAdaSignTxHashDetails;
+    } else if (!strcmp(funcName, "GuiShowAdaRawData")) {
+        return GuiShowAdaRawData;
+    } else if (!strcmp(funcName, "GuiShowAdaTx")) {
+        return GuiShowAdaTx;
+    } else if (!strcmp(funcName, "GuiShowAdaSignData")) {
+        return GuiShowAdaSignData;
+    } else if (!strcmp(funcName, "GuiShowAdaInputs")) {
+        return GuiShowAdaInputs;
+    } else if (!strcmp(funcName, "GuiShowAdaOutputs")) {
+        return GuiShowAdaOutputs;
+    } else if (!strcmp(funcName, "GuiShowAdaMultiAssetsWarning")) {
+        return GuiShowAdaMultiAssetsWarning;
     } else if (!strcmp(funcName, "GuiAvaxTxOverview")) {
         return GuiAvaxTxOverview;
     } else if (!strcmp(funcName, "GuiAvaxTxRawData")) {

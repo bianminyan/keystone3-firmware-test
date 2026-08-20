@@ -135,7 +135,7 @@ version = "0.1.0"
 dependencies = [
  "app_utils",
  "bcs",
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "hex",
  "keystore",
  "ref-cast",
@@ -154,7 +154,7 @@ dependencies = [
  "base64 0.11.0",
  "cbc",
  "cipher",
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "hex",
  "keystore",
  "lazy_static",
@@ -177,7 +177,7 @@ dependencies = [
  "bech32 0.11.0",
  "bitcoin",
  "bytes",
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "either",
  "hex",
  "itertools 0.13.0",
@@ -194,7 +194,7 @@ dependencies = [
 name = "app_babylon"
 version = "0.1.0"
 dependencies = [
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "hex",
  "keystore",
  "thiserror-core",
@@ -210,7 +210,7 @@ dependencies = [
  "bech32 0.11.0",
  "bitcoin",
  "bitcoin_hashes 0.14.0",
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "either",
  "hex",
  "itertools 0.13.0",
@@ -231,11 +231,15 @@ dependencies = [
  "bech32 0.11.0",
  "bitcoin",
  "cardano-serialization-lib",
- "cryptoxide",
+ "cml-chain",
+ "cml-multi-era",
+ "cryptoxide 0.4.4",
  "ed25519-bip32-core",
  "hex",
  "keystore",
+ "minicbor",
  "rust_tools",
+ "serde_json",
  "thiserror-core",
  "ur-registry",
 ]
@@ -248,7 +252,7 @@ dependencies = [
  "base64 0.11.0",
  "bech32 0.11.0",
  "bitcoin",
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "hex",
  "keystore",
  "prost",
@@ -268,7 +272,7 @@ dependencies = [
  "app_utils",
  "bitcoin",
  "bytes",
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "ethabi 18.0.0",
  "ethereum-types 0.14.1",
  "hex",
@@ -287,7 +291,7 @@ dependencies = [
 name = "app_iota"
 version = "0.1.0"
 dependencies = [
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "hex",
  "keystore",
  "thiserror-core",
@@ -301,7 +305,7 @@ dependencies = [
  "base58-monero",
  "bitcoin",
  "chacha20",
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "cuprate-cryptonight",
  "curve25519-dalek",
  "hex",
@@ -323,7 +327,7 @@ dependencies = [
  "base64 0.11.0",
  "bitcoin",
  "borsh 0.9.3",
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "hex",
  "keystore",
  "primitive-types 0.10.1",
@@ -361,7 +365,7 @@ name = "app_stellar"
 version = "0.1.0"
 dependencies = [
  "base64 0.11.0",
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "hex",
  "keystore",
  "serde_json",
@@ -394,7 +398,7 @@ dependencies = [
  "base64 0.22.1",
  "bitstream-io",
  "crc",
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "hex",
  "itertools 0.13.0",
  "keystore",
@@ -419,7 +423,7 @@ dependencies = [
  "app_utils",
  "ascii",
  "bitcoin",
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "ethabi 15.0.0",
  "hex",
  "keystore",
@@ -446,7 +450,7 @@ dependencies = [
  "app_utils",
  "app_xrp",
  "bitcoin",
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "hex",
  "keystore",
  "rust_tools",
@@ -463,7 +467,7 @@ dependencies = [
  "base-x",
  "bitcoin",
  "bytes",
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "hex",
  "keystore",
  "rippled_binary_codec",
@@ -593,6 +597,12 @@ name = "bech32"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d965446196e3b7decd44aa7ee49e31d630118f90ef12f97900f262eb915c951d"
+
+[[package]]
+name = "bech32"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efbd3e1070bbdf4cd88a75264e18e8a26f7cb5c6949eadf0ceb85fb159cf08f8"
 
 [[package]]
 name = "bellman"
@@ -920,7 +930,7 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09dc0086e469182132244e9b8d313a0742e1132da43a08c24b9dd3c18e0faf3a"
 dependencies = [
- "thiserror 2.0.12",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -968,18 +978,18 @@ dependencies = [
 
 [[package]]
 name = "cardano-serialization-lib"
-version = "13.2.0"
-source = "git+https://git@github.com/KeystoneHQ/cardano-serialization-lib.git?tag=keystone-0.1.7#1822d2223a105aaea5feee6ec888ff3cc74c999d"
+version = "15.0.1"
 dependencies = [
  "bech32 0.9.1",
- "cbor_event",
+ "cbor_event 2.4.0",
  "cfg-if",
  "clear_on_drop",
  "core2",
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "digest 0.9.0",
  "ed25519-bip32-core",
  "getrandom 0.2.16",
+ "hashbrown 0.14.5",
  "hex",
  "itertools 0.10.5",
  "js-sys",
@@ -987,10 +997,12 @@ dependencies = [
  "num",
  "num-bigint",
  "num-integer",
- "rand",
+ "num-traits",
+ "rand 0.8.5",
+ "rand_chacha",
  "rand_os",
  "ritelinked",
- "schemars",
+ "schemars 0.8.22",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
@@ -1035,6 +1047,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "cbor_event"
+version = "3.2.0"
+source = "git+https://github.com/dcSpark/cbor_event?rev=e2bca6d257f70ab0c226c4efd0726d3f5c1b4490#e2bca6d257f70ab0c226c4efd0726d3f5c1b4490"
+
+[[package]]
 name = "cc"
 version = "1.2.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1045,9 +1062,9 @@ dependencies = [
 
 [[package]]
 name = "cfg-if"
-version = "1.0.1"
+version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9555578bc9e57714c812a1f84e4fc5b4d21fcb063490c624de019f7464c91268"
+checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "cfg_aliases"
@@ -1081,9 +1098,9 @@ dependencies = [
 
 [[package]]
 name = "chrono"
-version = "0.4.39"
+version = "0.4.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e36cc9d416881d2e24f9a963be5fb1cd90966419ac844274161d10488b3e825"
+checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
 dependencies = [
  "num-traits",
  "serde",
@@ -1146,12 +1163,99 @@ dependencies = [
 ]
 
 [[package]]
+name = "cml-chain"
+version = "6.2.0"
+source = "git+https://github.com/dcSpark/cardano-multiplatform-lib.git?rev=69b8664c84931cd6632e0d951c2795019597527f#69b8664c84931cd6632e0d951c2795019597527f"
+dependencies = [
+ "base64 0.22.1",
+ "bech32 0.12.0",
+ "cbor_event 3.2.0",
+ "chrono",
+ "cml-core",
+ "cml-crypto",
+ "const-hex",
+ "derivative",
+ "hashlink",
+ "itertools 0.15.0",
+ "noop_proc_macro",
+ "num",
+ "num-bigint",
+ "num-integer",
+ "rand 0.10.2",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "cml-core"
+version = "6.2.0"
+source = "git+https://github.com/dcSpark/cardano-multiplatform-lib.git?rev=69b8664c84931cd6632e0d951c2795019597527f#69b8664c84931cd6632e0d951c2795019597527f"
+dependencies = [
+ "base64 0.22.1",
+ "bech32 0.12.0",
+ "cbor_event 3.2.0",
+ "cfg-if",
+ "const-hex",
+ "derivative",
+ "hashlink",
+ "itertools 0.15.0",
+ "num-bigint",
+ "num-integer",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "cml-crypto"
+version = "6.2.0"
+source = "git+https://github.com/dcSpark/cardano-multiplatform-lib.git?rev=69b8664c84931cd6632e0d951c2795019597527f#69b8664c84931cd6632e0d951c2795019597527f"
+dependencies = [
+ "base64 0.22.1",
+ "bech32 0.12.0",
+ "cbor_event 3.2.0",
+ "cfg-if",
+ "cml-core",
+ "const-hex",
+ "cryptoxide 0.5.3",
+ "derivative",
+ "ed25519-bip32",
+ "rand 0.10.2",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "cml-multi-era"
+version = "6.2.0"
+source = "git+https://github.com/dcSpark/cardano-multiplatform-lib.git?rev=69b8664c84931cd6632e0d951c2795019597527f#69b8664c84931cd6632e0d951c2795019597527f"
+dependencies = [
+ "bech32 0.12.0",
+ "cbor_event 3.2.0",
+ "cml-chain",
+ "cml-core",
+ "cml-crypto",
+ "const-hex",
+ "derivative",
+ "hashlink",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cobs"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fa961b519f0b462e3a3b4a34b64d119eeaca1d59af726fe450bbba07a9fc0a1"
 dependencies = [
- "thiserror 2.0.12",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -1195,6 +1299,18 @@ name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
+
+[[package]]
+name = "const-hex"
+version = "1.19.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33e2a781ebdf4467d1428dc4593067825fb646f6871475098d8577421af73558"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "proptest",
+ "serde_core",
+]
 
 [[package]]
 name = "const-oid"
@@ -1408,6 +1524,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "382ce8820a5bb815055d3553a610e8cb542b2d767bbacea99038afda96cd760d"
 
 [[package]]
+name = "cryptoxide"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "850970a274ad3f4cb46366499c0e1f811aa717ea2514329b1dfee2aa377f68b4"
+
+[[package]]
+name = "cryptoxide"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93f80e26fec88f5ae9450cd5f4e59f5c6421abafc919ea68a3edd521f9580c9b"
+
+[[package]]
 name = "cstr_core"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1552,6 +1680,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "derivative"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "derive_more"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1648,12 +1787,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c7a8fb8a9fbf66c1f703fe16184d10ca0ee9d23be5b4436400408ba54a95005"
 
 [[package]]
+name = "ed25519-bip32"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10c212afef25445afd5cd3fc05941661b0473e681d7a39991b46c2821dbb9ba6"
+dependencies = [
+ "cryptoxide 0.6.2",
+]
+
+[[package]]
 name = "ed25519-bip32-core"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d35962ca39c3751fedb1e650e40a82f8a233f2332191e67f7f13abef39aedd69"
 dependencies = [
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "zeroize",
 ]
 
@@ -2083,7 +2231,7 @@ dependencies = [
  "halo2_proofs",
  "lazy_static",
  "pasta_curves",
- "rand",
+ "rand 0.8.5",
  "sinsemilla",
  "subtle",
  "uint",
@@ -2172,6 +2320,24 @@ dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash",
+]
+
+[[package]]
+name = "hashbrown"
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+dependencies = [
+ "foldhash",
+]
+
+[[package]]
+name = "hashlink"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32069d97bb81e38fa67eab65e3393bf804bb85969f2bc06bf13f64aef5aba248"
+dependencies = [
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -2324,7 +2490,7 @@ checksum = "30821f91f0fa8660edca547918dc59812893b497d07c1144f326f07fdd94aba9"
 dependencies = [
  "either",
  "proptest",
- "rand",
+ "rand 0.8.5",
  "rand_core 0.6.4",
 ]
 
@@ -2399,6 +2565,15 @@ name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
 dependencies = [
  "either",
 ]
@@ -2480,7 +2655,7 @@ version = "0.1.0"
 dependencies = [
  "arrayref",
  "bitcoin",
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "cstr_core",
  "cty",
  "ed25519-bip32-core",
@@ -2841,7 +3016,7 @@ dependencies = [
  "monero-clsag",
  "monero-rpc",
  "monero-serai",
- "rand",
+ "rand 0.8.5",
  "rand_chacha",
  "rand_core 0.6.4",
  "rand_distr",
@@ -2895,6 +3070,7 @@ version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "35bd024e8b2ff75562e5f34e7f4905839deb4b22955ef5e73d2fea1b9813cb23"
 dependencies = [
+ "num-bigint",
  "num-complex",
  "num-integer",
  "num-iter",
@@ -2923,7 +3099,7 @@ dependencies = [
  "num-integer",
  "num-iter",
  "num-traits",
- "rand",
+ "rand 0.8.5",
  "smallvec",
  "zeroize",
 ]
@@ -2991,6 +3167,7 @@ version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f83d14da390562dca69fc84082e73e548e1ad308d24accdedd2720017cb37824"
 dependencies = [
+ "num-bigint",
  "num-integer",
  "num-traits",
 ]
@@ -3056,7 +3233,7 @@ dependencies = [
  "nonempty",
  "pasta_curves",
  "proptest",
- "rand",
+ "rand 0.8.5",
  "rand_core 0.6.4",
  "reddsa",
  "serde",
@@ -3123,7 +3300,7 @@ dependencies = [
  "ff",
  "group",
  "lazy_static",
- "rand",
+ "rand 0.8.5",
  "static_assertions",
  "subtle",
 ]
@@ -3195,7 +3372,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c80231409c20246a13fddb31776fb942c38553c51e871f8cbd687a4cfb5843d"
 dependencies = [
  "phf_shared",
- "rand",
+ "rand 0.8.5",
 ]
 
 [[package]]
@@ -3419,7 +3596,7 @@ dependencies = [
  "bitflags 2.9.1",
  "lazy_static",
  "num-traits",
- "rand",
+ "rand 0.8.5",
  "rand_chacha",
  "rand_xorshift",
  "regex-syntax 0.8.5",
@@ -3559,6 +3736,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7f5fa3a058cd35567ef9bfa5e75732bee0f9e4c55fa90477bef2dfcdbc4be80"
+dependencies = [
+ "rand_core 0.10.1",
+]
+
+[[package]]
 name = "rand_chacha"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3593,13 +3779,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand_core"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
+
+[[package]]
 name = "rand_distr"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32cb0b9bc82b0a0876c2dd994a7e7a2683d3e7390ca40e6886785ef0c7e3ee31"
 dependencies = [
  "num-traits",
- "rand",
+ "rand 0.8.5",
 ]
 
 [[package]]
@@ -3775,7 +3967,7 @@ dependencies = [
  "ascii",
  "base-x",
  "bytes",
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "hex",
  "proc-macro-regex",
  "rust_decimal",
@@ -3865,7 +4057,7 @@ dependencies = [
  "cbc",
  "cbindgen",
  "cipher",
- "cryptoxide",
+ "cryptoxide 0.4.4",
  "cstr_core",
  "cty",
  "ed25519-bip32-core",
@@ -4008,7 +4200,7 @@ dependencies = [
  "lazy_static",
  "memuse",
  "proptest",
- "rand",
+ "rand 0.8.5",
  "rand_core 0.6.4",
  "redjubjub",
  "subtle",
@@ -4049,7 +4241,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fbf2ae1b8bc8e02df939598064d22402220cd5bbcca1c76f7d6a310974d5615"
 dependencies = [
  "dyn-clone",
- "schemars_derive",
+ "schemars_derive 0.8.22",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "schemars"
+version = "1.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "687274d293b6cdc6e73e0fee520bf2049650090d7164f87672d212a3c530cf4a"
+dependencies = [
+ "dyn-clone",
+ "ref-cast",
+ "schemars_derive 1.2.2",
  "serde",
  "serde_json",
 ]
@@ -4062,8 +4267,20 @@ checksum = "32e265784ad618884abaea0600a9adf15393368d840e0222d101a072f3f7534d"
 dependencies = [
  "proc-macro2",
  "quote",
- "serde_derive_internals",
+ "serde_derive_internals 0.29.1",
  "syn 2.0.104",
+]
+
+[[package]]
+name = "schemars_derive"
+version = "1.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d98c67716b46af2f0b8cf752abc930f6f9aecfbf671ecfb531db8a31dbe4e2ba"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_derive_internals 0.30.0",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -4199,6 +4416,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.104",
+]
+
+[[package]]
+name = "serde_derive_internals"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f852137cce035d6a4df67ccce505ff6b3e9fd3a10e3e52b24dc71e650bb1a9bd"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -4489,6 +4717,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "syn"
+version = "3.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53e9bae58849f64dfa4f5d5ae372c8341f7305f82a3868709269343628b659a3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
 name = "tap"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4536,11 +4775,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.12"
+version = "2.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "567b8a2dae586314f7be2a752ec7474332959c6460e02bde30d702a66d488708"
+checksum = "ec86235f5fcc2a73650310756d2ac5b138a5780bbbdfae3eeccec992c435ba4f"
 dependencies = [
- "thiserror-impl 2.0.12",
+ "thiserror-impl 2.0.20",
 ]
 
 [[package]]
@@ -4576,13 +4815,13 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.12"
+version = "2.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f7cf42b4507d8ea322120659672cf1b9dbb93f8f2d4ecfd6e51350ff5b17a1d"
+checksum = "bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.104",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -4772,6 +5011,12 @@ name = "unicode-ident"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a5f39404a5da50712a4c1eecf25e90dd62b613502b7e925fd4e4d19b5c96512"
+
+[[package]]
+name = "unicode-segmentation"
+version = "1.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8"
 
 [[package]]
 name = "unicode-xid"
@@ -5529,7 +5774,7 @@ dependencies = [
  "secp256k1",
  "sha1",
  "sha2 0.10.9",
- "thiserror 2.0.12",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
