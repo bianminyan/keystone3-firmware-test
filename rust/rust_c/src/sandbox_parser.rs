@@ -1,5 +1,5 @@
 #[no_mangle]
-#[link_section = ".sandbox_parser_entry"]
+#[cfg_attr(target_os = "none", link_section = ".sandbox_parser_entry")]
 pub unsafe extern "C" fn mpu_sandbox_validate_ur(input: *const u8, input_len: usize) -> u32 {
     if input.is_null() {
         return sandbox_parser::ValidationStatus::InvalidInput as u32;
@@ -10,7 +10,7 @@ pub unsafe extern "C" fn mpu_sandbox_validate_ur(input: *const u8, input_len: us
 }
 
 #[no_mangle]
-#[link_section = ".sandbox_parser_entry"]
+#[cfg_attr(target_os = "none", link_section = ".sandbox_parser_entry")]
 pub unsafe extern "C" fn mpu_sandbox_validate_cbor(input: *const u8, input_len: usize) -> u32 {
     if input.is_null() {
         return sandbox_parser::ValidationStatus::InvalidInput as u32;
@@ -21,7 +21,7 @@ pub unsafe extern "C" fn mpu_sandbox_validate_cbor(input: *const u8, input_len: 
 }
 
 #[no_mangle]
-#[link_section = ".sandbox_parser_entry"]
+#[cfg_attr(target_os = "none", link_section = ".sandbox_parser_entry")]
 pub unsafe extern "C" fn mpu_sandbox_validate_eip712_json(input: *mut u8, input_len: usize) -> u32 {
     if input.is_null() {
         return sandbox_parser::ValidationStatus::InvalidInput as u32;
