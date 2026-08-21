@@ -32,13 +32,31 @@ SECTIONS
 		. = __privileged_functions_end__ - 0x01082000;
 	} > FLASH
 
-	.text __privileged_functions_end__ :
+	.freertos_system_calls __privileged_functions_end__ :
+	{
+		__syscalls_flash_start__ = .;
+		KEEP(*(freertos_system_calls))
+		__syscalls_flash_used_end__ = .;
+		. = __syscalls_flash_start__ + 0x800;
+		__syscalls_flash_end__ = .;
+	} > FLASH
+	ASSERT(__syscalls_flash_used_end__ <= __syscalls_flash_end__, "FreeRTOS system-call veneers exceed their MPU region")
+
+	.sandbox_text 0x010A4000 :
+	{
+		__sandbox_text_start = .;
+		*mpu_sandbox_runtime.c.*(.text .text.* .rodata .rodata.*)
+		*eapdu_framing.c.*(.text .text.* .rodata .rodata.*)
+		__sandbox_text_used_end = .;
+		. = __sandbox_text_start + 0x4000;
+		__sandbox_text_end = .;
+	} > FLASH
+	ASSERT(__sandbox_text_used_end <= __sandbox_text_end, "Sandbox code exceeds its MPU region")
+
+	.text 0x010A8000 :
 	{
 		. = 0x0;
 		_stext = .;
-		__syscalls_flash_start__ = .;
-		*(freertos_system_calls)
-		__syscalls_flash_end__ = .;
 		*(.text*)
 		*(.rodata*)
 		_etext = .;
@@ -61,6 +79,15 @@ SECTIONS
 	} > SRAM
 	ASSERT(ADDR(.privileged_data) == __privileged_data_start__, "FreeRTOS privileged data must start at the MPU region base")
 	ASSERT((ADDR(.privileged_data) + SIZEOF(.privileged_data)) == __privileged_data_end__, "FreeRTOS privileged data must fill the MPU region")
+
+	.sandbox_writable_guard (NOLOAD) :
+	{
+		__sandbox_writable_start = .;
+		*mpu_sandbox_runtime.c.*(.data .data.* .bss .bss.* COMMON)
+		*eapdu_framing.c.*(.data .data.* .bss .bss.* COMMON)
+		__sandbox_writable_end = .;
+	} > SRAM
+	ASSERT(__sandbox_writable_start == __sandbox_writable_end, "Sandbox objects must not define writable globals")
 
 	.data : AT(_sidata + SIZEOF(.privileged_data))
 	{
@@ -87,6 +114,17 @@ SECTIONS
 		. = ALIGN(8);
 	} > SRAM
 
+	.mpu_sandbox_rw (NOLOAD) :
+	{
+		. = ALIGN(16384);
+		__sandbox_rw_start = .;
+		*(.mpu_sandbox_rw)
+		__sandbox_rw_used_end = .;
+		. = __sandbox_rw_start + 0x4000;
+		__sandbox_rw_end = .;
+	} > SRAM
+	ASSERT(__sandbox_rw_used_end <= __sandbox_rw_end, "Sandbox writable state exceeds its MPU region")
+
 	.mpu_sandbox_stack (NOLOAD) :
 	{
 		. = ALIGN(4096);
@@ -99,18 +137,6 @@ SECTIONS
 		*(.mpu_sandbox_input)
 	} > SRAM
 
-	.mpu_sandbox_output (NOLOAD) :
-	{
-		. = ALIGN(256);
-		*(.mpu_sandbox_output)
-	} > SRAM
-
-	.mpu_sandbox_arena (NOLOAD) :
-	{
-		. = ALIGN(256);
-		*(.mpu_sandbox_arena)
-	} > SRAM
-
 	.bss :
 	{
 		_sbss = .;
@@ -120,16 +146,7 @@ SECTIONS
 		*(COMMON)
 		_ebss = .;
 	} > SRAM
-	ASSERT(_ebss <= 0x200FC000, "SRAM sections overlap the data parser reservation")
-
-	.data_parser_section 0x200FC000 (NOLOAD) :
-	{
-		__data_parser_start = .;
-		*(.data_parser_section)
-		. = ALIGN(4);
-		__data_parser_end = .;
-	} > SRAM
-	ASSERT(__data_parser_end <= __SRAM_segment_end__, "Data parser reservation exceeds SRAM")
+	ASSERT(_ebss <= __SRAM_segment_end__, "SRAM sections exceed physical memory")
 	
 	
 	/DISCARD/ :

@@ -1,60 +1,62 @@
 #include "mpu_sandbox_task.h"
+#include "mpu_sandbox_internal.h"
 
 #include <string.h>
 
 #include "FreeRTOS.h"
-#include "sha256.h"
+#include "mpu_syscall_numbers.h"
 #include "task.h"
-
-#define MPU_SANDBOX_STACK_WORDS    1024U
-#define MPU_SANDBOX_INPUT_SIZE     240U
-#define MPU_SANDBOX_OUTPUT_SIZE    244U
-#define MPU_SANDBOX_ARENA_SIZE     256U
-
-typedef struct {
-    volatile MpuSandboxRequest_t request;
-    uint8_t input[MPU_SANDBOX_INPUT_SIZE];
-} MpuSandboxInput_t;
-
-typedef struct {
-    volatile MpuSandboxResponse_t response;
-    uint8_t output[MPU_SANDBOX_OUTPUT_SIZE];
-} MpuSandboxOutput_t;
+#ifndef BTC_ONLY
+#include "eapdu_framing.h"
+#endif
 
 _Static_assert(MPU_SANDBOX_STACK_WORDS * sizeof(StackType_t) == 4096U,
                "sandbox stack must occupy one MPU region");
-_Static_assert(sizeof(MpuSandboxInput_t) == 256U,
-               "sandbox input must occupy one MPU region");
-_Static_assert(sizeof(MpuSandboxOutput_t) == 256U,
-               "sandbox output must occupy one MPU region");
-_Static_assert(MPU_SANDBOX_ARENA_SIZE == 256U,
-               "sandbox arena must occupy one MPU region");
+#ifndef BTC_ONLY
+_Static_assert(sizeof(MpuSandboxEapduResult_t) <= MPU_SANDBOX_OUTPUT_SIZE,
+               "EAPDU result must fit the sandbox output region");
+#endif
 
-static void MpuSandboxTask(void *argument);
-static void MpuSandboxProcessRequest(MpuSandboxInput_t *input, MpuSandboxOutput_t *output,
-                                     uint8_t *arena);
-static void MpuSandboxTriggerFault(MpuSandboxOperation_t operation, MpuSandboxInput_t *input,
-                                   MpuSandboxOutput_t *output, uint8_t *arena);
+#ifndef BTC_ONLY
+typedef struct {
+    bool has_header;
+    uint8_t cla;
+    uint16_t command_type;
+    uint16_t request_id;
+    uint16_t total_packets;
+    uint16_t packet_index;
+} MpuSandboxTrustedFrame_t;
+
+static void CaptureTrustedEapduFrame(const uint8_t *frame, size_t frame_length);
+static bool IsEapduResultValid(const MpuSandboxEapduResult_t *result);
+#endif
 
 static StaticTask_t g_mpuSandboxTaskBuffer __attribute__((section("privileged_data")));
 static TaskHandle_t g_mpuSandboxTaskHandle __attribute__((section("privileged_data")));
 static uint32_t g_mpuSandboxNextRequestId __attribute__((section("privileged_data"))) = 1U;
-static volatile uint32_t g_mpuSandboxPrivilegedProbe
+volatile uint32_t g_mpuSandboxPrivilegedProbe
     __attribute__((section("privileged_data")));
-static volatile uint8_t g_mpuSandboxSharedHeapProbe
+volatile uint8_t g_mpuSandboxSharedHeapProbe
     __attribute__((section(".freertos_heap_probe")));
 
 static StackType_t g_mpuSandboxStack[MPU_SANDBOX_STACK_WORDS]
     __attribute__((section(".mpu_sandbox_stack"), aligned(4096)));
-static MpuSandboxInput_t g_mpuSandboxInput
+MpuSandboxInput_t g_mpuSandboxInput
     __attribute__((section(".mpu_sandbox_input"), aligned(256)));
-static MpuSandboxOutput_t g_mpuSandboxOutput
-    __attribute__((section(".mpu_sandbox_output"), aligned(256)));
-static uint8_t g_mpuSandboxArena[MPU_SANDBOX_ARENA_SIZE]
-    __attribute__((section(".mpu_sandbox_arena"), aligned(256)));
+MpuSandboxRw_t g_mpuSandboxRw
+    __attribute__((section(".mpu_sandbox_rw"), aligned(MPU_SANDBOX_RW_REGION_SIZE)));
+#ifndef BTC_ONLY
+static uint8_t g_mpuSandboxTrustedPayload[EAPDU_FRAMING_MAX_PAYLOAD_SIZE + 1U];
+static MpuSandboxTrustedFrame_t g_mpuSandboxTrustedFrame
+    __attribute__((section("privileged_data")));
+static bool g_mpuSandboxEapduSuspended __attribute__((section("privileged_data")));
+#endif
+
+extern uint32_t __sandbox_text_start;
+extern uint32_t _stext;
 
 static const TaskParameters_t g_mpuSandboxTaskParameters = {
-    .pvTaskCode = MpuSandboxTask,
+    .pvTaskCode = MpuSandboxRuntime,
     .pcName = "mpu_sandbox",
     .usStackDepth = MPU_SANDBOX_STACK_WORDS,
     .pvParameters = NULL,
@@ -67,18 +69,31 @@ static const TaskParameters_t g_mpuSandboxTaskParameters = {
             .ulParameters = portMPU_REGION_READ_ONLY | portMPU_REGION_EXECUTE_NEVER,
         },
         {
-            .pvBaseAddress = &g_mpuSandboxOutput,
-            .ulLengthInBytes = sizeof(g_mpuSandboxOutput),
+            .pvBaseAddress = &g_mpuSandboxRw,
+            .ulLengthInBytes = MPU_SANDBOX_RW_REGION_SIZE,
             .ulParameters = portMPU_REGION_READ_WRITE | portMPU_REGION_EXECUTE_NEVER,
         },
         {
-            .pvBaseAddress = g_mpuSandboxArena,
-            .ulLengthInBytes = sizeof(g_mpuSandboxArena),
-            .ulParameters = portMPU_REGION_READ_WRITE | portMPU_REGION_EXECUTE_NEVER,
+            .pvBaseAddress = &__sandbox_text_start,
+            .ulLengthInBytes = MPU_SANDBOX_TEXT_REGION_SIZE,
+            .ulParameters = portMPU_REGION_READ_ONLY,
         },
     },
     .pxTaskBuffer = &g_mpuSandboxTaskBuffer,
 };
+
+BaseType_t xApplicationIsSystemCallAllowed(TaskHandle_t task, BaseType_t task_is_privileged,
+                                            uint8_t system_call_number)
+    PRIVILEGED_FUNCTION;
+
+BaseType_t xApplicationIsSystemCallAllowed(TaskHandle_t task, BaseType_t task_is_privileged,
+                                            uint8_t system_call_number)
+{
+    if (task == (TaskHandle_t)&g_mpuSandboxTaskBuffer) {
+        return system_call_number == SYSTEM_CALL_xTaskGenericNotifyWait ? pdTRUE : pdFALSE;
+    }
+    return task_is_privileged;
+}
 
 bool MpuSandboxTaskCreate(void)
 {
@@ -87,8 +102,13 @@ bool MpuSandboxTaskCreate(void)
     }
 
     memset(&g_mpuSandboxInput, 0, sizeof(g_mpuSandboxInput));
-    memset(&g_mpuSandboxOutput, 0, sizeof(g_mpuSandboxOutput));
-    memset(g_mpuSandboxArena, 0, sizeof(g_mpuSandboxArena));
+    memset(&g_mpuSandboxRw, 0, sizeof(g_mpuSandboxRw));
+#ifndef BTC_ONLY
+    memset(g_mpuSandboxTrustedPayload, 0, sizeof(g_mpuSandboxTrustedPayload));
+    memset(&g_mpuSandboxTrustedFrame, 0, sizeof(g_mpuSandboxTrustedFrame));
+    g_mpuSandboxEapduSuspended = false;
+    EapduFramingReset(&g_mpuSandboxRw.eapdu);
+#endif
 
     return xTaskCreateRestrictedStatic(&g_mpuSandboxTaskParameters, &g_mpuSandboxTaskHandle) == pdPASS;
 }
@@ -105,7 +125,11 @@ bool MpuSandboxSubmit(MpuSandboxOperation_t operation, const uint8_t *input, siz
     }
 
     taskENTER_CRITICAL();
-    if (g_mpuSandboxInput.request.operation != 0) {
+    if ((g_mpuSandboxInput.request.operation != 0)
+#ifndef BTC_ONLY
+            || g_mpuSandboxEapduSuspended
+#endif
+       ) {
         taskEXIT_CRITICAL();
         return false;
     }
@@ -118,14 +142,25 @@ bool MpuSandboxSubmit(MpuSandboxOperation_t operation, const uint8_t *input, siz
     if (input_length > 0U) {
         memcpy(g_mpuSandboxInput.input, input, input_length);
     }
-    g_mpuSandboxOutput.response.request_id = id;
-    g_mpuSandboxOutput.response.status = MPU_SANDBOX_STATUS_PENDING;
-    g_mpuSandboxOutput.response.output_length = 0U;
+#ifndef BTC_ONLY
+    if (operation == MPU_SANDBOX_OP_EAPDU_FRAME) {
+        CaptureTrustedEapduFrame(input, input_length);
+    }
+#endif
+    g_mpuSandboxRw.output.response.request_id = id;
+    g_mpuSandboxRw.output.response.status = MPU_SANDBOX_STATUS_PENDING;
+    g_mpuSandboxRw.output.response.output_length = 0U;
     g_mpuSandboxInput.request.request_id = id;
     g_mpuSandboxInput.request.input_length = (uint32_t) input_length;
     g_mpuSandboxInput.request.fault_address = 0U;
     if (operation == MPU_SANDBOX_OP_FAULT_OTHER_STACK) {
         g_mpuSandboxInput.request.fault_address = (uintptr_t) vTaskStackAddr();
+    } else if (operation == MPU_SANDBOX_OP_FAULT_GENERAL_FLASH) {
+        g_mpuSandboxInput.request.fault_address = (uintptr_t)&_stext;
+#ifndef BTC_ONLY
+    } else if (operation == MPU_SANDBOX_OP_EAPDU_FRAME) {
+        g_mpuSandboxInput.request.fault_address = (uintptr_t)xTaskGetTickCount();
+#endif
     }
     __asm volatile("dmb" ::: "memory");
     g_mpuSandboxInput.request.operation = operation;
@@ -143,137 +178,176 @@ bool MpuSandboxGetResponse(uint32_t request_id, MpuSandboxResponse_t *response, 
 {
     uint32_t output_length;
 
-    if ((response == NULL) || (g_mpuSandboxOutput.response.request_id != request_id) ||
-            (g_mpuSandboxOutput.response.status == MPU_SANDBOX_STATUS_PENDING)) {
+    if ((response == NULL) || (g_mpuSandboxInput.request.operation == MPU_SANDBOX_OP_EAPDU_FRAME) ||
+            (g_mpuSandboxRw.output.response.request_id != request_id) ||
+            (g_mpuSandboxRw.output.response.status == MPU_SANDBOX_STATUS_PENDING)) {
         return false;
     }
 
     taskENTER_CRITICAL();
     __asm volatile("dmb" ::: "memory");
-    output_length = g_mpuSandboxOutput.response.output_length;
-    if ((output_length > output_capacity) || ((output_length > 0U) && (output == NULL))) {
+    output_length = g_mpuSandboxRw.output.response.output_length;
+    if ((output_length > sizeof(g_mpuSandboxRw.output.output)) ||
+            (output_length > output_capacity) || ((output_length > 0U) && (output == NULL))) {
         taskEXIT_CRITICAL();
         return false;
     }
-    *response = g_mpuSandboxOutput.response;
+    *response = g_mpuSandboxRw.output.response;
     if (output_length > 0U) {
-        memcpy(output, g_mpuSandboxOutput.output, output_length);
+        memcpy(output, g_mpuSandboxRw.output.output, output_length);
     }
     g_mpuSandboxInput.request.operation = 0;
     taskEXIT_CRITICAL();
     return true;
 }
 
-static void MpuSandboxTask(void *argument)
+#ifndef BTC_ONLY
+bool MpuSandboxGetEapduResult(uint32_t request_id, MpuSandboxEapduResult_t *result,
+                              const uint8_t **payload)
 {
-    uint32_t notification;
-
-    (void) argument;
-    for (;;) {
-        if (xTaskNotifyWait(0U, UINT32_MAX, &notification, portMAX_DELAY) == pdPASS) {
-            (void) notification;
-            MpuSandboxProcessRequest(&g_mpuSandboxInput, &g_mpuSandboxOutput, g_mpuSandboxArena);
-        }
+    if ((result == NULL) || (payload == NULL)) {
+        return false;
     }
+
+    taskENTER_CRITICAL();
+    __asm volatile("dmb" ::: "memory");
+    if ((g_mpuSandboxInput.request.operation != MPU_SANDBOX_OP_EAPDU_FRAME) ||
+            (g_mpuSandboxRw.output.response.request_id != request_id) ||
+            (g_mpuSandboxRw.output.response.status != MPU_SANDBOX_STATUS_OK) ||
+            (g_mpuSandboxRw.output.response.output_length != sizeof(*result))) {
+        taskEXIT_CRITICAL();
+        return false;
+    }
+
+    if (!g_mpuSandboxEapduSuspended) {
+        vTaskSuspend(g_mpuSandboxTaskHandle);
+        g_mpuSandboxEapduSuspended = true;
+    }
+    taskEXIT_CRITICAL();
+
+    memcpy(result, g_mpuSandboxRw.output.output, sizeof(*result));
+    if (!IsEapduResultValid(result)) {
+        /* Keep the parser stopped; the caller handles this as a fail-closed fault. */
+        return false;
+    }
+    if (result->payload_length > 0U) {
+        memcpy(g_mpuSandboxTrustedPayload, g_mpuSandboxRw.eapdu.packet_data,
+               result->payload_length);
+    }
+    g_mpuSandboxTrustedPayload[result->payload_length] = '\0';
+    *payload = g_mpuSandboxTrustedPayload;
+    return true;
 }
 
-static void MpuSandboxProcessRequest(MpuSandboxInput_t *input, MpuSandboxOutput_t *output,
-                                     uint8_t *arena)
+bool MpuSandboxReleaseEapduResult(uint32_t request_id, bool reset_framing)
 {
-    MpuSandboxOperation_t operation = input->request.operation;
-    uint32_t input_length = input->request.input_length;
-    struct sha256 digest;
+    taskENTER_CRITICAL();
+    if ((g_mpuSandboxInput.request.operation != MPU_SANDBOX_OP_EAPDU_FRAME) ||
+            (g_mpuSandboxRw.output.response.request_id != request_id) ||
+            (g_mpuSandboxRw.output.response.status == MPU_SANDBOX_STATUS_PENDING) ||
+            !g_mpuSandboxEapduSuspended) {
+        taskEXIT_CRITICAL();
+        return false;
+    }
+    g_mpuSandboxRw.output.response.status = MPU_SANDBOX_STATUS_PENDING;
+    taskEXIT_CRITICAL();
 
-    output->response.output_length = 0U;
-    if (input_length > sizeof(input->input)) {
-        output->response.status = MPU_SANDBOX_STATUS_INVALID_REQUEST;
+    if (reset_framing) {
+        EapduFramingReset(&g_mpuSandboxRw.eapdu);
+    }
+    memset(g_mpuSandboxInput.input, 0, sizeof(g_mpuSandboxInput.input));
+    memset(g_mpuSandboxRw.output.output, 0, sizeof(g_mpuSandboxRw.output.output));
+    memset(g_mpuSandboxTrustedPayload, 0, sizeof(g_mpuSandboxTrustedPayload));
+    memset(&g_mpuSandboxTrustedFrame, 0, sizeof(g_mpuSandboxTrustedFrame));
+    taskENTER_CRITICAL();
+    g_mpuSandboxRw.output.response.status = MPU_SANDBOX_STATUS_IDLE;
+    g_mpuSandboxRw.output.response.output_length = 0U;
+    __asm volatile("dmb" ::: "memory");
+    g_mpuSandboxInput.request.operation = 0;
+    g_mpuSandboxEapduSuspended = false;
+    taskEXIT_CRITICAL();
+    vTaskResume(g_mpuSandboxTaskHandle);
+    return true;
+}
+
+bool MpuSandboxResetEapduFraming(void)
+{
+    taskENTER_CRITICAL();
+    if ((g_mpuSandboxInput.request.operation != 0) || g_mpuSandboxEapduSuspended) {
+        taskEXIT_CRITICAL();
+        return false;
+    }
+    vTaskSuspend(g_mpuSandboxTaskHandle);
+    g_mpuSandboxEapduSuspended = true;
+    taskEXIT_CRITICAL();
+    EapduFramingReset(&g_mpuSandboxRw.eapdu);
+    memset(&g_mpuSandboxTrustedFrame, 0, sizeof(g_mpuSandboxTrustedFrame));
+    taskENTER_CRITICAL();
+    g_mpuSandboxEapduSuspended = false;
+    taskEXIT_CRITICAL();
+    vTaskResume(g_mpuSandboxTaskHandle);
+    return true;
+}
+
+static void CaptureTrustedEapduFrame(const uint8_t *frame, size_t frame_length)
+{
+    memset(&g_mpuSandboxTrustedFrame, 0, sizeof(g_mpuSandboxTrustedFrame));
+    if ((frame == NULL) || (frame_length < EAPDU_FRAMING_HEADER_SIZE)) {
         return;
     }
 
-    switch (operation) {
-    case MPU_SANDBOX_OP_PING:
-        output->output[0] = 'P';
-        output->output[1] = 'O';
-        output->output[2] = 'N';
-        output->output[3] = 'G';
-        output->response.output_length = 4U;
-        __asm volatile("dmb" ::: "memory");
-        output->response.status = MPU_SANDBOX_STATUS_OK;
-        break;
-    case MPU_SANDBOX_OP_ECHO:
-        memcpy(arena, input->input, input_length);
-        memcpy(output->output, arena, input_length);
-        output->response.output_length = input_length;
-        __asm volatile("dmb" ::: "memory");
-        output->response.status = MPU_SANDBOX_STATUS_OK;
-        break;
-    case MPU_SANDBOX_OP_HASH:
-        sha256(&digest, input->input, input_length);
-        memcpy(output->output, digest.u.u8, sizeof(digest.u.u8));
-        memset(&digest, 0, sizeof(digest));
-        output->response.output_length = sizeof(digest.u.u8);
-        __asm volatile("dmb" ::: "memory");
-        output->response.status = MPU_SANDBOX_STATUS_OK;
-        break;
-    case MPU_SANDBOX_OP_FAULT_INPUT_WRITE:
-    case MPU_SANDBOX_OP_FAULT_SHARED_HEAP:
-    case MPU_SANDBOX_OP_FAULT_OTHER_STACK:
-    case MPU_SANDBOX_OP_FAULT_PRIVILEGED_RAM:
-    case MPU_SANDBOX_OP_FAULT_PERIPHERAL:
-    case MPU_SANDBOX_OP_FAULT_SYSTEM_CONTROL:
-    case MPU_SANDBOX_OP_FAULT_EXECUTE_NEVER:
-    case MPU_SANDBOX_OP_HANG:
-        MpuSandboxTriggerFault(operation, input, output, arena);
-        break;
-    default:
-        output->response.status = MPU_SANDBOX_STATUS_INVALID_REQUEST;
-        break;
-    }
+    g_mpuSandboxTrustedFrame.has_header = true;
+    g_mpuSandboxTrustedFrame.cla = frame[0];
+    g_mpuSandboxTrustedFrame.command_type = ((uint16_t)frame[1] << 8U) | frame[2];
+    g_mpuSandboxTrustedFrame.total_packets = ((uint16_t)frame[3] << 8U) | frame[4];
+    g_mpuSandboxTrustedFrame.packet_index = ((uint16_t)frame[5] << 8U) | frame[6];
+    g_mpuSandboxTrustedFrame.request_id = ((uint16_t)frame[7] << 8U) | frame[8];
 }
 
-static void MpuSandboxTriggerFault(MpuSandboxOperation_t operation, MpuSandboxInput_t *input,
-                                   MpuSandboxOutput_t *output, uint8_t *arena)
+static bool IsEapduResultValid(const MpuSandboxEapduResult_t *result)
 {
-    volatile uint32_t *target;
-    void (*execute)(void);
+    EapduFramingStatus_t status = (EapduFramingStatus_t)result->framing_status;
 
-    switch (operation) {
-    case MPU_SANDBOX_OP_FAULT_INPUT_WRITE:
-        target = (volatile uint32_t *) input->input;
-        *target = 0U;
-        break;
-    case MPU_SANDBOX_OP_FAULT_SHARED_HEAP:
-        g_mpuSandboxSharedHeapProbe = 1U;
-        break;
-    case MPU_SANDBOX_OP_FAULT_OTHER_STACK:
-        target = (volatile uint32_t *) input->request.fault_address;
-        *target = 0U;
-        break;
-    case MPU_SANDBOX_OP_FAULT_PRIVILEGED_RAM:
-        g_mpuSandboxPrivilegedProbe = 1U;
-        break;
-    case MPU_SANDBOX_OP_FAULT_PERIPHERAL:
-        target = (volatile uint32_t *) 0x40000000UL;
-        *target = 0U;
-        break;
-    case MPU_SANDBOX_OP_FAULT_SYSTEM_CONTROL:
-        target = (volatile uint32_t *) 0xE000ED94UL;
-        *target = 0U;
-        break;
-    case MPU_SANDBOX_OP_FAULT_EXECUTE_NEVER:
-        arena[0] = 0x70U;
-        arena[1] = 0x47U;
-        __asm volatile("dsb\nisb" ::: "memory");
-        execute = (void (*)(void))((uintptr_t) arena | 1U);
-        execute();
-        break;
-    case MPU_SANDBOX_OP_HANG:
-        for (;;) {
-        }
-        break;
-    default:
-        break;
+    if ((status < EAPDU_FRAMING_WAITING) ||
+            (status > EAPDU_FRAMING_ERROR_METADATA_MISMATCH) ||
+            (result->timed_out > 1U) ||
+            (result->payload_length > EAPDU_FRAMING_MAX_PAYLOAD_SIZE)) {
+        return false;
     }
 
-    output->response.status = MPU_SANDBOX_STATUS_INVALID_REQUEST;
+    if (g_mpuSandboxTrustedFrame.has_header) {
+        if ((result->cla != g_mpuSandboxTrustedFrame.cla) ||
+                (result->command_type != g_mpuSandboxTrustedFrame.command_type) ||
+                (result->request_id != g_mpuSandboxTrustedFrame.request_id) ||
+                (result->total_packets != g_mpuSandboxTrustedFrame.total_packets) ||
+                (result->packet_index != g_mpuSandboxTrustedFrame.packet_index)) {
+            return false;
+        }
+    } else if ((result->cla != 0U) || (result->command_type != 0U) ||
+               (result->request_id != 0U) || (result->total_packets != 0U) ||
+               (result->packet_index != 0U)) {
+        return false;
+    }
+
+    if (status == EAPDU_FRAMING_COMPLETE) {
+        return (result->total_packets > 0U) &&
+               (result->total_packets <= EAPDU_FRAMING_MAX_PACKETS) &&
+               (result->packet_index < result->total_packets) &&
+               (result->payload_length <=
+                ((uint32_t)result->total_packets * EAPDU_FRAMING_MAX_DATA_SIZE));
+    }
+
+    if (result->payload_length != 0U) {
+        return false;
+    }
+
+    if ((status == EAPDU_FRAMING_WAITING) || (status == EAPDU_FRAMING_DUPLICATE)) {
+        return (result->total_packets > 0U) &&
+               (result->total_packets <= EAPDU_FRAMING_MAX_PACKETS) &&
+               (result->packet_index < result->total_packets);
+    }
+
+    return true;
 }
+
+#endif

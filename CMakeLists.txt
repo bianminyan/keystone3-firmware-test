@@ -314,6 +314,14 @@ if(COMPILE_KEYSTONE)
         list(REMOVE_ITEM objsrc ${excluded_files})
     endforeach()
 
+    set_property(SOURCE
+        src/tasks/mpu_sandbox_runtime.c
+        src/webusb_protocol/general/eapdu_framing.c
+        APPEND PROPERTY COMPILE_OPTIONS
+        -fno-builtin
+        -fno-tree-loop-distribute-patterns
+    )
+
     add_executable(${PROJECT_NAME}.elf ${objsrc})
     target_compile_definitions(${PROJECT_NAME}.elf PRIVATE ${COMMON_DEFINITIONS})
     target_include_directories(${PROJECT_NAME}.elf PRIVATE ${INCLUDE_DIR})
@@ -330,15 +338,16 @@ if(COMPILE_KEYSTONE)
     set(BIN_FILE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.bin)
 
     add_custom_command(TARGET "${PROJECT_NAME}.elf" POST_BUILD
+        COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_mpu_sandbox_elf.py
+                ${ELF_FILE} --objdump ${CMAKE_OBJDUMP}
         COMMAND ${CMAKE_OBJCOPY} -Obinary ${ELF_FILE} ${BIN_FILE}
         COMMAND ${CMAKE_OBJCOPY} -Oihex ${ELF_FILE} ${HEX_FILE}
-        COMMENT "Building ${PROJECT_NAME}.bin and ${PROJECT_NAME}.hex"
 
         COMMAND ${CMAKE_COMMAND} -E copy ${HEX_FILE} "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.hex"
         COMMAND ${CMAKE_COMMAND} -E copy ${BIN_FILE} "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.bin"
 
         COMMAND ${CMAKE_SIZE} --format=berkeley ${PROJECT_NAME}.elf ${PROJECT_NAME}.hex
-        COMMENT "Invoking: Cross ARM GNU Print Size"
+        COMMENT "Building firmware images and printing their sizes"
     )
 else()
     project(simulator)

@@ -92,9 +92,11 @@ extern USB_OTG_CORE_HANDLE g_usbDev;
 #define CDC_TX_MAX_LENGTH               1024
 #define CDC_PACKET_SIZE                 64
 #define CDC_LINE_CODING_LEN             7U
+#define CDC_TX_WAIT_TIMEOUT_MS           1000U
 
 static uint8_t g_cdcSendBuffer[CDC_TX_MAX_LENGTH];
 static uint32_t g_cdcSendIndex = 0;
+static volatile uint8_t g_cdcTxBusy = 0U;
 
 static uint32_t cdcCmd = NO_CMD;
 static uint32_t cdcLen = 0;
@@ -232,6 +234,7 @@ static __ALIGN_BEGIN uint8_t USBD_CDC_CfgHSDesc[WINUSB_CONFIG_DESC_SIZE] __ALIGN
  */
 static uint8_t usbd_cdc_Init(void* pdev, uint8_t cfgidx)
 {
+    g_cdcTxBusy = 0U;
     //CircularBufferConstractor(&SendCircularBuffer, 0);
     //SendCircularBuffer.Init(&SendCircularBuffer, SendByteBuffer, sizeof(SendByteBuffer));
     //CircularBufferConstractor(&ReadCircularBuffer, 0);
@@ -267,6 +270,7 @@ static uint8_t usbd_cdc_Init(void* pdev, uint8_t cfgidx)
  */
 static uint8_t usbd_cdc_DeInit(void* pdev, uint8_t cfgidx)
 {
+    g_cdcTxBusy = 0U;
     /* Open EP IN */
     DCD_EP_Close(pdev, CDC_IN_EP);
 
@@ -417,6 +421,7 @@ static uint8_t usbd_cdc_StallControl(void* pdev)
  */
 static uint8_t usbd_cdc_DataIn(void* pdev, uint8_t epnum)
 {
+    g_cdcTxBusy = 0U;
     ///* Prepare the available data buffer to be sent on IN endpoint */
     USBD_cdc_SendCallback();
     return USBD_OK;
@@ -437,7 +442,7 @@ static uint8_t usbd_cdc_DataOut(void* pdev, uint8_t epnum)
     }
     USB_OTG_EP* ep = &((USB_OTG_CORE_HANDLE*)pdev)->dev.out_ep[ep_idx];
     uint16_t rxCount  = ep->xfer_count;
-    PrintArray("WEBUSB rx", USB_Rx_Buffer, rxCount);
+    // PrintArray("WEBUSB rx", USB_Rx_Buffer, rxCount);
     if (rxCount != 0U) {
         if (!CanPushDataToField(rxCount)) {
             printf("WEBUSB RX drop: parser buffer full len=%u\n", rxCount);
@@ -542,6 +547,7 @@ static void USBD_cdc_SendBuffer(const uint8_t *data, uint32_t len)
 {
     uint32_t sendLen;
     uint32_t remaining;
+    uint32_t waitMs;
     g_cdcSendIndex = 0;
 
     ASSERT(len <= CDC_TX_MAX_LENGTH);
@@ -554,10 +560,27 @@ static void USBD_cdc_SendBuffer(const uint8_t *data, uint32_t len)
         remaining = len - g_cdcSendIndex;
         sendLen = remaining > CDC_PACKET_SIZE ? CDC_PACKET_SIZE : remaining;
 
-        while ((DCD_GetEPStatus(&g_usbDev, CDC_IN_EP) != USB_OTG_EP_TX_NAK)) {
+        waitMs = 0U;
+        while ((g_cdcTxBusy != 0U) && UsbInitState() &&
+                (waitMs < CDC_TX_WAIT_TIMEOUT_MS)) {
+            UserDelay(1U);
+            waitMs++;
         }
+        if ((g_cdcTxBusy != 0U) || !UsbInitState()) {
+            printf("WEBUSB TX timeout len=%u\n", sendLen);
+            g_cdcSendIndex = 0U;
+            return;
+        }
+
         PrintArray("sendBuf USBD_cdc_SendBuffer", g_cdcSendBuffer + g_cdcSendIndex, sendLen);
-        DCD_EP_Tx(&g_usbDev, CDC_IN_EP, g_cdcSendBuffer + g_cdcSendIndex, sendLen);
+        g_cdcTxBusy = 1U;
+        if (DCD_EP_Tx(&g_usbDev, CDC_IN_EP,
+                      g_cdcSendBuffer + g_cdcSendIndex, sendLen) != 0U) {
+            g_cdcTxBusy = 0U;
+            printf("WEBUSB TX start failed len=%u\n", sendLen);
+            g_cdcSendIndex = 0U;
+            return;
+        }
 
         g_cdcSendIndex += sendLen;
     }

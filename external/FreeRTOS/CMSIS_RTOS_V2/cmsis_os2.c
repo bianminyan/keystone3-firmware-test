@@ -177,6 +177,11 @@ osKernelState_t osKernelGetState(void)
 {
     osKernelState_t state;
 
+    /* The MPU wrapper must not issue an SVC from Handler mode. */
+    if (IS_IRQ()) {
+        return KernelState;
+    }
+
     switch (xTaskGetSchedulerState()) {
     case taskSCHEDULER_RUNNING:
         state = osKernelRunning;

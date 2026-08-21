@@ -302,6 +302,15 @@ static UBaseType_t uxCriticalNesting = 0xaaaaaaaa;
  */
     PRIVILEGED_DATA static BaseType_t xSchedulerRunning = pdFALSE;
 
+    PRIVILEGED_DATA volatile uint32_t ulSystemCallRejectReason;
+    PRIVILEGED_DATA volatile uint32_t ulSystemCallRejectLocation;
+    PRIVILEGED_DATA volatile uint32_t ulSystemCallRejectNumber;
+    PRIVILEGED_DATA volatile uint32_t ulSystemCallRejectTaskFrame;
+    PRIVILEGED_DATA volatile uint32_t ulSystemCallRejectActiveTaskStack;
+    PRIVILEGED_DATA volatile uint32_t ulSystemCallRejectImplementation;
+    PRIVILEGED_DATA volatile uint32_t ulSystemCallRejectSavedLinkRegister;
+    PRIVILEGED_DATA volatile uint32_t ulSystemCallRejectExceptionReturn;
+
 #endif /* #if ( configUSE_MPU_WRAPPERS_V1 == 0 ) */
 
 /*
@@ -483,7 +492,7 @@ void vSVCHandler_C( uint32_t * pulParam ) /* PRIVILEGED_FUNCTION */
                                            * system calls. */
 
                 if( ( ulPC >= ( uint32_t ) __syscalls_flash_start__ ) &&
-                    ( ulPC <= ( uint32_t ) __syscalls_flash_end__ ) )
+                    ( ulPC < ( uint32_t ) __syscalls_flash_end__ ) )
                 {
                     __asm volatile
                     (
@@ -516,6 +525,16 @@ void vSVCHandler_C( uint32_t * pulParam ) /* PRIVILEGED_FUNCTION */
 
 #if ( configUSE_MPU_WRAPPERS_V1 == 0 )
 
+    #ifndef configUSE_APPLICATION_DEFINED_SYSTEM_CALL_FILTER
+        #define configUSE_APPLICATION_DEFINED_SYSTEM_CALL_FILTER    0
+    #endif
+
+    #if ( configUSE_APPLICATION_DEFINED_SYSTEM_CALL_FILTER == 1 )
+        extern BaseType_t xApplicationIsSystemCallAllowed( TaskHandle_t xTask,
+                                                            BaseType_t xTaskIsPrivileged,
+                                                            uint8_t ucSystemCallNumber );
+    #endif
+
     void vSystemCallEnter( uint32_t * pulTaskStack,
                            uint32_t ulLR,
                            uint8_t ucSystemCallNumber ) /* PRIVILEGED_FUNCTION */
@@ -524,7 +543,7 @@ void vSVCHandler_C( uint32_t * pulParam ) /* PRIVILEGED_FUNCTION */
         extern UBaseType_t uxSystemCallImplementations[ NUM_SYSTEM_CALLS ];
         xMPU_SETTINGS * pxMpuSettings;
         uint32_t * pulSystemCallStack;
-        uint32_t ulHardwareSavedExceptionFrameSize, ulSystemCallLocation, i;
+        uint32_t ulHardwareSavedExceptionFrameSize, ulSystemCallLocation, ulRejectReason, i;
 
         #if defined( __ARMCC_VERSION )
             /* Declaration when these variable are defined in code instead of being
@@ -540,6 +559,48 @@ void vSVCHandler_C( uint32_t * pulParam ) /* PRIVILEGED_FUNCTION */
         ulSystemCallLocation = pulTaskStack[ portOFFSET_TO_PC ];
         pxMpuSettings = xTaskGetMPUSettings( pxCurrentTCB );
 
+        ulRejectReason = 0UL;
+        if( ulSystemCallLocation < ( uint32_t ) __syscalls_flash_start__ )
+        {
+            ulRejectReason |= 1UL;
+        }
+        if( ulSystemCallLocation >= ( uint32_t ) __syscalls_flash_end__ )
+        {
+            ulRejectReason |= 2UL;
+        }
+        if( pxMpuSettings->xSystemCallStackInfo.pulTaskStack != NULL )
+        {
+            ulRejectReason |= 4UL;
+        }
+        if( uxSystemCallImplementations[ ucSystemCallNumber ] == ( UBaseType_t ) 0 )
+        {
+            ulRejectReason |= 8UL;
+        }
+        #if ( configUSE_APPLICATION_DEFINED_SYSTEM_CALL_FILTER == 1 )
+            if( xApplicationIsSystemCallAllowed(
+                    pxCurrentTCB,
+                    ( pxMpuSettings->ulTaskFlags & portTASK_IS_PRIVILEGED_FLAG ) != 0UL,
+                    ucSystemCallNumber ) == pdFALSE )
+            {
+                ulRejectReason |= 16UL;
+            }
+        #endif
+
+        if( ( ulRejectReason != 0UL ) && ( ulSystemCallRejectReason == 0UL ) )
+        {
+            ulSystemCallRejectLocation = ulSystemCallLocation;
+            ulSystemCallRejectNumber = ucSystemCallNumber;
+            ulSystemCallRejectTaskFrame = ( uint32_t ) pulTaskStack;
+            ulSystemCallRejectActiveTaskStack =
+                ( uint32_t ) pxMpuSettings->xSystemCallStackInfo.pulTaskStack;
+            ulSystemCallRejectImplementation = uxSystemCallImplementations[ ucSystemCallNumber ];
+            ulSystemCallRejectSavedLinkRegister =
+                pxMpuSettings->xSystemCallStackInfo.ulLinkRegisterAtSystemCallEntry;
+            ulSystemCallRejectExceptionReturn = ulLR;
+            __asm volatile ( "dmb" ::: "memory" );
+            ulSystemCallRejectReason = ulRejectReason;
+        }
+
         /* Checks:
          * 1. SVC is raised from the system call section (i.e. application is
          *    not raising SVC directly).
@@ -548,14 +609,22 @@ void vSVCHandler_C( uint32_t * pulParam ) /* PRIVILEGED_FUNCTION */
          *    between system call enter and exit).
          * 3. System call is not for a kernel API disabled by the configuration
          *    in FreeRTOSConfig.h.
-         * 4. We do not need to check that ucSystemCallNumber is within range
+         * 4. Application policy allows this task to enter this system call.
+         * 5. We do not need to check that ucSystemCallNumber is within range
          *    because the assembly SVC handler checks that before calling
          *    this function.
          */
         if( ( ulSystemCallLocation >= ( uint32_t ) __syscalls_flash_start__ ) &&
-            ( ulSystemCallLocation <= ( uint32_t ) __syscalls_flash_end__ ) &&
+            ( ulSystemCallLocation < ( uint32_t ) __syscalls_flash_end__ ) &&
             ( pxMpuSettings->xSystemCallStackInfo.pulTaskStack == NULL ) &&
-            ( uxSystemCallImplementations[ ucSystemCallNumber ] != ( UBaseType_t ) 0 ) )
+            ( uxSystemCallImplementations[ ucSystemCallNumber ] != ( UBaseType_t ) 0 )
+            #if ( configUSE_APPLICATION_DEFINED_SYSTEM_CALL_FILTER == 1 )
+                && ( xApplicationIsSystemCallAllowed(
+                        pxCurrentTCB,
+                        ( pxMpuSettings->ulTaskFlags & portTASK_IS_PRIVILEGED_FLAG ) != 0UL,
+                        ucSystemCallNumber ) != pdFALSE )
+            #endif
+            )
         {
             pulSystemCallStack = pxMpuSettings->xSystemCallStackInfo.pulSystemCallStack;
 
@@ -1254,16 +1323,16 @@ static void prvSetupMPU( void )
          * exported from linker scripts. */
         extern uint32_t * __privileged_functions_start__;
         extern uint32_t * __privileged_functions_end__;
-        extern uint32_t * __FLASH_segment_start__;
-        extern uint32_t * __FLASH_segment_end__;
+        extern uint32_t * __syscalls_flash_start__;
+        extern uint32_t * __syscalls_flash_end__;
         extern uint32_t * __privileged_data_start__;
         extern uint32_t * __privileged_data_end__;
     #else
         /* Declaration when these variable are exported from linker scripts. */
         extern uint32_t __privileged_functions_start__[];
         extern uint32_t __privileged_functions_end__[];
-        extern uint32_t __FLASH_segment_start__[];
-        extern uint32_t __FLASH_segment_end__[];
+        extern uint32_t __syscalls_flash_start__[];
+        extern uint32_t __syscalls_flash_end__[];
         extern uint32_t __privileged_data_start__[];
         extern uint32_t __privileged_data_end__[];
     #endif /* if defined( __ARMCC_VERSION ) */
@@ -1278,13 +1347,13 @@ static void prvSetupMPU( void )
     if( portMPU_TYPE_REG == portEXPECTED_MPU_TYPE_VALUE )
     {
         /* First setup the unprivileged flash for unprivileged read only access. */
-        portMPU_REGION_BASE_ADDRESS_REG = ( ( uint32_t ) __FLASH_segment_start__ ) | /* Base address. */
+        portMPU_REGION_BASE_ADDRESS_REG = ( ( uint32_t ) __syscalls_flash_start__ ) | /* Base address. */
                                           ( portMPU_REGION_VALID ) |
                                           ( portUNPRIVILEGED_FLASH_REGION );
 
         portMPU_REGION_ATTRIBUTE_REG = ( portMPU_REGION_READ_ONLY ) |
                                        ( ( configTEX_S_C_B_FLASH & portMPU_RASR_TEX_S_C_B_MASK ) << portMPU_RASR_TEX_S_C_B_LOCATION ) |
-                                       ( prvGetMPURegionSizeSetting( ( uint32_t ) __FLASH_segment_end__ - ( uint32_t ) __FLASH_segment_start__ ) ) |
+                                       ( prvGetMPURegionSizeSetting( ( uint32_t ) __syscalls_flash_end__ - ( uint32_t ) __syscalls_flash_start__ ) ) |
                                        ( portMPU_REGION_ENABLE );
 
         /* Setup the privileged flash for privileged only access.  This is where
