@@ -3,6 +3,7 @@
 #include "string.h"
 #include "stdbool.h"
 #include "cmsis_os.h"
+#include "user_memory.h"
 
 static void* GetQueueFromMid(uint32_t messageID, uint32_t index);
 

@@ -3,6 +3,7 @@
 #include "usbd_composite.h"
 #include "usbd_usr.h"
 #include "user_msg.h"
+#include "user_memory.h"
 
 __ALIGN_BEGIN USB_OTG_CORE_HANDLE g_usbDev __ALIGN_END;
 
