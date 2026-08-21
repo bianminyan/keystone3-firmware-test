@@ -27,3 +27,5 @@ by this project and are not copied from the FreeRTOS Kernel repository.
   not placed in the privileged-data MPU region.
 - The Cortex-M4 MPU port makes the general peripheral region privileged-only;
   unprivileged tasks receive explicit peripheral regions when required.
+- Cortex-M4 MPU privilege and buffer checks avoid querying task MPU settings
+  before the scheduler has selected a current task.

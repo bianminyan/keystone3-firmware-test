@@ -79,13 +79,11 @@ uint32_t PubValueMsg(uint32_t messageID, uint32_t value)
             } else {
                 return MSG_SUCCESS;
             }
-        } else if (osMessageQueueGetSpace(queue) == 0) {  // queue is full
-            return MSG_SEND_ERROR;
         }
+        /* osMessageQueuePut selects the ISR-safe FreeRTOS API when needed. */
         err = osMessageQueuePut(queue, &msg, 0, 0);
         if (err != osOK) {
-            printf("msg write queue err,queue=0x%08X,msgID=0x%08X,errid=0x%08X\r\n", queue, messageID, err);
-            continue;
+            return MSG_SEND_ERROR;
         }
     }
 }
