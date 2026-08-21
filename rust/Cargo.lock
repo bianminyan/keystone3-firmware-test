@@ -4066,6 +4066,7 @@ dependencies = [
  "getrandom 0.2.16",
  "hex",
  "itertools 0.13.0",
+ "keystone-ur",
  "keystore",
  "minicbor",
  "no_std_io2",
@@ -4073,6 +4074,7 @@ dependencies = [
  "rand_core 0.6.4",
  "rsa",
  "rust_tools",
+ "sandbox_parser",
  "serde_json",
  "sha1",
  "sim_qr_reader",
@@ -4176,6 +4178,10 @@ name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
+
+[[package]]
+name = "sandbox_parser"
+version = "0.1.0"
 
 [[package]]
 name = "sapling-crypto"

@@ -7,11 +7,17 @@
 #include "eapdu_framing.h"
 #endif
 
-#define MPU_SANDBOX_STACK_WORDS     1024U
-#define MPU_SANDBOX_INPUT_SIZE      240U
-#define MPU_SANDBOX_OUTPUT_SIZE     244U
-#define MPU_SANDBOX_RW_REGION_SIZE  16384U
-#define MPU_SANDBOX_TEXT_REGION_SIZE 16384U
+#define MPU_SANDBOX_STACK_WORDS          1024U
+#define MPU_SANDBOX_INPUT_SIZE           232U
+#define MPU_SANDBOX_OUTPUT_SIZE          240U
+#define MPU_SANDBOX_RW_REGION_SIZE       16384U
+#define MPU_SANDBOX_TEXT_REGION_SIZE     16384U
+#define MPU_SANDBOX_UR_INPUT_MAX_SIZE    1536U
+#define MPU_SANDBOX_UR_CHUNK_HEADER_SIZE 4U
+#define MPU_SANDBOX_UR_CHUNK_DATA_SIZE \
+    (MPU_SANDBOX_INPUT_SIZE - MPU_SANDBOX_UR_CHUNK_HEADER_SIZE)
+#define MPU_SANDBOX_CBOR_INPUT_MAX_SIZE        11000U
+#define MPU_SANDBOX_EIP712_JSON_INPUT_MAX_SIZE 11000U
 
 typedef struct {
     volatile MpuSandboxRequest_t request;
@@ -24,10 +30,47 @@ typedef struct {
 } MpuSandboxOutput_t;
 
 typedef struct {
-    MpuSandboxOutput_t output;
+    uint8_t data[MPU_SANDBOX_UR_INPUT_MAX_SIZE];
+    uint16_t length;
+    uint16_t total_length;
+    bool active;
+} MpuSandboxUrState_t;
+
+typedef struct {
+    uint32_t validation_status;
+    uint32_t accepted_length;
+} MpuSandboxUrChunkResult_t;
+
+typedef struct {
+    uint8_t data[MPU_SANDBOX_CBOR_INPUT_MAX_SIZE];
+    uint16_t length;
+    uint16_t total_length;
+    bool active;
+} MpuSandboxPayloadValidationState_t;
+
+typedef enum {
+    MPU_SANDBOX_PAYLOAD_NONE = 0,
+    MPU_SANDBOX_PAYLOAD_EAPDU,
+    MPU_SANDBOX_PAYLOAD_CBOR,
+    MPU_SANDBOX_PAYLOAD_EIP712_JSON,
+} MpuSandboxPayloadMode_t;
+
 #ifndef BTC_ONLY
+typedef union {
     EapduFramingState_t eapdu;
+    MpuSandboxPayloadValidationState_t validation;
+} MpuSandboxPayloadState_t;
+#else
+typedef union {
+    MpuSandboxPayloadValidationState_t validation;
+} MpuSandboxPayloadState_t;
 #endif
+
+typedef struct {
+    MpuSandboxOutput_t output;
+    MpuSandboxUrState_t ur;
+    MpuSandboxPayloadState_t payload;
+    MpuSandboxPayloadMode_t payload_mode;
 } MpuSandboxRw_t;
 
 _Static_assert(sizeof(MpuSandboxInput_t) == 256U,
@@ -39,9 +82,6 @@ _Static_assert(sizeof(MpuSandboxRw_t) <= MPU_SANDBOX_RW_REGION_SIZE,
 
 extern MpuSandboxInput_t g_mpuSandboxInput;
 extern MpuSandboxRw_t g_mpuSandboxRw;
-extern volatile uint32_t g_mpuSandboxPrivilegedProbe;
-extern volatile uint8_t g_mpuSandboxSharedHeapProbe;
-
 void MpuSandboxRuntime(void *argument);
 
 #endif

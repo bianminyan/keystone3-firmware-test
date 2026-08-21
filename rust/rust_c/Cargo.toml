@@ -32,10 +32,12 @@ sim_qr_reader = { workspace = true, optional = true }
 keystore = { workspace = true, default-features = false }
 ur-registry = { workspace = true }
 ur-parse-lib = { workspace = true }
+ur = { workspace = true }
 zcash_vendor = { workspace = true, optional = true }
 ed25519-bip32-core = { workspace = true }
 app_utils = { workspace = true }
 rust_tools = { workspace = true }
+sandbox_parser = { workspace = true }
 rand_core = { workspace = true }
 sui-transaction-types-core = { workspace = true }
 zeroize = { workspace = true }

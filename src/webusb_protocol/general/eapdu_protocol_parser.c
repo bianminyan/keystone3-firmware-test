@@ -12,6 +12,7 @@
 #include "user_delay.h"
 #include "eapdu_framing.h"
 #include "mpu_sandbox_task.h"
+#include "mpu_sandbox_ur_validator.h"
 #include "eapdu_services/service_resolve_ur.h"
 #include "eapdu_services/service_check_lock.h"
 #include "eapdu_services/service_echo_test.h"
@@ -29,6 +30,38 @@ static uint32_t g_eapduRcvCount = 0;
 
 static uint32_t GetRcvCount(void);
 static void ResetRcvCount(void);
+static const char *MpuSandboxUrValidationMessage(uint32_t status);
+
+static const char *MpuSandboxUrValidationMessage(uint32_t status)
+{
+    switch ((MpuSandboxUrValidationStatus_t)status) {
+    case MPU_SANDBOX_UR_INVALID_INPUT:
+        return "UR validation failed";
+    case MPU_SANDBOX_UR_INVALID_SCHEME:
+        return "ur decode failed, reason: invalid scheme";
+    case MPU_SANDBOX_UR_INVALID_TYPE:
+        return "ur decode failed, reason: invalid type";
+    case MPU_SANDBOX_UR_INVALID_MULTIPART:
+        return "ur decode failed, reason: invalid multipart indices";
+    case MPU_SANDBOX_UR_INVALID_BYTEWORDS_LENGTH:
+        return "ur decode failed, reason: invalid length";
+    case MPU_SANDBOX_UR_INVALID_BYTEWORDS_WORD:
+        return "ur decode failed, reason: invalid word";
+    case MPU_SANDBOX_UR_INVALID_CHECKSUM:
+        return "ur decode failed, reason: invalid checksum";
+    case MPU_SANDBOX_UR_CBOR_UNEXPECTED_EOF:
+        return "cbor decode failed, reason: end of input bytes";
+    case MPU_SANDBOX_UR_CBOR_NESTING_LIMIT:
+        return "cbor decode failed, reason: nesting limit 32 exceeded";
+    case MPU_SANDBOX_UR_CBOR_ITEM_LIMIT:
+        return "cbor decode failed, reason: item limit 1024 exceeded";
+    case MPU_SANDBOX_UR_CBOR_TRAILING_DATA:
+        return "cbor decode failed, reason: trailing data";
+    case MPU_SANDBOX_UR_CBOR_INVALID:
+    default:
+        return "cbor decode failed, reason: invalid structure";
+    }
+}
 
 static bool WaitForSandboxResult(uint32_t requestId, MpuSandboxEapduResult_t *result,
                                  const uint8_t **payload)
@@ -245,6 +278,15 @@ void EApduProtocolParse(const uint8_t *frame, uint32_t len)
     request.commandType = framingResult.command_type;
     request.cla = framingResult.cla;
     printf("request->dataLen=%u\nrequestID=%u\ncommandType=%u\ncla=%u\n", request.dataLen, request.requestID, request.commandType, request.cla);
+    if ((request.commandType == CMD_RESOLVE_UR) &&
+            (framingResult.ur_validation_status != MPU_SANDBOX_UR_OK)) {
+        ProcessURValidationError(&request,
+                                 MpuSandboxUrValidationMessage(
+                                     framingResult.ur_validation_status));
+        (void)MpuSandboxReleaseEapduResult(sandboxRequestId, true);
+        g_eapduRcvCount = 0;
+        return;
+    }
     EApduRequestHandler(&request);
     (void)MpuSandboxReleaseEapduResult(sandboxRequestId, true);
     g_eapduRcvCount = 0;

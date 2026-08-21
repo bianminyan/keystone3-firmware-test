@@ -21,7 +21,6 @@ typedef enum {
     CMD_EXPORT_ADDRESS,            // Command to export address
     CMD_GET_DEVICE_INFO,           // Command to get device info
     CMD_GET_DEVICE_USB_PUBKEY,     // Command to get device public key
-
     CMD_MAX_VALUE = 0xFFFFFFFF,    // The maximum value for command
 } CommandType;
 

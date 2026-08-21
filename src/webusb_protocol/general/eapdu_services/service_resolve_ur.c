@@ -1,17 +1,19 @@
 #include "service_resolve_ur.h"
-#include <string.h>
-#include <stdio.h>
-#include "user_delay.h"
+
+#include "general_msg.h"
 #include "gui_chain.h"
-#include "user_msg.h"
-#include "qrdecode_task.h"
+#include "gui_framework.h"
+#include "gui_home_widgets.h"
+#include "gui_key_derivation_request_widgets.h"
 #include "gui_lock_widgets.h"
 #include "gui_resolve_ur.h"
 #include "gui_views.h"
-#include "gui_framework.h"
-#include "general_msg.h"
-#include "gui_home_widgets.h"
-#include "gui_key_derivation_request_widgets.h"
+#include "qrdecode_task.h"
+#include "user_delay.h"
+#include "user_msg.h"
+
+#include <stdio.h>
+#include <string.h>
 
 /* DEFINES */
 #define REQUEST_ID_IDLE 0xFFFF
@@ -227,6 +229,19 @@ static void HandleCheckResult(PtrT_TransactionCheckResult checkResult, UrViewTyp
     }
 }
 
+void ProcessURValidationError(EAPDURequestPayload_t *payload, const char *error_message)
+{
+    if ((payload == NULL) || (error_message == NULL)) {
+        return;
+    }
+    if (!IsRequestAllowed(payload->requestID)) {
+        return;
+    }
+
+    g_requestID = payload->requestID;
+    HandleURResultViaUSBFunc(error_message, strlen(error_message), g_requestID, PRS_PARSING_ERROR);
+}
+
 void ProcessURService(EAPDURequestPayload_t *payload)
 {
 #ifndef COMPILE_SIMULATOR
@@ -247,8 +262,7 @@ void ProcessURService(EAPDURequestPayload_t *payload)
 
         UrViewType_t urViewType = {
             .viewType = urResult->t,
-            .urType = urResult->ur_type
-        };
+            .urType = urResult->ur_type};
 
         if (urResult->ur_type == QRHardwareCall) {
             HandleHardwareCall(urResult);

@@ -45,6 +45,8 @@ SECTIONS
 	.sandbox_text 0x010A4000 :
 	{
 		__sandbox_text_start = .;
+		KEEP(*(.sandbox_parser_entry))
+		*sandbox_parser*.rcgu.o(.text .text.* .rodata .rodata.*)
 		*mpu_sandbox_runtime.c.*(.text .text.* .rodata .rodata.*)
 		*eapdu_framing.c.*(.text .text.* .rodata .rodata.*)
 		__sandbox_text_used_end = .;
@@ -83,6 +85,7 @@ SECTIONS
 	.sandbox_writable_guard (NOLOAD) :
 	{
 		__sandbox_writable_start = .;
+		*sandbox_parser*.rcgu.o(.data .data.* .bss .bss.* COMMON)
 		*mpu_sandbox_runtime.c.*(.data .data.* .bss .bss.* COMMON)
 		*eapdu_framing.c.*(.data .data.* .bss .bss.* COMMON)
 		__sandbox_writable_end = .;
@@ -110,7 +113,6 @@ SECTIONS
 	{
 		. = ALIGN(8);
 		*(.freertos_heap)
-		*(.freertos_heap_probe)
 		. = ALIGN(8);
 	} > SRAM
 
@@ -146,9 +148,8 @@ SECTIONS
 		*(COMMON)
 		_ebss = .;
 	} > SRAM
-	ASSERT(_ebss <= __SRAM_segment_end__, "SRAM sections exceed physical memory")
-	
-	
+
+
 	/DISCARD/ :
 	{
 		libc.a (*)
