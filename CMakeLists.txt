@@ -336,9 +336,11 @@ if(COMPILE_KEYSTONE)
     set(ELF_FILE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.elf)
     set(HEX_FILE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.hex)
     set(BIN_FILE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.bin)
+    file(RELATIVE_PATH ELF_FILE_FROM_SOURCE ${CMAKE_CURRENT_SOURCE_DIR} ${ELF_FILE})
     add_custom_command(TARGET "${PROJECT_NAME}.elf" POST_BUILD
-        COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_mpu_sandbox_elf.py
-                ${ELF_FILE} --objdump ${CMAKE_OBJDUMP}
+        COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_CURRENT_SOURCE_DIR}
+                python tools/check_mpu_sandbox_elf.py
+                ${ELF_FILE_FROM_SOURCE} --objdump ${CMAKE_OBJDUMP}
         COMMAND ${CMAKE_OBJCOPY} -Obinary ${ELF_FILE} ${BIN_FILE}
         COMMAND ${CMAKE_OBJCOPY} -Oihex ${ELF_FILE} ${HEX_FILE}
 
