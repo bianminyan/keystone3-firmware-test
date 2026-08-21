@@ -43,6 +43,7 @@
 #include "fingerprint_process.h"
 #include "fingerprint_task.h"
 #include "mpu_sandbox_task.h"
+#include "watchdog_task.h"
 #include "low_power.h"
 #include "draw_on_lcd.h"
 #include "device_setting.h"
@@ -112,6 +113,10 @@ int main(void)
     CreateBackgroundTask();
     CreateLogTask();
     CreateUsbTask();
+    if (!WatchdogTaskCreate()) {
+        printf("watchdog task creation failed\r\n");
+        while (1);
+    }
 
     printf("start FreeRTOS scheduler\r\n");
     osKernelStart();
