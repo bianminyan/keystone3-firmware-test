@@ -54,6 +54,7 @@
 #include "presetting.h"
 #include "usb_task.h"
 #include "device_setting.h"
+#include "mpu_sandbox_task.h"
 
 #define CMD_MAX_ARGC                                16
 #define DEFAULT_TEST_BUFF_LEN                       1024
@@ -116,6 +117,10 @@ static void DeviceSettingsTestFunc(int argc, char *argv[]);
 static void ScreenShotFunc(int argc, char *argv[]);
 static void BpkPrintFunc(int argc, char *argv[]);
 static void SdCardTestFunc(int argc, char *argv[]);
+static void MpuSandboxFunc(int argc, char *argv[]);
+static void MpuSandboxFaultFunc(int argc, char *argv[]);
+static bool MpuSandboxWaitForResponse(uint32_t requestId, MpuSandboxResponse_t *response,
+                                      uint8_t *output, size_t outputSize);
 
 #ifdef WEB3_VERSION
 static void RustTestDecodeKeystoneSignRequest(int argc, char *argv[]);
@@ -256,6 +261,8 @@ const static UartTestCmdItem_t g_uartTestCmdTable[] = {
     {"screen shot", ScreenShotFunc},
     {"bpk print:", BpkPrintFunc},
     {"sd card test:", SdCardTestFunc},
+    {"mpu sandbox", MpuSandboxFunc},
+    {"mpu sandbox fault:", MpuSandboxFaultFunc},
 
 #ifdef WEB3_VERSION
     {"rust test decode keystone btc sign result", RustTestDecodeKeystoneBTCSignResult},
@@ -383,6 +390,102 @@ bool CompareAndRunTestCmd(const char *inputString)
 static void TestFunc(int argc, char *argv[])
 {
     printf("test!!\r\n");
+}
+
+static bool MpuSandboxWaitForResponse(uint32_t requestId, MpuSandboxResponse_t *response,
+                                      uint8_t *output, size_t outputSize)
+{
+    for (uint32_t i = 0; i < 100U; i++) {
+        if (MpuSandboxGetResponse(requestId, response, output, outputSize)) {
+            return true;
+        }
+        osDelay(1U);
+    }
+    return false;
+}
+
+static void MpuSandboxFunc(int argc, char *argv[])
+{
+    static const uint8_t input[] = "sandbox";
+    static const uint8_t expectedHash[32] = {
+        0xb7, 0xad, 0x56, 0x74, 0x77, 0xc8, 0x37, 0x56,
+        0xaa, 0xb9, 0xa5, 0x42, 0xb2, 0xbe, 0x04, 0xf7,
+        0x7d, 0xba, 0xe2, 0x51, 0x15, 0xd8, 0x5f, 0x22,
+        0x07, 0x0d, 0x74, 0xd8, 0xcc, 0x47, 0x79, 0xdc,
+    };
+    const MpuSandboxOperation_t operations[] = {
+        MPU_SANDBOX_OP_PING,
+        MPU_SANDBOX_OP_ECHO,
+        MPU_SANDBOX_OP_HASH,
+    };
+    MpuSandboxResponse_t response;
+    uint8_t output[32];
+    uint32_t requestId;
+    bool passed = true;
+
+    (void) argc;
+    (void) argv;
+    for (size_t i = 0; i < sizeof(operations) / sizeof(operations[0]); i++) {
+        if (!MpuSandboxSubmit(operations[i], input, sizeof(input) - 1U, &requestId) ||
+                !MpuSandboxWaitForResponse(requestId, &response, output, sizeof(output)) ||
+                (response.status != MPU_SANDBOX_STATUS_OK)) {
+            passed = false;
+            break;
+        }
+        if ((operations[i] == MPU_SANDBOX_OP_PING) &&
+                ((response.output_length != 4U) || (memcmp(output, "PONG", 4U) != 0))) {
+            passed = false;
+            break;
+        }
+        if ((operations[i] == MPU_SANDBOX_OP_ECHO) &&
+                ((response.output_length != sizeof(input) - 1U) ||
+                 (memcmp(output, input, sizeof(input) - 1U) != 0))) {
+            passed = false;
+            break;
+        }
+        if ((operations[i] == MPU_SANDBOX_OP_HASH) &&
+                ((response.output_length != sizeof(expectedHash)) ||
+                 (memcmp(output, expectedHash, sizeof(expectedHash)) != 0))) {
+            passed = false;
+            break;
+        }
+    }
+
+    printf("mpu sandbox %s\r\n", passed ? "PASS" : "FAIL");
+}
+
+static void MpuSandboxFaultFunc(int argc, char *argv[])
+{
+    MpuSandboxOperation_t operation = 0;
+    uint32_t requestId;
+
+    if (argc != 1) {
+        printf("fault types: input heap stack privileged peripheral system xn hang\r\n");
+        return;
+    }
+    if (strcmp(argv[0], "input") == 0) {
+        operation = MPU_SANDBOX_OP_FAULT_INPUT_WRITE;
+    } else if (strcmp(argv[0], "heap") == 0) {
+        operation = MPU_SANDBOX_OP_FAULT_SHARED_HEAP;
+    } else if (strcmp(argv[0], "stack") == 0) {
+        operation = MPU_SANDBOX_OP_FAULT_OTHER_STACK;
+    } else if (strcmp(argv[0], "privileged") == 0) {
+        operation = MPU_SANDBOX_OP_FAULT_PRIVILEGED_RAM;
+    } else if (strcmp(argv[0], "peripheral") == 0) {
+        operation = MPU_SANDBOX_OP_FAULT_PERIPHERAL;
+    } else if (strcmp(argv[0], "system") == 0) {
+        operation = MPU_SANDBOX_OP_FAULT_SYSTEM_CONTROL;
+    } else if (strcmp(argv[0], "xn") == 0) {
+        operation = MPU_SANDBOX_OP_FAULT_EXECUTE_NEVER;
+    } else if (strcmp(argv[0], "hang") == 0) {
+        operation = MPU_SANDBOX_OP_HANG;
+    }
+
+    if ((operation == 0) || !MpuSandboxSubmit(operation, NULL, 0U, &requestId)) {
+        printf("mpu sandbox fault request rejected\r\n");
+        return;
+    }
+    printf("mpu sandbox fault armed: %s request=%lu\r\n", argv[0], (unsigned long) requestId);
 }
 
 static void AllTaskInfoFunc(int argc, char *argv[])

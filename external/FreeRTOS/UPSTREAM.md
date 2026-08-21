@@ -25,3 +25,5 @@ by this project and are not copied from the FreeRTOS Kernel repository.
   kernel itself uses the upstream `pvPortMalloc` and `vPortFree` interfaces.
 - The MPU integration uses an application-allocated heap so the large heap is
   not placed in the privileged-data MPU region.
+- The Cortex-M4 MPU port makes the general peripheral region privileged-only;
+  unprivileged tasks receive explicit peripheral regions when required.

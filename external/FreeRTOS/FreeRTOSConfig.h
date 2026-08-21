@@ -75,6 +75,7 @@ extern uint32_t SystemCoreClock;
 #define configENFORCE_SYSTEM_CALLS_FROM_KERNEL_ONLY 1
 #define configALLOW_UNPRIVILEGED_CRITICAL_SECTIONS  0
 #define configAPPLICATION_ALLOCATED_HEAP            1
+#define configALLOW_UNPRIVILEGED_PERIPHERAL_ACCESS  0
 #define configUSE_MUTEXES                           1
 #define configQUEUE_REGISTRY_SIZE                   8
 #define configUSE_RECURSIVE_MUTEXES                 1

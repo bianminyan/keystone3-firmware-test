@@ -83,7 +83,32 @@ SECTIONS
 	{
 		. = ALIGN(8);
 		*(.freertos_heap)
+		*(.freertos_heap_probe)
 		. = ALIGN(8);
+	} > SRAM
+
+	.mpu_sandbox_stack (NOLOAD) :
+	{
+		. = ALIGN(4096);
+		*(.mpu_sandbox_stack)
+	} > SRAM
+
+	.mpu_sandbox_input (NOLOAD) :
+	{
+		. = ALIGN(256);
+		*(.mpu_sandbox_input)
+	} > SRAM
+
+	.mpu_sandbox_output (NOLOAD) :
+	{
+		. = ALIGN(256);
+		*(.mpu_sandbox_output)
+	} > SRAM
+
+	.mpu_sandbox_arena (NOLOAD) :
+	{
+		. = ALIGN(256);
+		*(.mpu_sandbox_arena)
 	} > SRAM
 
 	.bss :

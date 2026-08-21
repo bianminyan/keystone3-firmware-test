@@ -59,6 +59,7 @@ set(TASKS
     src/tasks/data_parser_task.c
     src/tasks/fetch_sensitive_data_task.c
     src/tasks/cmd_task.c
+    src/tasks/mpu_sandbox_task.c
 )
 
 file(GLOB_RECURSE SRC

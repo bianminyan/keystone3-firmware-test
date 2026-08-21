@@ -96,6 +96,10 @@ typedef void ( * portISR_t )( void );
 #define portPERIPHERALS_START_ADDRESS             0x40000000UL
 #define portPERIPHERALS_END_ADDRESS               0x5FFFFFFFUL
 
+#ifndef configALLOW_UNPRIVILEGED_PERIPHERAL_ACCESS
+    #define configALLOW_UNPRIVILEGED_PERIPHERAL_ACCESS    1
+#endif
+
 /* Constants required to access and manipulate the SysTick. */
 #define portNVIC_SYSTICK_INT                      ( 0x00000002UL )
 #define portNVIC_SYSTICK_ENABLE                   ( 0x00000001UL )
@@ -1302,13 +1306,18 @@ static void prvSetupMPU( void )
                                        prvGetMPURegionSizeSetting( ( uint32_t ) __privileged_data_end__ - ( uint32_t ) __privileged_data_start__ ) |
                                        ( portMPU_REGION_ENABLE );
 
-        /* By default allow everything to access the general peripherals.  The
-         * system peripherals and registers are protected. */
+        /* Configure the general peripheral window.  This project keeps it
+         * privileged-only and grants narrower task regions when required. */
         portMPU_REGION_BASE_ADDRESS_REG = ( portPERIPHERALS_START_ADDRESS ) |
                                           ( portMPU_REGION_VALID ) |
                                           ( portGENERAL_PERIPHERALS_REGION );
 
-        portMPU_REGION_ATTRIBUTE_REG = ( portMPU_REGION_READ_WRITE | portMPU_REGION_EXECUTE_NEVER ) |
+        portMPU_REGION_ATTRIBUTE_REG =
+            #if ( configALLOW_UNPRIVILEGED_PERIPHERAL_ACCESS == 1 )
+                ( portMPU_REGION_READ_WRITE | portMPU_REGION_EXECUTE_NEVER ) |
+            #else
+                ( portMPU_REGION_PRIVILEGED_READ_WRITE | portMPU_REGION_EXECUTE_NEVER ) |
+            #endif
                                        ( prvGetMPURegionSizeSetting( portPERIPHERALS_END_ADDRESS - portPERIPHERALS_START_ADDRESS ) ) |
                                        ( portMPU_REGION_ENABLE );
 

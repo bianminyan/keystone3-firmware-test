@@ -42,6 +42,7 @@
 #include "log.h"
 #include "fingerprint_process.h"
 #include "fingerprint_task.h"
+#include "mpu_sandbox_task.h"
 #include "low_power.h"
 #include "draw_on_lcd.h"
 #include "device_setting.h"
@@ -95,6 +96,10 @@ int main(void)
 
     PrintSystemInfo();
     osKernelInitialize();
+    if (!MpuSandboxTaskCreate()) {
+        printf("mpu sandbox task creation failed\r\n");
+        while (1);
+    }
     CreateFingerprintTask();
 #ifndef BUILD_PRODUCTION
     CreateCmdTask();
