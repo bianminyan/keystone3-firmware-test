@@ -2020,9 +2020,10 @@ mod tests {
     use super::*;
     use bitcoin::bip32::DerivationPath;
     use cardano_serialization_lib::{
-        Certificate, Certificates, Ed25519KeyHash, Ed25519KeyHashes, PoolParams, PoolRegistration,
-        Relays, TransactionBody, TransactionInputs, TransactionOutput, TransactionOutputs,
-        TransactionWitnessSet, UnitInterval, VRFKeyHash, Value,
+        AssetName, Assets, Certificate, Certificates, Ed25519KeyHash, Ed25519KeyHashes, Int, Mint,
+        MintAssets, MultiAsset, PolicyID, PoolParams, PoolRegistration, Relays, TransactionBody,
+        TransactionHash, TransactionInput, TransactionInputs, TransactionOutput,
+        TransactionOutputs, TransactionWitnessSet, UnitInterval, VRFKeyHash, Value,
     };
     use core::str::FromStr;
     use ur_registry::cardano::cardano_sign_request::CardanoSignRequest;
@@ -2616,5 +2617,403 @@ mod tests {
             value: 1000000,
         };
         assert_eq!(from.get_path(), None);
+    }
+
+    #[test]
+    fn test_display_model_contract_roundtrip() {
+        let mut multi_asset = ParsedCardanoMultiAsset::new(
+            "policy#asset".to_string(),
+            vec![0x11; 28],
+            b"TOKEN".to_vec(),
+            "7".to_string(),
+            7,
+        );
+        assert_eq!(multi_asset.policy_id_ref(), &[0x11; 28]);
+        assert_eq!(multi_asset.name_ref(), b"TOKEN");
+        assert_eq!(multi_asset.amount_ref(), "7");
+        assert_eq!(multi_asset.get_id(), "policy#asset");
+        assert_eq!(multi_asset.get_policy_id(), vec![0x11; 28]);
+        assert_eq!(multi_asset.get_name(), b"TOKEN".to_vec());
+        assert_eq!(multi_asset.get_amount(), "7");
+        assert_eq!(multi_asset.get_value(), 7);
+        multi_asset.set_id("updated#asset".to_string());
+        multi_asset.set_policy_id(vec![0x12; 28]);
+        multi_asset.set_name(b"TOKEN2".to_vec());
+        multi_asset.set_amount("8".to_string());
+        multi_asset.set_value(8);
+        assert_eq!(multi_asset.get_id(), "updated#asset");
+        assert_eq!(multi_asset.get_value(), 8);
+        assert_eq!(
+            multi_asset.clone().into_display_parts(),
+            (vec![0x12; 28], b"TOKEN2".to_vec(), "8".to_string())
+        );
+
+        let mut native_asset =
+            ParsedCardanoNativeAsset::new(vec![0x22; 28], b"MINT".to_vec(), "-3".to_string());
+        assert_eq!(native_asset.policy_id_ref(), &[0x22; 28]);
+        assert_eq!(native_asset.name_ref(), b"MINT");
+        assert_eq!(native_asset.amount_ref(), "-3");
+        assert_eq!(native_asset.get_policy_id(), vec![0x22; 28]);
+        assert_eq!(native_asset.get_name(), b"MINT".to_vec());
+        assert_eq!(native_asset.get_amount(), "-3");
+        native_asset.set_policy_id(vec![0x23; 28]);
+        native_asset.set_name(b"BURN".to_vec());
+        native_asset.set_amount("-4".to_string());
+        assert_eq!(
+            native_asset.clone().into_display_parts(),
+            (vec![0x23; 28], b"BURN".to_vec(), "-4".to_string())
+        );
+
+        let from = CardanoFrom::new(
+            "addr_test1_from".to_string(),
+            "10 ADA".to_string(),
+            Some("1852'/1815'/0'/0/0".to_string()),
+            "aa".repeat(32),
+            1,
+            true,
+            10_000_000,
+        );
+        assert_eq!(
+            from.clone().into_display_parts(),
+            (
+                "addr_test1_from".to_string(),
+                "10 ADA".to_string(),
+                Some("1852'/1815'/0'/0/0".to_string()),
+                "aa".repeat(32),
+                1,
+                true,
+            )
+        );
+
+        let mut assets = BTreeMap::new();
+        assets.insert("updated#asset".to_string(), multi_asset);
+        let to = CardanoTo::new(
+            "addr_test1_to".to_string(),
+            "9 ADA".to_string(),
+            assets,
+            Some("1 more assets".to_string()),
+            9_000_000,
+        );
+        assert_eq!(to.address_ref(), "addr_test1_to");
+        assert_eq!(to.amount_ref(), "9 ADA");
+        assert_eq!(to.assets_ref().count(), 1);
+        let (_, _, assets_text, display_assets) = to.clone().into_display_parts();
+        assert_eq!(assets_text.as_deref(), Some("1 more assets"));
+        assert_eq!(display_assets.len(), 1);
+
+        let cert_field = CertField::new("Pool".to_string(), "pool1".to_string());
+        assert_eq!(
+            cert_field.clone().into_display_parts(),
+            ("Pool".to_string(), "pool1".to_string())
+        );
+        let certificate = CardanoCertificate::new("Stake delegation".to_string(), vec![cert_field]);
+        let (cert_type, cert_fields) = certificate.clone().into_display_parts();
+        assert_eq!(cert_type, "Stake delegation");
+        assert_eq!(cert_fields.len(), 1);
+
+        let withdrawal = CardanoWithdrawal::new("stake_test1".to_string(), "2 ADA".to_string());
+        assert_eq!(
+            withdrawal.clone().into_display_parts(),
+            ("stake_test1".to_string(), "2 ADA".to_string())
+        );
+
+        let voting_procedure = VotingProcedure::new(
+            "DRep script".to_string(),
+            "33".repeat(28),
+            "44".repeat(32),
+            "0".to_string(),
+            "Yes".to_string(),
+        );
+        assert_eq!(
+            voting_procedure.clone().into_display_parts().0,
+            "DRep script"
+        );
+        let voting_proposal = VotingProposal::new(
+            "Information".to_string(),
+            "5 ADA".to_string(),
+            "stake_test1_reward".to_string(),
+            "https://example.com/anchor.json".to_string(),
+            "55".repeat(32),
+        );
+        assert_eq!(
+            voting_proposal.clone().into_display_parts().3,
+            "https://example.com/anchor.json"
+        );
+
+        let mut parsed = ParsedCardanoTx::new(
+            "1 ADA".to_string(),
+            "10 ADA".to_string(),
+            "9 ADA".to_string(),
+            vec![from],
+            vec![to],
+            "Cardano Testnet".to_string(),
+            Some("500".to_string()),
+            Some("100".to_string()),
+            Some("2 ADA".to_string()),
+            Some("3 ADA".to_string()),
+            Some("4 ADA".to_string()),
+            1,
+            2,
+            Some("5 ADA".to_string()),
+            3,
+            1,
+            1,
+            true,
+            vec![certificate],
+            vec![withdrawal],
+            Some("auxiliary".to_string()),
+            Some("governance".to_string()),
+            Some("advanced".to_string()),
+            vec![voting_procedure],
+            vec![voting_proposal],
+            vec![native_asset.clone()],
+            vec![native_asset],
+            true,
+            true,
+        );
+
+        assert_eq!(parsed.get_fee(), "1 ADA");
+        assert_eq!(parsed.get_total_input(), "10 ADA");
+        assert_eq!(parsed.get_total_output(), "9 ADA");
+        assert_eq!(parsed.get_from().len(), 1);
+        assert_eq!(parsed.outputs_ref().len(), 1);
+        assert_eq!(parsed.get_network(), "Cardano Testnet");
+        assert_eq!(parsed.get_ttl().as_deref(), Some("500"));
+        assert_eq!(parsed.get_validity_start().as_deref(), Some("100"));
+        assert_eq!(parsed.get_withdrawals_total().as_deref(), Some("2 ADA"));
+        assert_eq!(parsed.get_total_collateral().as_deref(), Some("3 ADA"));
+        assert_eq!(parsed.get_collateral_return().as_deref(), Some("4 ADA"));
+        assert_eq!(parsed.get_collateral_inputs_count(), 1);
+        assert_eq!(parsed.get_reference_inputs_count(), 2);
+        assert_eq!(parsed.get_donation().as_deref(), Some("5 ADA"));
+        assert_eq!(parsed.get_required_signers_count(), 3);
+        assert_eq!(parsed.get_governance_votes_count(), 1);
+        assert_eq!(parsed.get_governance_proposals_count(), 1);
+        assert!(parsed.get_transaction_is_valid());
+        assert_eq!(parsed.get_certificates().len(), 1);
+        assert_eq!(parsed.get_withdrawals().len(), 1);
+        assert_eq!(parsed.get_auxiliary_data().as_deref(), Some("auxiliary"));
+        assert_eq!(parsed.get_governance_data().as_deref(), Some("governance"));
+        assert_eq!(parsed.get_advanced_data().as_deref(), Some("advanced"));
+        assert_eq!(parsed.get_voting_procedures().len(), 1);
+        assert_eq!(parsed.get_voting_proposals().len(), 1);
+        assert_eq!(parsed.mint_assets_ref().len(), 1);
+        assert_eq!(parsed.collateral_assets_ref().len(), 1);
+        assert!(parsed.get_has_multi_assets());
+        assert!(parsed.get_has_unknown_inputs());
+
+        parsed.set_fee("2 ADA".to_string());
+        parsed.set_total_input("11 ADA".to_string());
+        parsed.set_total_output("8 ADA".to_string());
+        parsed.set_network("Cardano Mainnet".to_string());
+        parsed.set_ttl(Some("600".to_string()));
+        parsed.set_validity_start(Some("200".to_string()));
+        parsed.set_collateral_inputs_count(4);
+        parsed.set_reference_inputs_count(5);
+        parsed.set_required_signers_count(6);
+        parsed.set_governance_votes_count(2);
+        parsed.set_governance_proposals_count(3);
+        parsed.set_has_multi_assets(false);
+        parsed.set_has_unknown_inputs(false);
+        parsed.set_transaction_is_valid(false);
+        assert_eq!(parsed.get_fee(), "2 ADA");
+        assert_eq!(parsed.get_total_input(), "11 ADA");
+        assert_eq!(parsed.get_total_output(), "8 ADA");
+        assert_eq!(parsed.get_network(), "Cardano Mainnet");
+        assert_eq!(parsed.get_ttl().as_deref(), Some("600"));
+        assert_eq!(parsed.get_validity_start().as_deref(), Some("200"));
+        assert_eq!(parsed.get_collateral_inputs_count(), 4);
+        assert_eq!(parsed.get_reference_inputs_count(), 5);
+        assert_eq!(parsed.get_required_signers_count(), 6);
+        assert_eq!(parsed.get_governance_votes_count(), 2);
+        assert_eq!(parsed.get_governance_proposals_count(), 3);
+        assert!(!parsed.get_has_multi_assets());
+        assert!(!parsed.get_has_unknown_inputs());
+        assert!(!parsed.get_transaction_is_valid());
+
+        let parts = parsed.into_display_parts();
+        assert_eq!(parts.0, "2 ADA");
+        assert_eq!(parts.5, "Cardano Mainnet");
+        assert_eq!(parts.11, 4);
+        assert_eq!(parts.12, 5);
+        assert!(!parts.17);
+        assert!(!parts.27);
+        assert!(!parts.28);
+    }
+
+    #[test]
+    fn test_sign_display_parts_and_context_length() {
+        let sign_data = ParsedCardanoSignData::build(
+            vec![0xff],
+            "m/1852'/1815'/0'/0/0".to_string(),
+            "xpub".to_string(),
+        )
+        .unwrap();
+        let parts = sign_data.into_display_parts();
+        assert!(parts.1);
+        assert_eq!(parts.2, "m/1852'/1815'/0'/0/0");
+
+        let cip8 = ParsedCardanoSignCip8Data::build(
+            vec![0xff],
+            "m/1852'/1815'/0'/0/0".to_string(),
+            "xpub".to_string(),
+            true,
+        )
+        .unwrap();
+        let cip8_parts = cip8.into_display_parts();
+        assert!(cip8_parts.1);
+        assert!(cip8_parts.5);
+
+        let context = ParseContext::new(vec![], vec![], None, vec![]);
+        assert_eq!(context.utxos_len(), 0);
+    }
+
+    #[test]
+    fn test_internal_input_output_model_contract() {
+        let mut input = ParsedCardanoInput::new(
+            "aa".repeat(32),
+            1,
+            Some(1_000_000),
+            Some("addr_test1_input".to_string()),
+            Some("1852'/1815'/0'/0/0".to_string()),
+        );
+        assert_eq!(input.get_transaction_id(), "aa".repeat(32));
+        assert_eq!(input.get_index(), 1);
+        assert_eq!(input.get_value(), Some(1_000_000));
+        assert_eq!(input.get_address().as_deref(), Some("addr_test1_input"));
+        assert_eq!(input.get_path().as_deref(), Some("1852'/1815'/0'/0/0"));
+        input.set_transaction_id("bb".repeat(32));
+        input.set_index(2);
+        input.set_value(None);
+        input.set_address(None);
+        input.set_path(None);
+        assert_eq!(input.get_transaction_id(), "bb".repeat(32));
+        assert_eq!(input.get_index(), 2);
+        assert_eq!(input.get_value(), None);
+        assert_eq!(input.get_address(), None);
+        assert_eq!(input.get_path(), None);
+
+        let mut output = ParsedCardanoOutput::new("addr_test1_output".to_string(), 2_000_000, None);
+        assert_eq!(output.get_address(), "addr_test1_output");
+        assert_eq!(output.get_value(), 2_000_000);
+        assert!(output.get_assets().is_none());
+        output.set_address("addr_test1_updated".to_string());
+        output.set_value(3_000_000);
+        output.set_assets(Some(vec![]));
+        assert_eq!(output.get_address(), "addr_test1_updated");
+        assert_eq!(output.get_value(), 3_000_000);
+        assert_eq!(output.get_assets().unwrap().len(), 0);
+
+        let known = ParsedCardanoTx::get_from_list(vec![input]);
+        assert_eq!(known.len(), 1);
+        assert!(!known[0].get_known());
+        assert_eq!(known[0].get_address(), "Details unavailable");
+
+        let outputs = ParsedCardanoTx::get_to_list(vec![output]);
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].get_address(), "addr_test1_updated");
+        assert_eq!(outputs[0].get_amount(), "3 ADA");
+    }
+
+    #[test]
+    fn test_parse_transaction_with_assets_and_advanced_fields() {
+        let key_hash = Ed25519KeyHash::from_bytes(vec![7u8; 28]).unwrap();
+        let address = EnterpriseAddress::new(0, &Credential::from_keyhash(&key_hash)).to_address();
+        let policy_id = PolicyID::from([8u8; 28]);
+        let asset_name = AssetName::new(b"TOKEN".to_vec()).unwrap();
+
+        let mut output_assets = Assets::new();
+        output_assets.insert(&asset_name, &7u64.into());
+        let mut multi_asset = MultiAsset::new();
+        multi_asset.insert(&policy_id, &output_assets);
+        let mut output_value = Value::new(&3_000_000u64.into());
+        output_value.set_multiasset(&multi_asset);
+        let output = TransactionOutput::new(&address, &output_value);
+        let mut outputs = TransactionOutputs::new();
+        outputs.add(&output);
+
+        let input = TransactionInput::new(&TransactionHash::from_bytes(vec![9u8; 32]).unwrap(), 1);
+        let mut inputs = TransactionInputs::new();
+        inputs.add(&input);
+        let mut body = TransactionBody::new_tx_body(&inputs, &outputs, &200_000u64.into());
+
+        let mut mint_assets = MintAssets::new();
+        mint_assets.insert(&asset_name, &Int::new_i32(-3)).unwrap();
+        let mut mint = Mint::new();
+        mint.insert(&policy_id, &mint_assets);
+        body.set_mint(&mint);
+
+        let mut collateral = TransactionInputs::new();
+        collateral.add(&input);
+        body.set_collateral(&collateral);
+        body.set_reference_inputs(&collateral);
+        body.set_collateral_return(&output);
+        body.set_total_collateral(&2_000_000u64.into());
+        let mut required_signers = Ed25519KeyHashes::new();
+        required_signers.add(&key_hash);
+        body.set_required_signers(&required_signers);
+
+        let witness_set = TransactionWitnessSet::new();
+        let tx = Transaction::new(&body.to_bytes(), &witness_set.to_bytes(), false).unwrap();
+        let context = ParseContext::new(vec![], vec![], None, vec![]);
+        let parsed = ParsedCardanoTx::from_cardano_tx(tx, context).unwrap();
+
+        assert_eq!(parsed.get_network(), "Cardano Testnet");
+        assert!(parsed.get_has_multi_assets());
+        assert!(parsed.get_has_unknown_inputs());
+        assert_eq!(parsed.outputs_ref().len(), 1);
+        assert_eq!(parsed.outputs_ref()[0].assets_ref().count(), 1);
+        assert_eq!(parsed.mint_assets_ref().len(), 1);
+        assert_eq!(parsed.mint_assets_ref()[0].amount_ref(), "-3");
+        assert_eq!(parsed.collateral_assets_ref().len(), 1);
+        assert_eq!(parsed.get_collateral_inputs_count(), 1);
+        assert_eq!(parsed.get_reference_inputs_count(), 1);
+        assert_eq!(parsed.get_required_signers_count(), 1);
+        assert_eq!(parsed.get_total_collateral().as_deref(), Some("2 ADA"));
+        assert_eq!(parsed.get_collateral_return().as_deref(), Some("3 ADA"));
+        assert!(!parsed.get_transaction_is_valid());
+        let advanced = parsed.get_advanced_data().unwrap();
+        assert!(advanced.contains("collateral_inputs"));
+        assert!(advanced.contains("collateral_return"));
+        assert!(advanced.contains("reference_inputs"));
+        assert!(advanced.contains("required_signers"));
+    }
+
+    #[test]
+    fn test_advanced_json_normalization() {
+        let embedded = serde_json::json!({
+            "metadata": "{\"string\":\"hello\"}",
+            "list": { "list": [{ "int": 1 }, { "string": "two" }] },
+            "map": {
+                "map": [
+                    { "k": "first", "v": { "int": 1 } },
+                    { "k": "second", "v": { "string": "two" } }
+                ]
+            }
+        });
+        let normalized = ParsedCardanoTx::normalize_json_for_display(embedded);
+        assert_eq!(normalized["metadata"], "hello");
+        assert_eq!(normalized["list"], serde_json::json!([1, "two"]));
+        assert_eq!(normalized["map"]["first"], 1);
+        assert_eq!(normalized["map"]["second"], "two");
+
+        let mut map = serde_json::Map::new();
+        ParsedCardanoTx::insert_json_field(
+            &mut map,
+            "payload",
+            "{\"string\":\"decoded\"}".to_string(),
+        )
+        .unwrap();
+        let json = ParsedCardanoTx::finish_json(map).unwrap().unwrap();
+        assert!(json.contains("decoded"));
+        assert!(ParsedCardanoTx::finish_json(serde_json::Map::new())
+            .unwrap()
+            .is_none());
+        assert!(ParsedCardanoTx::insert_json_field(
+            &mut serde_json::Map::new(),
+            "invalid",
+            "not-json".to_string(),
+        )
+        .is_err());
     }
 }
