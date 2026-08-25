@@ -61,11 +61,11 @@ void LcdFullScreen(uint16_t color)
 
 void LcdTest(int argc, char *argv[])
 {
-    uint32_t color;
+    unsigned int color;
     if (strcmp(argv[0], "full_color") == 0) {
-        sscanf(argv[1], "%X", (unsigned int *)&color);
+        sscanf(argv[1], "%X", &color);
         LcdFullScreen((uint16_t)color);
-        printf("lcd full_color=0x%X\r\n", (unsigned int)color);
+        printf("lcd full_color=0x%X\r\n", color);
     } else {
         printf("lcd test input err\r\n");
     }

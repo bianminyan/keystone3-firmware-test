@@ -1508,6 +1508,7 @@ static void GotoAddressKeyboardHandler(lv_event_t *e)
     uint32_t id = lv_btnmatrix_get_selected_btn(obj);
     lv_obj_draw_part_dsc_t *dsc;
     char input[ADDRESS_MAX_LEN];
+    unsigned int parsedIndex;
     uint64_t longInt;
 
     if (code == LV_EVENT_CLICKED) {
@@ -1516,7 +1517,8 @@ static void GotoAddressKeyboardHandler(lv_event_t *e)
         uint32_t len = strnlen_s(input, ADDRESS_MAX_LEN);
         if (strcmp(txt, LV_SYMBOL_OK) == 0) {
             if (g_gotoAddressValid) {
-                if (sscanf(input, "%u", (unsigned int *)&g_selectIndex) == 1) {
+                if (sscanf(input, "%u", &parsedIndex) == 1) {
+                    g_selectIndex = parsedIndex;
                     g_showIndex = g_selectIndex / 5 * 5;
                     RefreshSwitchAccount();
                     UpdateConfirmAddrIndexBtn();

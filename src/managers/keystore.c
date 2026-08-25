@@ -1037,7 +1037,7 @@ int32_t GenerateTRNGRandomness(uint8_t *randomness, uint8_t len)
 void KeyStoreTest(int argc, char *argv[])
 {
     uint8_t entropy[ENTROPY_MAX_LEN], seed[SEED_LEN], accountIndex, entropyLen, key[32], slip39Ems[SLIP39_EMS_LEN];
-    int32_t index, ret, tempI32;
+    int index, ret, tempI32;
     uint8_t byte32[BUFFER_SIZE_32] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 0};
     char tempStr[BUFFER_SIZE_32];
     uint8_t ems[BUFFER_SIZE_32];
@@ -1197,7 +1197,7 @@ void KeyStoreTest(int argc, char *argv[])
     } else if (strcmp(argv[0], "public_info") == 0) {
         printf("login password err count=%d\r\n", GetLoginPasswordErrorCount());
         printf("current password err count=%d\r\n", GetCurrentPasswordErrorCount());
-        printf("last lock device time=%d\r\n", GetLastLockDeviceTime());
+        printf("last lock device time=%u\r\n", (unsigned int)GetLastLockDeviceTime());
     } else if (strcmp(argv[0], "set_last_lock_device_time") == 0) {
         SetLastLockDeviceTime(GetCurrentStampTime());
         printf("set last lock device time done\n");
@@ -1209,7 +1209,7 @@ void KeyStoreTest(int argc, char *argv[])
         for (accountIndex = 0; accountIndex < 3; accountIndex++) {
             printf("accountIndex %d:\r\n", accountIndex);
             printf("passphrase=%s\r\n", g_passphraseInfo[accountIndex].passphrase);
-            printf("mfp=0x%08X\r\n", *((uint32_t *)(g_passphraseInfo[accountIndex].mfp)));
+            printf("mfp=0x%08X\r\n", (unsigned int)*((uint32_t *)(g_passphraseInfo[accountIndex].mfp)));
         }
     } else if (strcmp(argv[0], "set_fp_info") == 0) {
         printf("set fp info test\r\n");

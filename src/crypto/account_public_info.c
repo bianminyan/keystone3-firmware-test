@@ -1681,8 +1681,13 @@ static bool GetPublicKeyFromJsonString(const char *string)
             } else {
                 GetStringValue(chainJson, "value", pubKeyString, PUB_KEY_MAX_LENGTH);
                 //printf("%s pub key=%s\r\n", g_chainTable[i].name, pubKeyString);
-                g_accountPublicInfo[i].value = SRAM_MALLOC(strnlen_s(pubKeyString, PUB_KEY_MAX_LENGTH) + 1);
-                strcpy(g_accountPublicInfo[i].value, pubKeyString);
+                size_t valueLen = strnlen_s(pubKeyString, PUB_KEY_MAX_LENGTH) + 1;
+                g_accountPublicInfo[i].value = SRAM_MALLOC(valueLen);
+                if (g_accountPublicInfo[i].value == NULL) {
+                    ret = false;
+                    break;
+                }
+                strcpy_s(g_accountPublicInfo[i].value, valueLen, pubKeyString);
             }
         }
     } while (0);
@@ -1984,28 +1989,33 @@ int32_t MultiSigWalletGet(uint8_t accountIndex, const char *password, MultiSigWa
             cJSON *order = cJSON_GetObjectItem(wallet, "order");
             multiSigWalletItem->order = order->valueint;
             GetStringValue(wallet, "name", strCache, MULTI_SIG_STR_CACHE_LENGTH);
-            multiSigWalletItem->name = MULTI_SIG_MALLOC(strlen(strCache) + 1);
-            strcpy(multiSigWalletItem->name, strCache);
+            size_t stringLen = strlen(strCache) + 1;
+            multiSigWalletItem->name = MULTI_SIG_MALLOC(stringLen);
+            strcpy_s(multiSigWalletItem->name, stringLen, strCache);
 
             GetStringValue(wallet, "verify_code", strCache, MULTI_SIG_STR_CACHE_LENGTH);
-            multiSigWalletItem->verifyCode = MULTI_SIG_MALLOC(strlen(strCache) + 1);
-            strcpy(multiSigWalletItem->verifyCode, strCache);
+            stringLen = strlen(strCache) + 1;
+            multiSigWalletItem->verifyCode = MULTI_SIG_MALLOC(stringLen);
+            strcpy_s(multiSigWalletItem->verifyCode, stringLen, strCache);
 
             GetStringValue(wallet, "verify_without_mfp", strCache, MULTI_SIG_STR_CACHE_LENGTH);
-            multiSigWalletItem->verifyWithoutMfp = MULTI_SIG_MALLOC(strlen(strCache) + 1);
-            strcpy(multiSigWalletItem->verifyWithoutMfp, strCache);
+            stringLen = strlen(strCache) + 1;
+            multiSigWalletItem->verifyWithoutMfp = MULTI_SIG_MALLOC(stringLen);
+            strcpy_s(multiSigWalletItem->verifyWithoutMfp, stringLen, strCache);
 
             cJSON *network = cJSON_GetObjectItem(wallet, "network");
 
             multiSigWalletItem->network = network->valueint;
 
             GetStringValue(wallet, "wallet_config", strCache, MULTI_SIG_STR_CACHE_LENGTH);
-            multiSigWalletItem->walletConfig = MULTI_SIG_MALLOC(strlen(strCache) + 1);
-            strcpy(multiSigWalletItem->walletConfig, strCache);
+            stringLen = strlen(strCache) + 1;
+            multiSigWalletItem->walletConfig = MULTI_SIG_MALLOC(stringLen);
+            strcpy_s(multiSigWalletItem->walletConfig, stringLen, strCache);
 
             GetStringValue(wallet, "format", strCache, MULTI_SIG_STR_CACHE_LENGTH);
-            multiSigWalletItem->format = MULTI_SIG_MALLOC(strlen(strCache) + 1);
-            strcpy(multiSigWalletItem->format, strCache);
+            stringLen = strlen(strCache) + 1;
+            multiSigWalletItem->format = MULTI_SIG_MALLOC(stringLen);
+            strcpy_s(multiSigWalletItem->format, stringLen, strCache);
 
             cJSON *passphrase = cJSON_GetObjectItem(wallet, "passphrase");
             multiSigWalletItem->passphrase = passphrase ? passphrase->valueint : 0;

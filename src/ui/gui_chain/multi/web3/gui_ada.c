@@ -455,12 +455,6 @@ void GetAdaWithdrawalsLabel(void *indata, void *param, uint32_t maxLen)
     snprintf_s((char *)indata,  maxLen, "%d Withdraw(s)", tx->withdrawals->size);
 }
 
-void GetAdaCertificatesLabel(void *indata, void *param, uint32_t maxLen)
-{
-    DisplayCardanoTx *tx = (DisplayCardanoTx *)param;
-    snprintf_s((char *)indata,  maxLen, "%d Certificate(s)", tx->certificates->size);
-}
-
 void GetAdaTotalInput(void *indata, void *param, uint32_t maxLen)
 {
     DisplayCardanoTx *tx = (DisplayCardanoTx *)param;
@@ -1585,12 +1579,6 @@ void GetAdaOutputDetailSize(uint16_t *width, uint16_t *height, void *param)
     }
 }
 
-bool GetAdaCertificatesExist(void *indata, void *param)
-{
-    DisplayCardanoTx *tx = (DisplayCardanoTx *)param;
-    return tx->certificates->size > 0;
-}
-
 void GetAdaVotingProceduresLabel(void *indata, void *param, uint32_t maxLen)
 {
     DisplayCardanoTx *tx = (DisplayCardanoTx *)param;
@@ -1644,52 +1632,6 @@ void *GetAdaVotingProceduresData(uint8_t *row, uint8_t *col, void *param)
             } else {
                 snprintf_s(indata[i][j], BUFFER_SIZE_128,  "Vote: %s", tx->voting_procedures->data[index].vote);
             }
-        }
-    }
-    return (void *)indata;
-}
-
-static uint8_t calculateCertificateField(DisplayCardanoCertificate *cert)
-{
-    return cert->fields->size;
-}
-
-static uint8_t calculateCertificateRow(DisplayCardanoTx *tx)
-{
-    uint8_t row = tx->certificates->size;
-    for (int i = 0; i < tx->certificates->size; i++) {
-        row += calculateCertificateField(&tx->certificates->data[i]);
-    }
-    return row;
-}
-
-void GetAdaCertificatesSize(uint16_t *width, uint16_t *height, void *param)
-{
-    DisplayCardanoTx *tx = (DisplayCardanoTx *)param;
-    *width = 408;
-    *height = 16 + 30 + 60 * calculateCertificateRow(tx) + 16;
-}
-
-void *GetAdaCertificatesData(uint8_t *row, uint8_t *col, void *param)
-{
-    DisplayCardanoTx *tx = (DisplayCardanoTx *)param;
-    *col = 1;
-    *row = calculateCertificateRow(tx);
-    int i = 0, j = 0;
-    char ***indata = (char ***)SRAM_MALLOC(sizeof(char **) * *col);
-    for (i = 0; i < *col; i++) {
-        indata[i] = SRAM_MALLOC(sizeof(char *) * *row);
-        uint32_t fieldCount = 0;
-        for (j = 0; j < tx->certificates->size; j++) {
-            for (int k = fieldCount; k < fieldCount + calculateCertificateField(&tx->certificates->data[j]) + 1; k++) {
-                indata[i][k] = SRAM_MALLOC(BUFFER_SIZE_128);
-                if (k == fieldCount) {
-                    snprintf_s(indata[i][k], BUFFER_SIZE_128,  "##%d\n#F5870A %s#", j + 1, tx->certificates->data[j].cert_type);
-                } else {
-                    snprintf_s(indata[i][k], BUFFER_SIZE_128,  "%s: %s", tx->certificates->data[j].fields->data[k - fieldCount - 1].label, tx->certificates->data[j].fields->data[k - fieldCount - 1].value);
-                }
-            }
-            fieldCount += calculateCertificateField(&tx->certificates->data[j]) + 1;
         }
     }
     return (void *)indata;

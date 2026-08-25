@@ -52,7 +52,7 @@ typedef struct {
 } WalletDesc_t;
 
 typedef struct PasswordVerifyResult {
-    void *signal;
+    uint16_t signal;
     uint16_t errorCount;
 } PasswordVerifyResult_t;
 

@@ -408,7 +408,8 @@ uint8_t GetBatteryPercentByMilliVolt(uint32_t milliVolt, bool discharge)
 
 void BatteryTest(int argc, char *argv[])
 {
-    uint32_t milliVolt, temp32;
+    uint32_t milliVolt;
+    unsigned int temp32;
     uint8_t percent;
 
     if (strcmp(argv[0], "info") == 0) {
@@ -418,11 +419,11 @@ void BatteryTest(int argc, char *argv[])
         printf("rtc voltage=%d\n", (int)GetRtcBatteryMilliVolt());
     } else if (strcmp(argv[0], "set_percent") == 0) {
         VALUE_CHECK(argc, 2);
-        sscanf(argv[1], "%d", (int *)&temp32);
+        sscanf(argv[1], "%u", &temp32);
         if (temp32 <= 100) {
             g_batterPercent = temp32;
             PubValueMsg(BACKGROUND_MSG_BATTERY_INTERVAL, 1);
-            printf("set battery percent:%d\r\n", (int)temp32);
+            printf("set battery percent:%u\r\n", temp32);
         } else {
             printf("input battery percent err\r\n");
         }

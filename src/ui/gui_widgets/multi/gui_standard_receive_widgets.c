@@ -265,6 +265,7 @@ static void InputAddressIndexKeyboardHandler(lv_event_t *e)
     lv_obj_draw_part_dsc_t *dsc;
     const char *txt;
     char input[16];
+    unsigned int parsedIndex;
     uint32_t len;
     uint64_t longInt;
 
@@ -273,12 +274,14 @@ static void InputAddressIndexKeyboardHandler(lv_event_t *e)
         strcpy_s(input, sizeof(input), lv_label_get_text(g_standardReceiveWidgets.inputAccountLabel));
         if (strcmp(txt, LV_SYMBOL_OK) == 0) {
             if (g_inputAccountValid) {
-                sscanf(input, "%u", (unsigned int *)&g_tmpIndex);
-                g_showIndex = g_tmpIndex / 5 * 5;
-                RefreshSwitchAddress();
-                lv_obj_add_flag(g_standardReceiveWidgets.inputAccountCont, LV_OBJ_FLAG_HIDDEN);
-                g_inputAccountValid = false;
-                UpdateConfirmIndexBtn();
+                if (sscanf(input, "%u", &parsedIndex) == 1) {
+                    g_tmpIndex = parsedIndex;
+                    g_showIndex = g_tmpIndex / 5 * 5;
+                    RefreshSwitchAddress();
+                    lv_obj_add_flag(g_standardReceiveWidgets.inputAccountCont, LV_OBJ_FLAG_HIDDEN);
+                    g_inputAccountValid = false;
+                    UpdateConfirmIndexBtn();
+                }
             }
         } else if (strcmp(txt, "-") == 0) {
             len = strlen(input);

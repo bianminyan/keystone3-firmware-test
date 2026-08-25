@@ -116,8 +116,9 @@ bool GetBootSoftwareVersion(uint32_t *major, uint32_t *minor, uint32_t *build)
 static bool GetBootSoftwareVersionFormData(uint32_t *major, uint32_t *minor, uint32_t *build, const uint8_t *data, uint32_t dataLen)
 {
     uint32_t versionInfoOffset = UINT32_MAX, i, headLen;
+    unsigned int parsedMajor, parsedMinor, parsedBuild;
     char *versionStr, read[64];
-    int32_t ret;
+    int ret;
     bool succ = false;
 
     headLen = strlen(BOOT_VERSION_HEAD);
@@ -140,10 +141,13 @@ static bool GetBootSoftwareVersionFormData(uint32_t *major, uint32_t *minor, uin
             break;
         }
         versionStr = read + headLen;
-        ret = sscanf(versionStr, "%d.%d.%d", (int *)major, (int *)minor, (int *)build);
+        ret = sscanf(versionStr, "%u.%u.%u", &parsedMajor, &parsedMinor, &parsedBuild);
         if (ret != 3) {
             break;
         }
+        *major = parsedMajor;
+        *minor = parsedMinor;
+        *build = parsedBuild;
         succ = true;
     } while (0);
     if (succ == false) {

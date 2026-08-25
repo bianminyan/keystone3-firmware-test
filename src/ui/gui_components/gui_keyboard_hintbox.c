@@ -474,7 +474,7 @@ void GuiShowErrorNumber(KeyboardWidget_t *keyboardWidget, PasswordVerifyResult_t
     // Forget-pass prove-ownership counts toward loginPasswordErrorCount (cap MAX_LOGIN) and, at the
     // cap, opens the existing wipe-device view. Every other caller uses the settings device-lock cap
     // (MAX_CURRENT_PASSWORD_ERROR_COUNT_SHOW_HINTBOX) and the in-modal device-lock hintbox.
-    uint16_t signal = passwordVerifyResult->signal != NULL ? *(uint16_t *)passwordVerifyResult->signal : 0;
+    uint16_t signal = passwordVerifyResult->signal;
     bool proveOwnership = (signal == SIG_FORGET_PASSWORD_PROVE_OWNERSHIP);
     uint8_t maxCount = proveOwnership ? MAX_LOGIN_PASSWORD_ERROR_COUNT
                                       : MAX_CURRENT_PASSWORD_ERROR_COUNT_SHOW_HINTBOX;

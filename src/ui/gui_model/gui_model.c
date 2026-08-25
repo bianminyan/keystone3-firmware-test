@@ -1359,7 +1359,7 @@ static void ModelVerifyPassFailed(uint16_t *param)
         }
         break;
     }
-    g_passwordVerifyResult.signal = param;
+    g_passwordVerifyResult.signal = *param;
     GuiApiEmitSignal(signal, (void *)&g_passwordVerifyResult, sizeof(g_passwordVerifyResult));
 }
 

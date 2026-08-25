@@ -256,14 +256,28 @@ void FreeSuiMemory(void)
 int GetSuiDetailLen(void *param)
 {
     DisplaySuiIntentMessage *tx = (DisplaySuiIntentMessage *)param;
+    if (tx == NULL || tx->detail == NULL) {
+        return 0;
+    }
+
+    // Rust creates detail with CString::into_raw(), so this FFI string is NUL-terminated.
+    // strnlen_s is not used because RSIZE_MAX_STR is 4 KB and valid Sui JSON can be larger.
     return strlen(tx->detail) + 1;
 }
 
 void GetSuiDetail(void *indata, void *param, uint32_t maxLen)
 {
     DisplaySuiIntentMessage *tx = (DisplaySuiIntentMessage *)param;
-    // strcpy_s will exceed the stack size and the copy will fail
-    strcpy((char *)indata, tx->detail);
+    if (indata == NULL || tx == NULL || tx->detail == NULL || maxLen == 0) {
+        return;
+    }
+
+    size_t detailLen = strlen(tx->detail);
+    if (detailLen >= maxLen) {
+        ((char *)indata)[0] = '\0';
+        return;
+    }
+    memcpy_s(indata, maxLen, tx->detail, detailLen + 1);
 }
 
 UREncodeResult *GuiGetSuiSignQrCodeData(void)

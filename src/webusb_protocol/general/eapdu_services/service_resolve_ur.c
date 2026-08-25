@@ -27,6 +27,25 @@ bool GuiIsSetup(void);
 /* STATIC VARIABLES */
 static uint16_t g_requestID = REQUEST_ID_IDLE;
 
+static void SetResultPageErrorMessage(EAPDUResultPage_t *resultPage, const void *data, uint32_t dataLen)
+{
+    size_t copyLen = 0;
+
+    if (resultPage == NULL) {
+        return;
+    }
+    if (data != NULL) {
+        copyLen = dataLen;
+        if (copyLen >= sizeof(resultPage->error_message)) {
+            copyLen = sizeof(resultPage->error_message) - 1;
+        }
+        if (copyLen > 0) {
+            memcpy(resultPage->error_message, data, copyLen);
+        }
+    }
+    resultPage->error_message[copyLen] = '\0';
+}
+
 static void BasicHandlerFunc(const void *data, uint32_t data_len, uint16_t requestID, StatusEnum status)
 {
     EAPDUResponsePayload_t *payload = NULL;
@@ -82,9 +101,12 @@ void HandleURResultViaUSBFunc(const void *data, uint32_t data_len, uint16_t requ
         return;
     }
     EAPDUResultPage_t *resultPage = (EAPDUResultPage_t *)SRAM_MALLOC(sizeof(EAPDUResultPage_t));
+    if (resultPage == NULL) {
+        return;
+    }
     resultPage->command = CMD_RESOLVE_UR;
     resultPage->error_code = status;
-    resultPage->error_message = (char *)data;
+    SetResultPageErrorMessage(resultPage, data, data_len);
     GotoResultPage(resultPage);
     SRAM_FREE(resultPage);
 };
@@ -145,13 +167,10 @@ static bool CheckURAcceptable(void)
 
 static void GotoFailPage(StatusEnum error_code, const char *error_message)
 {
-    EAPDUResultPage_t *resultPage = (EAPDUResultPage_t *)SRAM_MALLOC(sizeof(EAPDUResultPage_t));
-    resultPage->command = CMD_RESOLVE_UR;
-    resultPage->error_code = error_code;
-    resultPage->error_message = (char *)error_message;
-    GotoResultPage(resultPage);
-    HandleURResultViaUSBFunc(error_message, strlen(error_message), g_requestID, error_code);
-    SRAM_FREE(resultPage);
+    uint32_t errorMessageLen = error_message == NULL
+                               ? 0
+                               : strnlen_s(error_message, EAPDU_RESULT_ERROR_MESSAGE_MAX_LEN - 1);
+    HandleURResultViaUSBFunc(error_message, errorMessageLen, g_requestID, error_code);
 }
 
 static bool IsRequestAllowed(uint32_t requestID)

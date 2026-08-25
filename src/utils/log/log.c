@@ -262,12 +262,12 @@ void LogEraseSync(void)
 
 void LogTest(int argc, char *argv[])
 {
-    uint32_t event;
+    unsigned int event;
     if (strcmp(argv[0], "export") == 0) {
         LogExport();
     } else if (strcmp(argv[0], "write_string") == 0) {
         VALUE_CHECK(argc, 3);
-        sscanf(argv[1], "%d", (int *)&event);
+        sscanf(argv[1], "%u", &event);
         WriteLogFormat(event, "test:%s", argv[2]);
     } else if (strcmp(argv[0], "erase") == 0) {
         LogErase();

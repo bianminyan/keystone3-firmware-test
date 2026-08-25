@@ -13,6 +13,7 @@
 enum { OFFSET_CLA = 0, OFFSET_INS = 1, OFFSET_P1 = 3, OFFSET_P2 = 5, OFFSET_LC = 7, OFFSET_CDATA = 9 };
 #define MAX_EAPDU_PACKET_SIZE 64
 #define MAX_EAPDU_DATA_SIZE (MAX_EAPDU_PACKET_SIZE - OFFSET_CDATA)
+#define EAPDU_RESULT_ERROR_MESSAGE_MAX_LEN 128
 
 typedef enum {
     CMD_ECHO_TEST = 0x00000001,    // Command to test echo
@@ -77,7 +78,7 @@ typedef struct {
 typedef struct {
     CommandType command;
     uint32_t error_code;
-    PtrString error_message;
+    char error_message[EAPDU_RESULT_ERROR_MESSAGE_MAX_LEN];
 } EAPDUResultPage_t;
 
 const struct ProtocolParser* NewEApduProtocolParser();

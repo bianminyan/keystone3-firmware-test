@@ -30,17 +30,12 @@ void GuiShowAdaSignData(lv_obj_t *parent, void *totalData);
 void GetAdaTotalOutput(void *indata, void *param, uint32_t maxLen);
 void GetAdaFee(void *indata, void *param, uint32_t maxLen);
 void GetAdaWithdrawalsLabel(void *indata, void *param, uint32_t maxLen);
-void GetAdaCertificatesLabel(void *indata, void *param, uint32_t maxLen);
 
 void *GetAdaInputDetail(uint8_t *row, uint8_t *col, void *param);
 void GetAdaInputDetailSize(uint16_t *width, uint16_t *height, void *param);
 
 void *GetAdaOutputDetail(uint8_t *row, uint8_t *col, void *param);
 void GetAdaOutputDetailSize(uint16_t *width, uint16_t *height, void *param);
-
-bool GetAdaCertificatesExist(void *indata, void *param);
-void GetAdaCertificatesSize(uint16_t *width, uint16_t *height, void *param);
-void *GetAdaCertificatesData(uint8_t *row, uint8_t *col, void *param);
 
 bool GetAdaWithdrawalsExist(void *indata, void *param);
 void GetAdaWithdrawalsSize(uint16_t *width, uint16_t *height, void *param);

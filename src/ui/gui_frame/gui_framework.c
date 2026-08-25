@@ -57,7 +57,7 @@ int32_t GuiEmitSignal(uint16_t usEvent, void *param, uint16_t usLen)
         //verify failed
         if (usEvent == SIG_VERIFY_PASSWORD_FAIL) {
             PasswordVerifyResult_t *passwordVerifyResult = (PasswordVerifyResult_t *)param;
-            if (SIG_LOCK_VIEW_VERIFY_PIN == *(uint16_t *)passwordVerifyResult->signal) {
+            if (SIG_LOCK_VIEW_VERIFY_PIN == passwordVerifyResult->signal) {
                 sigHandled = GuiViewHandleEvent(&g_lockView, usEvent, param, usLen);
                 return SUCCESS_CODE;
             }

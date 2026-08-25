@@ -384,6 +384,7 @@ static void InputAddressIndexKeyboardHandler(lv_event_t *e)
     lv_obj_draw_part_dsc_t *dsc;
     const char *txt;
     char input[16];
+    unsigned int parsedIndex;
     uint32_t len;
     uint64_t longInt;
 
@@ -392,13 +393,15 @@ static void InputAddressIndexKeyboardHandler(lv_event_t *e)
         strcpy_s(input, sizeof(input), lv_label_get_text(g_standardJumpButtonWidgets.inputAccountLabel));
         if (strcmp(txt, LV_SYMBOL_OK) == 0) {
             if (g_standardJumpButtonWidgets.g_inputAccountValid) {
-                sscanf(input, "%u", (unsigned int *)&g_standardJumpButtonWidgets.g_inputTmpIndex);
-                g_showIndex = g_standardJumpButtonWidgets.g_inputTmpIndex / 5 * 5;
-                g_selectIndex = g_standardJumpButtonWidgets.g_inputTmpIndex;
-                RefreshSwitchAccount();
-                UpdateConfirmBtn();
-                lv_obj_add_flag(g_standardJumpButtonWidgets.inputAccountCont, LV_OBJ_FLAG_HIDDEN);
-                g_standardJumpButtonWidgets.g_inputAccountValid = false;
+                if (sscanf(input, "%u", &parsedIndex) == 1) {
+                    g_standardJumpButtonWidgets.g_inputTmpIndex = parsedIndex;
+                    g_showIndex = g_standardJumpButtonWidgets.g_inputTmpIndex / 5 * 5;
+                    g_selectIndex = g_standardJumpButtonWidgets.g_inputTmpIndex;
+                    RefreshSwitchAccount();
+                    UpdateConfirmBtn();
+                    lv_obj_add_flag(g_standardJumpButtonWidgets.inputAccountCont, LV_OBJ_FLAG_HIDDEN);
+                    g_standardJumpButtonWidgets.g_inputAccountValid = false;
+                }
             }
         } else if (strcmp(txt, "-") == 0) {
             len = strlen(input);

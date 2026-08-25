@@ -906,7 +906,7 @@ lv_obj_t *GuiWidgetTabViewChild(lv_obj_t *parent, cJSON *json)
 {
     cJSON *item = cJSON_GetObjectItem(json, "tab_name");
     if (item != NULL) {
-        strcpy(g_tableName[g_analyzeTabview.tabviewIndex], item->valuestring);
+        strcpy_s(g_tableName[g_analyzeTabview.tabviewIndex], sizeof(g_tableName[g_analyzeTabview.tabviewIndex]), item->valuestring);
     }
     lv_obj_t *obj = lv_tabview_add_tab(g_tableView, item->valuestring);
 

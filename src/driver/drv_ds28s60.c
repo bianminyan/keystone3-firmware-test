@@ -704,12 +704,13 @@ void DS28S60_Test(int argc, char *argv[])
 {
     uint8_t *data, pageData[32];
     DS28S60_BlockProtection_t blockProtection;
-    int32_t ret, num, page, len, block;
+    int32_t ret;
+    int num, page, len, block;
 
     if (strcmp(argv[0], "random") == 0) {
         VALUE_CHECK(argc, 2);
-        sscanf(argv[1], "%d", (int *)&num);
-        printf("ds28s60 get rng,num=%d\r\n", (int)num);
+        sscanf(argv[1], "%d", &num);
+        printf("ds28s60 get rng,num=%d\r\n", num);
         data = SRAM_MALLOC(num);
         ret = DS28S60_GetRng(data, num);
         if (ret == DS28S60_SUCCESS) {
@@ -720,8 +721,8 @@ void DS28S60_Test(int argc, char *argv[])
         SRAM_FREE(data);
     } else if (strcmp(argv[0], "read") == 0) {
         VALUE_CHECK(argc, 2);
-        sscanf(argv[1], "%d", (int *)&page);
-        printf("ds28s60 read page %d\r\n", (int)page);
+        sscanf(argv[1], "%d", &page);
+        printf("ds28s60 read page %d\r\n", page);
         ret = DS28S60_ReadPage(pageData, page);
         if (ret == DS28S60_SUCCESS) {
             PrintArray("pageData", pageData, 32);
@@ -730,13 +731,13 @@ void DS28S60_Test(int argc, char *argv[])
         }
     } else if (strcmp(argv[0], "write") == 0) {
         VALUE_CHECK(argc, 3);
-        sscanf(argv[1], "%d", (int *)&page);
+        sscanf(argv[1], "%d", &page);
         len = strlen(argv[2]) / 2;
         if (len != 32) {
-            printf("data len must be 32, now is %d\r\n", (int)len);
+            printf("data len must be 32, now is %d\r\n", len);
         }
         StrToHex(pageData, argv[2]);
-        printf("ds28s60 write page %d\r\n", (int)page);
+        printf("ds28s60 write page %d\r\n", page);
         ret = DS28S60_WritePage(pageData, page);
         if (ret == DS28S60_SUCCESS) {
             printf("write success\r\n");
@@ -745,8 +746,8 @@ void DS28S60_Test(int argc, char *argv[])
         }
     } else if (strcmp(argv[0], "en_read") == 0) {
         VALUE_CHECK(argc, 2);
-        sscanf(argv[1], "%d", (int *)&page);
-        printf("ds28s60 en_read page %d\r\n", (int)page);
+        sscanf(argv[1], "%d", &page);
+        printf("ds28s60 en_read page %d\r\n", page);
         ret = DS28S60_HmacEncryptRead(pageData, page);
         if (ret == DS28S60_SUCCESS) {
             PrintArray("pageData", pageData, 32);
@@ -755,13 +756,13 @@ void DS28S60_Test(int argc, char *argv[])
         }
     } else if (strcmp(argv[0], "en_write") == 0) {
         VALUE_CHECK(argc, 3);
-        sscanf(argv[1], "%d", (int *)&page);
+        sscanf(argv[1], "%d", &page);
         len = strlen(argv[2]) / 2;
         if (len != 32) {
-            printf("data len must be 32, now is %d\r\n", (int)len);
+            printf("data len must be 32, now is %d\r\n", len);
         }
         StrToHex(pageData, argv[2]);
-        printf("ds28s60 en_write page %d\r\n", (int)page);
+        printf("ds28s60 en_write page %d\r\n", page);
         ret = DS28S60_HmacEncryptWrite(pageData, page);
         if (ret == DS28S60_SUCCESS) {
             printf("write success\r\n");
@@ -779,7 +780,7 @@ void DS28S60_Test(int argc, char *argv[])
         }
     } else if (strcmp(argv[0], "auth") == 0) {
         VALUE_CHECK(argc, 2);
-        sscanf(argv[1], "%d", (int *)&page);
+        sscanf(argv[1], "%d", &page);
         ret = DS28S60_HmacAuthentication(page);
         if (ret == DS28S60_SUCCESS) {
             printf("hmac auth succ\r\n");
@@ -788,7 +789,7 @@ void DS28S60_Test(int argc, char *argv[])
         }
     } else if (strcmp(argv[0], "setup_block") == 0) {
         VALUE_CHECK(argc, 2);
-        sscanf(argv[1], "%d", (int *)&block);
+        sscanf(argv[1], "%d", &block);
         memset(&blockProtection, 0, sizeof(DS28S60_BlockProtection_t));
         blockProtection.Secret.b.ID = DS28S60_SECRET_KEY_A;
         blockProtection.Prot.b.APH = 1;

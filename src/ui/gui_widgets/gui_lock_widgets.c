@@ -386,8 +386,8 @@ void GuiLockScreenErrorCount(void *param)
         char tempBuf[BUFFER_SIZE_128];
         int leftCount = 0;
 
-        if (*(uint16_t *)passwordVerifyResult->signal == SIG_LOCK_VIEW_VERIFY_PIN
-                || *(uint16_t *)passwordVerifyResult->signal == SIG_LOCK_VIEW_SCREEN_GO_HOME_PASS) {
+        if (passwordVerifyResult->signal == SIG_LOCK_VIEW_VERIFY_PIN
+                || passwordVerifyResult->signal == SIG_LOCK_VIEW_SCREEN_GO_HOME_PASS) {
             leftCount = MAX_LOGIN_PASSWORD_ERROR_COUNT - passwordVerifyResult->errorCount;
             ASSERT(leftCount >= 0);
             if (leftCount > 1) {

@@ -330,6 +330,15 @@ if(COMPILE_KEYSTONE)
         -Wno-format-security
     )
 
+    # The legacy debug command harness is only built for non-production
+    # firmware. Keep format diagnostics visible without making its existing
+    # test-only logging mismatches block debug builds.
+    if(NOT BUILD_PRODUCTION)
+        set_property(SOURCE test/test_cmd.c APPEND PROPERTY COMPILE_OPTIONS
+            -Wno-error=format
+        )
+    endif()
+
     set_property(SOURCE
         src/tasks/mpu_sandbox_runtime.c
         src/webusb_protocol/general/eapdu_framing.c
