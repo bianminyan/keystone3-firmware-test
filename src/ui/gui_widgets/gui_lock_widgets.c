@@ -452,10 +452,10 @@ void GuiJumpToLockDevicePage(void)
         staticLeftErrorCount = MAX_LOGIN_PASSWORD_ERROR_COUNT    - errorCount;
         uint32_t currentTime = GetCurrentStampTime();
         uint32_t diffTime = currentTime - lastLockDeviceTime;
-        printf("diffTime is  %ds\n", diffTime);
-        printf("lastLockDeviceTime is  %ds\n", lastLockDeviceTime);
+        printf("diffTime is  %ds\n", (int)diffTime);
+        printf("lastLockDeviceTime is  %ds\n", (int)lastLockDeviceTime);
         if (diffTime < GuiGetLockTimeByLeftErrorCount(staticLeftErrorCount)) {
-            printf("continue lock time %ds\n", diffTime);
+            printf("continue lock time %ds\n", (int)diffTime);
             GuiFrameOpenViewWithParam(&g_lockDeviceView, &staticLeftErrorCount, sizeof(staticLeftErrorCount));
         }
     }

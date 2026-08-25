@@ -57,9 +57,9 @@ uint8_t *GetDeviceParserPubKey(uint8_t *webPub, uint16_t len)
     uint8_t shareKey[PUB_KEY_SIZE] = {0};
     TrngGet(privKey, sizeof(privKey));
     SimpleResponse_u8 *simpleResponse = k1_generate_pubkey_by_privkey(privKey, sizeof(privKey));
-    memcpy_s(shareKey, sizeof(shareKey) + 1, simpleResponse->data, PUB_KEY_SIZE);
+    memcpy_s(shareKey, sizeof(shareKey), simpleResponse->data, PUB_KEY_SIZE);
     free_simple_response_u8(simpleResponse);
-    memcpy_s(g_dataParserPubKey, sizeof(g_dataParserPubKey) + 1, shareKey, PUB_KEY_SIZE);
+    memcpy_s(g_dataParserPubKey, sizeof(g_dataParserPubKey), shareKey, PUB_KEY_SIZE);
     simpleResponse = k1_generate_ecdh_sharekey(privKey, sizeof(privKey), webPub, PUB_KEY_SIZE);
     if (simpleResponse == NULL) {
         printf("get_master_fingerprint return NULL\r\n");

@@ -395,14 +395,14 @@ void GuiEthBatchTxWidgetsSignDealFingerRecognize(void *param)
             lv_obj_clear_flag(g_fpErrorLabel, LV_OBJ_FLAG_HIDDEN);
         }
         lv_img_set_src(g_fpErrorImg, &imgRedFinger);
-        printf("g_fingerSingCount is %d\n", g_fingerSignCount);
+        printf("g_fingerSingCount is %d\n", (int)g_fingerSignCount);
         if (g_fingerSignCount < FINGERPRINT_SING_ERR_TIMES) {
             FpRecognize(RECOGNIZE_SIGN);
             g_fpRecognizeTimer = lv_timer_create(RecognizeFailHandler, 1000, NULL);
         } else {
             SignByPasswordCb(false);
         }
-        printf("g_fingerSignErrCount.... = %d\n", g_fingerSignErrCount);
+        printf("g_fingerSignErrCount.... = %d\n", (int)g_fingerSignErrCount);
         if (g_fingerSignErrCount >= FINGERPRINT_SING_DISABLE_ERR_TIMES) {
             for (int i = 0; i < 3; i++) {
                 UpdateFingerSignFlag(i, false);
@@ -527,7 +527,7 @@ static void GuiEthBatchTxNavBarRefresh()
         return;
     }
     if (g_txCount > 1) {
-        snprintf(text, BUFFER_SIZE_128, "%s (%d/%d)", _("confirm_transaction"), g_currentTxIndex + 1, g_txCount);
+        snprintf(text, BUFFER_SIZE_128, "%s (%d/%d)", _("confirm_transaction"), (int)(g_currentTxIndex + 1), (int)g_txCount);
     } else {
         snprintf(text, BUFFER_SIZE_128, "%s", _("confirm_transaction"));
     }

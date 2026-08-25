@@ -97,7 +97,7 @@ char *GetCosmosChainAddressByCoinTypeAndIndex(uint8_t chainType,  uint32_t addre
     char hdPath[BUFFER_SIZE_32];
     const CosmosChain_t *chain = GuiGetCosmosChain(chainType);
     snprintf_s(rootPath, BUFFER_SIZE_32, "M/44'/%u'/0'", chain->coinType);
-    snprintf_s(hdPath, BUFFER_SIZE_32, "%s/0/%u", rootPath, address_index);
+    snprintf_s(hdPath, BUFFER_SIZE_32, "%s/0/%u", rootPath, (unsigned int)address_index);
     xPub = GetCurrentAccountPublicKey(chain->xpubType);
     return (char *) cosmos_get_address(hdPath, xPub, rootPath, (char*)chain->prefix);
 }
@@ -1088,7 +1088,7 @@ void GetCosmosMsgKey(void *indata, void *param, uint32_t maxLen)
 void GetCosmosIndex(void *indata, void *param, uint32_t maxLen)
 {
     // one # is used for color, two # is used for display #.
-    snprintf_s((char *)indata,  maxLen, "##%d", g_cosmosListIndex + 1, maxLen);
+    snprintf_s((char *)indata,  maxLen, "##%d", g_cosmosListIndex + 1);
 }
 
 void GetCosmosTextOfKind(void *indata, void *param, uint32_t maxLen)

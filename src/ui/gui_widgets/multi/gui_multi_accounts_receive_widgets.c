@@ -617,7 +617,7 @@ static void RefreshQrCode(void)
     CutAndFormatString(string, sizeof(string), addressDataItem.address, 20);
 #endif
     lv_label_set_text(g_multiAccountsReceiveWidgets.addressLabel, string);
-    lv_label_set_text_fmt(g_multiAccountsReceiveWidgets.addressCountLabel, "%s-%u", addressPrefix, (addressDataItem.index));
+    lv_label_set_text_fmt(g_multiAccountsReceiveWidgets.addressCountLabel, "%s-%u", addressPrefix, (unsigned int)(addressDataItem.index));
 }
 
 static void RefreshSwitchAddress(void)
@@ -639,7 +639,7 @@ static void RefreshSwitchAddress(void)
             }
         }
 #endif
-        lv_label_set_text_fmt(g_multiAccountsReceiveWidgets.switchAddressWidgets[i].addressCountLabel, "%s-%u", addressPrefix, (addressDataItem.index));
+        lv_label_set_text_fmt(g_multiAccountsReceiveWidgets.switchAddressWidgets[i].addressCountLabel, "%s-%u", addressPrefix, (unsigned int)(addressDataItem.index));
         char string[128] = {0};
         CutAndFormatString(string, sizeof(string), addressDataItem.address, 24);
         lv_label_set_text(g_multiAccountsReceiveWidgets.switchAddressWidgets[i].addressLabel, string);
@@ -819,7 +819,7 @@ static void InputAddressIndexKeyboardHandler(lv_event_t *e)
         strcpy_s(input, sizeof(input), lv_label_get_text(g_multiAccountsReceiveWidgets.inputAccountLabel));
         if (strcmp(txt, LV_SYMBOL_OK) == 0) {
             if (g_inputAccountValid) {
-                sscanf(input, "%u", &g_tmpIndex);
+                sscanf(input, "%u", (unsigned int *)&g_tmpIndex);
                 g_showIndex = g_tmpIndex / 5 * 5;
                 RefreshSwitchAddress();
                 lv_obj_add_flag(g_multiAccountsReceiveWidgets.inputAccountCont, LV_OBJ_FLAG_HIDDEN);
@@ -1112,9 +1112,9 @@ static void RefreshSwitchAccount(void)
 
 #ifdef WEB3_VERSION
         char temp[BUFFER_SIZE_64];
-        snprintf_s(temp, BUFFER_SIZE_64, "m/1852'/1815'/%u'", index);
+        snprintf_s(temp, BUFFER_SIZE_64, "m/1852'/1815'/%u'", (unsigned int)index);
         lv_label_set_text(g_multiAccountsReceiveWidgets.switchAccountWidgets[i].addressLabel, temp);
-        lv_label_set_text_fmt(g_multiAccountsReceiveWidgets.switchAccountWidgets[i].addressCountLabel, "%s-%u", _("account_head"), index);
+        lv_label_set_text_fmt(g_multiAccountsReceiveWidgets.switchAccountWidgets[i].addressCountLabel, "%s-%u", _("account_head"), (unsigned int)index);
 #endif
         if (end) {
             lv_obj_add_flag(g_multiAccountsReceiveWidgets.switchAccountWidgets[i].addressCountLabel, LV_OBJ_FLAG_HIDDEN);
@@ -1237,7 +1237,7 @@ static void ModelGetAddress(uint32_t index, AddressDataItem_t *item, uint8_t typ
     case HOME_WALLET_CARD_ADA: {
         uint32_t currentAccount = GetAccountIndex(GetCoinCardByIndex(g_chainCard)->coin);
         xPub = GetCurrentAccountPublicKey(GetReceivePageAdaXPubTypeByIndex(currentAccount));
-        snprintf_s(hdPath, BUFFER_SIZE_128, "m/1852'/1815'/%u'/0/%u", currentAccount, index);
+        snprintf_s(hdPath, BUFFER_SIZE_128, "m/1852'/1815'/%u'/0/%u", (unsigned int)currentAccount, (unsigned int)index);
         // cardano mainnet;
         switch (type) {
         case 1:

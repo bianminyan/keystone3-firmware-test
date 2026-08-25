@@ -80,7 +80,7 @@ void GetBootVersionNumber(char *version)
 {
     uint32_t major = 0, minor = 0, build = 0;
     GetBootSoftwareVersion(&major, &minor, &build);
-    snprintf(version, SOFTWARE_VERSION_MAX_LEN, "%d.%d.%d", major, minor, build);
+    snprintf(version, SOFTWARE_VERSION_MAX_LEN, "%d.%d.%d", (int)major, (int)minor, (int)build);
 }
 
 #ifndef COMPILE_SIMULATOR
@@ -140,7 +140,7 @@ static bool GetBootSoftwareVersionFormData(uint32_t *major, uint32_t *minor, uin
             break;
         }
         versionStr = read + headLen;
-        ret = sscanf(versionStr, "%d.%d.%d", major, minor, build);
+        ret = sscanf(versionStr, "%d.%d.%d", (int *)major, (int *)minor, (int *)build);
         if (ret != 3) {
             break;
         }

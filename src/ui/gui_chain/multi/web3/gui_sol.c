@@ -192,13 +192,13 @@ void GetSolMessageFrom(void *indata, void *param, uint32_t maxLen)
 void GetSolMessageUtf8(void *indata, void *param, uint32_t maxLen)
 {
     DisplaySolanaMessage *message = (DisplaySolanaMessage *)param;
-    snprintf_s((char *)indata, maxLen, "%.*s", maxLen - 1, message->utf8_message);
+    snprintf_s((char *)indata, maxLen, "%.*s", (int)(maxLen - 1), message->utf8_message);
 }
 
 void GetSolMessageRaw(void *indata, void *param, uint32_t maxLen)
 {
     DisplaySolanaMessage *message = (DisplaySolanaMessage *)param;
-    snprintf_s((char *)indata, maxLen, "%.*s", maxLen - 1, message->raw_message);
+    snprintf_s((char *)indata, maxLen, "%.*s", (int)(maxLen - 1), message->raw_message);
 }
 
 void GuiShowSolMessagePaged(lv_obj_t *parent, void *param, bool raw)

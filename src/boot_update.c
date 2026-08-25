@@ -77,14 +77,14 @@ int32_t UpdateBootFromFlash(void)
 
     memcpy(g_fileUnit, (uint32_t *)baseAddr, 4 + 32 + MAGIC_NUMBER_SIZE);
     uint32_t bootLen = (g_fileUnit[MAGIC_NUMBER_SIZE + 0] << 24) + (g_fileUnit[MAGIC_NUMBER_SIZE + 1] << 16) + (g_fileUnit[MAGIC_NUMBER_SIZE + 2] << 8) + g_fileUnit[MAGIC_NUMBER_SIZE + 3];
-    printf("bootLen = %d\n", bootLen);
+    printf("bootLen = %d\n", (int)bootLen);
     memcpy(hash, &g_fileUnit[MAGIC_NUMBER_SIZE + 4], 32);
 
     // Validate the staged length before it drives any loop bound or copy size.
     // bootLen must cover the 0x134 header and fit within the boot partition
     if (bootLen < 0x134 || bootLen > (uint32_t)(APP_ADDR - BOOT_ADDR) ||
             (bootLen - 0x134) % SECTOR_SIZE < 4) {
-        printf("invalid bootLen = %u\n", bootLen);
+        printf("invalid bootLen = %u\n", (unsigned int)bootLen);
         osKernelUnlock();
         return -1;
     }
@@ -113,7 +113,7 @@ int32_t UpdateBootFromFlash(void)
         }
         memcpy(g_fileUnit, (uint32_t *)(APP_ADDR + i * SECTOR_SIZE), len);
         crcCalc = crc32_ieee(crcCalc, (uint32_t *)(APP_ADDR + i * SECTOR_SIZE), len);
-        printf("writeAddr = %#x\n", writeAddr);
+        printf("writeAddr = %#x\n", (unsigned int)writeAddr);
         QspiFlashEraseAndWrite(writeAddr, g_fileUnit, SECTOR_SIZE);
     }
 
@@ -122,8 +122,8 @@ int32_t UpdateBootFromFlash(void)
     osKernelUnlock();
     PrintArray("hash", hash, 32);
     PrintArray("calHash", calHash, 32);
-    printf("crcCalc = %#x\n", crcCalc);
-    printf("readCrc = %#x\n", readCrc);
+    printf("crcCalc = %#x\n", (unsigned int)crcCalc);
+    printf("readCrc = %#x\n", (unsigned int)readCrc);
     if (memcmp(hash, calHash, 32) == 0) {
         printf("update success\n");
         memset(g_fileUnit, 0xFF, sizeof(g_fileUnit));

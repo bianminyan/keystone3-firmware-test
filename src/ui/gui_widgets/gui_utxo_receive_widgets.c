@@ -1284,7 +1284,7 @@ static void RefreshQrCode(void)
         lv_qrcode_update(fullscreen_qrcode, addressDataItem.address, strnlen_s(addressDataItem.address, ADDRESS_MAX_LEN));
     }
     lv_label_set_text(g_utxoReceiveWidgets.addressLabel, addressDataItem.address);
-    lv_label_set_text_fmt(g_utxoReceiveWidgets.addressCountLabel, "%s-%u", _("Address"), addressDataItem.index);
+    lv_label_set_text_fmt(g_utxoReceiveWidgets.addressCountLabel, "%s-%u", _("Address"), (unsigned int)addressDataItem.index);
     lv_obj_align_to(g_utxoReceiveWidgets.addressCountLabel, g_utxoReceiveWidgets.addressLabel, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 16);
 
 #if BTC_ONLY
@@ -1308,7 +1308,7 @@ static void RefreshSwitchAccount(void)
     bool end = false;
     for (uint32_t i = 0; i < 5; i++) {
         ModelGetUtxoAddress(index, &addressDataItem);
-        lv_label_set_text_fmt(g_utxoReceiveWidgets.switchAddressWidgets[i].addressCountLabel, "%s-%u", _("Address"), addressDataItem.index);
+        lv_label_set_text_fmt(g_utxoReceiveWidgets.switchAddressWidgets[i].addressCountLabel, "%s-%u", _("Address"), (unsigned int)addressDataItem.index);
         CutAndFormatString(string, sizeof(string), addressDataItem.address, 24);
         lv_label_set_text(g_utxoReceiveWidgets.switchAddressWidgets[i].addressLabel, string);
         if (end) {
@@ -1516,7 +1516,7 @@ static void GotoAddressKeyboardHandler(lv_event_t *e)
         uint32_t len = strnlen_s(input, ADDRESS_MAX_LEN);
         if (strcmp(txt, LV_SYMBOL_OK) == 0) {
             if (g_gotoAddressValid) {
-                if (sscanf(input, "%u", &g_selectIndex) == 1) {
+                if (sscanf(input, "%u", (unsigned int *)&g_selectIndex) == 1) {
                     g_showIndex = g_selectIndex / 5 * 5;
                     RefreshSwitchAccount();
                     UpdateConfirmAddrIndexBtn();
@@ -1721,7 +1721,7 @@ static void ModelGetUtxoAddress(uint32_t index, AddressDataItem_t *item)
     item->index = index;
     char *xPub, rootPath[ADDRESS_MAX_LEN], hdPath[ADDRESS_MAX_LEN];
     GetRootHdPath(rootPath, ADDRESS_MAX_LEN);
-    snprintf_s(hdPath, ADDRESS_MAX_LEN, "%s/0/%u", rootPath, index);
+    snprintf_s(hdPath, ADDRESS_MAX_LEN, "%s/0/%u", rootPath, (unsigned int)index);
     strcpy_s(item->path, PATH_ITEM_MAX_LEN, hdPath);
 #if BTC_ONLY
     if (GetCurrentWalletIndex() != SINGLE_WALLET) {

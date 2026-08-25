@@ -1528,7 +1528,7 @@ void *GetAdaInputDetail(uint8_t *row, uint8_t *col, void *param)
             uint32_t index = j / 3;
             indata[i][j] = SRAM_MALLOC(BUFFER_SIZE_128);
             if (j % 3 == 0) {
-                snprintf_s(indata[i][j], BUFFER_SIZE_128,  "%d #F5870A %s#", index + 1, tx->from->data[index].amount);
+                snprintf_s(indata[i][j], BUFFER_SIZE_128,  "%d #F5870A %s#", (int)(index + 1), tx->from->data[index].amount);
             } else if (j % 3 == 1) {
                 snprintf_s(indata[i][j], BUFFER_SIZE_128,  "%s", tx->from->data[index].address);
             } else {
@@ -1560,7 +1560,7 @@ void *GetAdaOutputDetail(uint8_t *row, uint8_t *col, void *param)
             indata[i][j] = SRAM_MALLOC(BUFFER_SIZE_128);
             uint32_t index = j / 2;
             if (j % 2 == 0) {
-                snprintf_s(indata[i][j], BUFFER_SIZE_128,  "%d #F5870A %s#", index + 1, tx->to->data[index].amount);
+                snprintf_s(indata[i][j], BUFFER_SIZE_128,  "%d #F5870A %s#", (int)(index + 1), tx->to->data[index].amount);
             } else {
                 snprintf_s(indata[i][j], BUFFER_SIZE_128,  "%s", tx->to->data[index].address);
             }
@@ -1634,7 +1634,7 @@ void *GetAdaVotingProceduresData(uint8_t *row, uint8_t *col, void *param)
             uint32_t index = j / 5;
             indata[i][j] = SRAM_MALLOC(BUFFER_SIZE_128);
             if (j % 5 == 0) {
-                snprintf_s(indata[i][j], BUFFER_SIZE_128,  "##%d\n#F5870A Voting Procedure#", index + 1);
+                snprintf_s(indata[i][j], BUFFER_SIZE_128,  "##%d\n#F5870A Voting Procedure#", (int)(index + 1));
             } else if (j % 5 == 1) {
                 snprintf_s(indata[i][j], BUFFER_SIZE_128,  "Voter: %s", tx->voting_procedures->data[index].voter);
             } else if (j % 5 == 2) {
@@ -1721,7 +1721,7 @@ void *GetAdaWithdrawalsData(uint8_t *row, uint8_t *col, void *param)
             uint32_t index = j / 2;
             indata[i][j] = SRAM_MALLOC(BUFFER_SIZE_128);
             if (j % 2 == 0) {
-                snprintf_s(indata[i][j], BUFFER_SIZE_128,  "%d #F5870A %s#", index + 1, tx->withdrawals->data[index].amount);
+                snprintf_s(indata[i][j], BUFFER_SIZE_128,  "%d #F5870A %s#", (int)(index + 1), tx->withdrawals->data[index].amount);
             } else {
                 snprintf_s(indata[i][j], BUFFER_SIZE_128,  "Address: %s", tx->withdrawals->data[index].address);
             }

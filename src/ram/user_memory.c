@@ -147,12 +147,12 @@ void RustFree(void *p)
 void PrintHeapInfo(void)
 {
     printf("sram heap info:\n");
-    printf("g_sramHeapCount = %d\n", g_sramHeapCount);
+    printf("g_sramHeapCount = %d\n", (int)g_sramHeapCount);
     printf("TotalHeapSize = %d\n", configTOTAL_HEAP_SIZE);                      // Total heap size
     printf("FreeHeapSize = %d\n", xPortGetFreeHeapSize());                      // Free heap space
     printf("MinEverFreeHeapSize = %d\n", xPortGetMinimumEverFreeHeapSize());    // Minimum amount of unallocated heap space
     printf("\next heap info:\n");
-    printf("g_extHeapCount = %d\n", g_extHeapCount);
+    printf("g_extHeapCount = %d\n", (int)g_extHeapCount);
     printf("TotalHeapSize = %d\n", PsramGetTotalSize());                        // Total heap size
     printf("FreeHeapSize = %d\n", PsramGetFreeHeapSize());                      // Free heap space
     printf("MinEverFreeHeapSize = %d\n", PsramGetMinimumEverFreeHeapSize());    // Minimum amount of unallocated heap space

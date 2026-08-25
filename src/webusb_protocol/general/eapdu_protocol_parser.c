@@ -277,7 +277,7 @@ void EApduProtocolParse(const uint8_t *frame, uint32_t len)
     request.requestID = framingResult.request_id;
     request.commandType = framingResult.command_type;
     request.cla = framingResult.cla;
-    printf("request->dataLen=%u\nrequestID=%u\ncommandType=%u\ncla=%u\n", request.dataLen, request.requestID, request.commandType, request.cla);
+    printf("request->dataLen=%u\nrequestID=%u\ncommandType=%u\ncla=%u\n", (unsigned int)request.dataLen, request.requestID, request.commandType, request.cla);
     if ((request.commandType == CMD_RESOLVE_UR) &&
             (framingResult.ur_validation_status != MPU_SANDBOX_UR_OK)) {
         ProcessURValidationError(&request,

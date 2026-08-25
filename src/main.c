@@ -160,7 +160,7 @@ void assert_failed(uint8_t* file, uint32_t line)
      ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
 
     /* Infinite loop */
-    printf("err,file=%s,line=%d\r\n", (char *)file, line);
+    printf("err,file=%s,line=%d\r\n", (char *)file, (int)line);
     while (1);
 }
 #endif

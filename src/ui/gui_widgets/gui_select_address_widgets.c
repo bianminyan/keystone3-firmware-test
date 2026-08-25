@@ -88,23 +88,23 @@ static void ModelGetAddress(uint32_t index, AddressDataItem_t *item)
 #ifdef WEB3_VERSION
     case CHAIN_XRP:
         item->index = index;
-        strcpy(item->address, GuiGetXrpAddressByIndex(index));
+        strcpy_s(item->address, sizeof(item->address), GuiGetXrpAddressByIndex(index));
         break;
     case CHAIN_ADA:
         item->index = index;
         char *xpub = GetCurrentAccountPublicKey(GetAdaXPubTypeByIndexAndDerivationType(
                 GetConnectWalletPathIndex(GetWalletNameByIndex(GuiConnectWalletGetWalletIndex())),
                 index));
-        strcpy(item->address, GuiGetADABaseAddressByXPub(xpub));
+        strcpy_s(item->address, sizeof(item->address), GuiGetADABaseAddressByXPub(xpub));
         break;
     case CHAIN_ATOM:
         item->index = index;
         // we dont need to show the address,only show the account index. thus the address is empty.
-        strcpy(item->address, "");
+        strcpy_s(item->address, sizeof(item->address), "");
         break;
 #endif
     default:
-        printf("ModelGetAddress cannot match %d\r\n", index);
+        printf("ModelGetAddress cannot match %d\r\n", (int)index);
         return;
     }
 }
@@ -146,7 +146,7 @@ static void RefreshSwitchAccount(void)
     bool end = false;
     for (uint32_t i = 0; i < 5; i++) {
         ModelGetAddress(index, &addressDataItem);
-        lv_label_set_text_fmt(g_selectAddressWidgets[i].addressCountLabel, "%s-%u", _("account_head"), addressDataItem.index);
+        lv_label_set_text_fmt(g_selectAddressWidgets[i].addressCountLabel, "%s-%u", _("account_head"), (unsigned int)addressDataItem.index);
         CutAndFormatString(string, sizeof(string), addressDataItem.address, 28);
         lv_label_set_text(g_selectAddressWidgets[i].addressLabel, string);
         if (end) {
@@ -392,7 +392,7 @@ static void InputAddressIndexKeyboardHandler(lv_event_t *e)
         strcpy_s(input, sizeof(input), lv_label_get_text(g_standardJumpButtonWidgets.inputAccountLabel));
         if (strcmp(txt, LV_SYMBOL_OK) == 0) {
             if (g_standardJumpButtonWidgets.g_inputAccountValid) {
-                sscanf(input, "%u", &g_standardJumpButtonWidgets.g_inputTmpIndex);
+                sscanf(input, "%u", (unsigned int *)&g_standardJumpButtonWidgets.g_inputTmpIndex);
                 g_showIndex = g_standardJumpButtonWidgets.g_inputTmpIndex / 5 * 5;
                 g_selectIndex = g_standardJumpButtonWidgets.g_inputTmpIndex;
                 RefreshSwitchAccount();

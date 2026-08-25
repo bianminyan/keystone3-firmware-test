@@ -1766,7 +1766,7 @@ static void GetEthNetWork(void *indata, void *param, uint32_t maxLen)
     DisplayETH *eth = (DisplayETH *)param;
     EvmNetwork_t network = FindEvmNetwork(eth->chain_id);
     if (network.chainId == 0) {
-        snprintf_s((char *)indata,  maxLen, "ID: %lu", eth->chain_id);
+        snprintf_s((char *)indata,  maxLen, "ID: %llu", eth->chain_id);
         return;
     }
     strcpy_s((char *)indata, maxLen, network.name);

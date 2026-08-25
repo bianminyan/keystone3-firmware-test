@@ -146,7 +146,7 @@ static int ValidateAndSetFileName(Tlv_t *tlvArray, FileTransInfo_t *fileTransInf
     if ((strcmp("keystone3.bin", tlvArray->pValue) != 0) && (strcmp("nft.bin", tlvArray->pValue) != 0)) {
         return -1;
     }
-    int written = snprintf(fileTransInfo->fileName, MAX_FILE_NAME_LENGTH + 3, "1:%s", tlvArray->pValue);
+    int written = snprintf(fileTransInfo->fileName, MAX_FILE_NAME_LENGTH + 3, "1:%s", (const char *)tlvArray->pValue);
     if (written < 0 || written >= MAX_FILE_NAME_LENGTH + 3) {
         printf("Failed to write file name.\n");
         return -1;
@@ -200,7 +200,7 @@ static uint8_t *ServiceFileTransInfo(FrameHead_t *head, const uint8_t *tlvData, 
     }
 
     printf("file name=%s\n", g_fileTransInfo.fileName);
-    printf("file size=%d\n", g_fileTransInfo.fileSize);
+    printf("file size=%d\n", (int)g_fileTransInfo.fileSize);
     PrintArray("sha256", g_fileTransInfo.sha256, 32);
     PrintArray("signature", g_fileTransInfo.signature, 64);
     PrintArray("iv", g_fileTransInfo.iv, 16);
@@ -313,16 +313,16 @@ static uint8_t *ServiceFileTransContent(FrameHead_t *head, const uint8_t *tlvDat
         if (offset + fileDataSize - g_fileTransInfo.fileSize <= 16) {
             isTail = true;
         } else {
-            printf("offset = %d, file size = %d\n", offset, g_fileTransInfo.fileSize);
-            printf("file data = %d\n", fileDataSize);
-            printf("offset + filedata = %d\n", offset + fileDataSize);
+            printf("offset = %d, file size = %d\n", (int)offset, (int)g_fileTransInfo.fileSize);
+            printf("file data = %d\n", (int)fileDataSize);
+            printf("offset + filedata = %d\n", (int)(offset + fileDataSize));
             printf("file trans data overflow\n");
             return NULL;
         }
     }
 
     if (g_fileTransCtrl.offset != offset) {
-        printf("file trans offset err, expected offset=%d, rcv offset=%d\n", g_fileTransCtrl.offset, offset);
+        printf("file trans offset err, expected offset=%d, rcv offset=%d\n", (int)g_fileTransCtrl.offset, (int)offset);
         return NULL;
     }
 
@@ -405,7 +405,7 @@ static uint8_t *ServiceFileTransComplete(FrameHead_t *head, const uint8_t *tlvDa
         }
         ASSERT(false);
     }
-    printf("total tick=%d\n", g_fileTransCtrl.endTick - g_fileTransCtrl.startTick);
+    printf("total tick=%d\n", (int)(g_fileTransCtrl.endTick - g_fileTransCtrl.startTick));
 
     sendHead.packetIndex = head->packetIndex;
     sendHead.serviceId = head->serviceId;
@@ -517,12 +517,12 @@ static void WriteNftToFlash(void)
     const char *filePath = "1:nft.bin";
     ret = f_open(&fp, filePath, FA_OPEN_EXISTING | FA_READ);
     if (ret) {
-        printf("open file err %d\n", ret);
+        printf("open file err %d\n", (int)ret);
         return;
     }
 
     fileSize = f_size(&fp);
-    printf("fileSize = %d\n", fileSize);
+    printf("fileSize = %d\n", (int)fileSize);
     uint32_t lastLen = fileSize;
     fileBuf = SRAM_MALLOC(4096);
 
@@ -565,7 +565,7 @@ static uint8_t *ServiceNftFileTransComplete(FrameHead_t *head, const uint8_t *tl
     PrintArray("g_fileTransInfo.sha256", g_fileTransInfo.sha256, 32);
     sha256_done(&g_sha256Ctx, &sha256Result);
     PrintArray("sha256Result", sha256Result.u.u8, 32);
-    printf("total tick=%d\n", g_fileTransCtrl.endTick - g_fileTransCtrl.startTick);
+    printf("total tick=%d\n", (int)(g_fileTransCtrl.endTick - g_fileTransCtrl.startTick));
 
     do {
         if (memcmp(sha256Result.u.u8, g_fileTransInfo.sha256, 32) != 0) {

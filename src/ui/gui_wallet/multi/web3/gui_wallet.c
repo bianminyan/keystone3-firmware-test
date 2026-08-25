@@ -414,7 +414,7 @@ UREncodeResult *GuiGetADADataByIndex(char *walletName)
     char* xpub = GetCurrentAccountPublicKey(GetAdaXPubTypeByIndexAndDerivationType(
             GetConnectWalletPathIndex(walletName), index));
     char path[BUFFER_SIZE_32] = {0};
-    snprintf(path, sizeof(path), "1852'/1815'/%u'", index);
+    snprintf(path, sizeof(path), "1852'/1815'/%u'", (unsigned int)index);
     ExtendedPublicKey xpubs[1];
     xpubs[0].path = path;
     xpubs[0].xpub = xpub;
@@ -449,7 +449,7 @@ UREncodeResult *GuiGetKeplrDataByIndex(uint32_t index)
         keys[i].xpub = GetCurrentAccountPublicKey(chain->xpubType);
         keys[i].name = "Account-1";
         keys[i].path = SRAM_MALLOC(BUFFER_SIZE_32);
-        snprintf_s(keys[i].path, BUFFER_SIZE_32, "M/44'/%u'/0'/0/%u", chain->coinType, index);
+        snprintf_s(keys[i].path, BUFFER_SIZE_32, "M/44'/%u'/0'/0/%u", chain->coinType, (unsigned int)index);
     }
 
     UREncodeResult *urEncode = get_connect_keplr_wallet_ur(mfp, sizeof(mfp), publicKeys);

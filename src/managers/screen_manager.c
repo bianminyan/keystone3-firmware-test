@@ -147,7 +147,7 @@ static void LockScreen(void)
         RecoverFromLowPower();
         ClearLockScreenTime();
         ClearShutdownTime();
-        printf("wakeUpCount=%d\r\n", wakeUpCount);
+        printf("wakeUpCount=%d\r\n", (int)wakeUpCount);
     }
 }
 

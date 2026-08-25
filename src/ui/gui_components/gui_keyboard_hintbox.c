@@ -505,14 +505,14 @@ void GuiShowErrorNumber(KeyboardWidget_t *keyboardWidget, PasswordVerifyResult_t
             if (GuiCheckIfViewOpened(&g_lockView)) {
                 int32_t closeRet = GuiCloseToTargetView(&g_lockView);
                 printf("prove-ownership wipe transition: closeToLock ret=%d lock=%d forget=%d wipe=%d\r\n",
-                       closeRet, g_lockView.isActive, g_forgetPassView.isActive, g_wipeDeviceView.isActive);
+                       (int)closeRet, g_lockView.isActive, g_forgetPassView.isActive, g_wipeDeviceView.isActive);
             } else {
                 printf("prove-ownership wipe transition: lock view not opened, skip closeToLock\r\n");
             }
             GuiWipeDeviceSetForced(true);
             int32_t openRet = GuiFrameOpenView(&g_wipeDeviceView);
             printf("prove-ownership wipe transition: openWipe ret=%d lock=%d forget=%d wipe=%d\r\n",
-                   openRet, g_lockView.isActive, g_forgetPassView.isActive, g_wipeDeviceView.isActive);
+                   (int)openRet, g_lockView.isActive, g_forgetPassView.isActive, g_wipeDeviceView.isActive);
         } else {
             GuiShowPasswordErrorHintBox(keyboardWidget);
         }

@@ -97,7 +97,7 @@ bool GetFactoryResult(void)
     memcpy(&data, (uint32_t *)OTA_ADDR_FACTORY_BASE, 4);
     MpuSetOtpProtection(true);
     if (data != 0xFFFFFFFF) {
-        printf("data=%#x........\n", data);
+        printf("data=%#x........\n", (unsigned int)data);
         printf("factory pass\n");
         return true;
     } else {
@@ -135,19 +135,19 @@ int32_t GetUpdatePubKey(uint8_t *pubKey)
         if (CheckAllFF(data, UPDATE_PUB_KEY_LEN) == false) {
             if (CheckEntropy(data, UPDATE_PUB_KEY_LEN)) {
                 //Found
-                printf("found,addr=0x%X\n", addr);
+                printf("found,addr=0x%X\n", (unsigned int)addr);
                 pubKey[0] = 4;
                 memcpy_s(pubKey + 1, UPDATE_PUB_KEY_LEN, data, UPDATE_PUB_KEY_LEN);
                 memset_s(data, UPDATE_PUB_KEY_LEN, 0, UPDATE_PUB_KEY_LEN);
                 return SUCCESS_CODE;
             }
-            printf("not found,addr=0x%X\n", addr);
+            printf("not found,addr=0x%X\n", (unsigned int)addr);
             memset_s(data, UPDATE_PUB_KEY_LEN, 0, UPDATE_PUB_KEY_LEN);
             memset_s(pubKey, UPDATE_PUB_KEY_LEN + 1, 0, UPDATE_PUB_KEY_LEN + 1);
             return ERR_UPDATE_PUB_KEY_NOT_EXIST;
         }
     }
-    printf("not found,addr=0x%X\n", addr);
+    printf("not found,addr=0x%X\n", (unsigned int)addr);
     memset_s(data, UPDATE_PUB_KEY_LEN, 0, UPDATE_PUB_KEY_LEN);
     memset_s(pubKey, UPDATE_PUB_KEY_LEN + 1, 0, UPDATE_PUB_KEY_LEN + 1);
     return ERR_UPDATE_PUB_KEY_NOT_EXIST;
@@ -166,7 +166,7 @@ int32_t SetUpdatePubKey(const uint8_t *pubKey)
         memcpy_s(data, UPDATE_PUB_KEY_LEN, (uint8_t *)addr, UPDATE_PUB_KEY_LEN);
         PrintArray("read pub key", data, UPDATE_PUB_KEY_LEN);
         if (CheckAllFF(data, UPDATE_PUB_KEY_LEN)) {
-            printf("writeable addr found:0x%08X\n", addr);
+            printf("writeable addr found:0x%08X\n", (unsigned int)addr);
             //write OTP
             memcpy_s(data, UPDATE_PUB_KEY_LEN, pubKey + 1, UPDATE_PUB_KEY_LEN);
             WriteOtpData(addr, data, UPDATE_PUB_KEY_LEN);
@@ -196,44 +196,44 @@ void PresettingTest(int argc, char *argv[])
     } else if (strcmp(argv[0], "get_web_auth_key") == 0) {
         data = SRAM_MALLOC(WEB_AUTH_RSA_KEY_LEN);
         ret = GetWebAuthRsaKey(data);
-        printf("ret=%d\n", ret);
+        printf("ret=%d\n", (int)ret);
         PrintArray("web auth key", data, WEB_AUTH_RSA_KEY_LEN);
         SRAM_FREE(data);
     } else if (strcmp(argv[0], "set_web_auth_key") == 0) {
         VALUE_CHECK(argc, 2);
         len = strnlen_s(argv[1], 1024);
         if (len != 2048) {
-            printf("set_web_auth_key err input,len=%d\n", len);
+            printf("set_web_auth_key err input,len=%d\n", (int)len);
             return;
         }
         data = SRAM_MALLOC(WEB_AUTH_RSA_KEY_LEN);
         len = StrToHex(data, argv[1]);
         if (len != WEB_AUTH_RSA_KEY_LEN) {
-            printf("set_web_auth_key err hex,len=%d\n", len);
+            printf("set_web_auth_key err hex,len=%d\n", (int)len);
             SRAM_FREE(data);
             return;
         }
         PrintArray("hex", data, len);
         ret = SetWebAuthRsaKey(data);
-        printf("set web auth key ret=%d\n", ret);
+        printf("set web auth key ret=%d\n", (int)ret);
         SRAM_FREE(data);
     } else if (strcmp(argv[0], "get_update_pub_key") == 0) {
         data = SRAM_MALLOC(UPDATE_PUB_KEY_LEN + 1);
         ret = GetUpdatePubKey(data);
-        printf("ret=%d\n", ret);
+        printf("ret=%d\n", (int)ret);
         PrintArray("update pub key", data, UPDATE_PUB_KEY_LEN + 1);
         SRAM_FREE(data);
     } else if (strcmp(argv[0], "set_update_pub_key") == 0) {
         VALUE_CHECK(argc, 2);
         len = strnlen_s(argv[1], 1024);
         if (len != 130) {
-            printf("set_update_pub_key err input,len=%d\n", len);
+            printf("set_update_pub_key err input,len=%d\n", (int)len);
             return;
         }
         data = SRAM_MALLOC(UPDATE_PUB_KEY_LEN + 1);
         len = StrToHex(data, argv[1]);
         if (len != UPDATE_PUB_KEY_LEN + 1) {
-            printf("set_update_pub_key err hex,len=%d\n", len);
+            printf("set_update_pub_key err hex,len=%d\n", (int)len);
             SRAM_FREE(data);
             return;
         }
@@ -244,7 +244,7 @@ void PresettingTest(int argc, char *argv[])
         }
         PrintArray("hex", data, len);
         ret = SetUpdatePubKey(data);
-        printf("SetUpdatePubKey ret=%d\n", ret);
+        printf("SetUpdatePubKey ret=%d\n", (int)ret);
         SRAM_FREE(data);
     } else if (strcmp(argv[0], "set_factory_result") == 0) {
         SetFactoryResult();

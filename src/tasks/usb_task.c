@@ -1,5 +1,6 @@
 #include "usb_task.h"
 #include "stdio.h"
+#include "stdint.h"
 #include "string.h"
 #include "cmsis_os.h"
 #include "drv_usb.h"
@@ -34,7 +35,7 @@ void CreateUsbTask(void)
         .priority = (osPriority_t) osPriorityNormal,
     };
     g_usbTaskHandle = osThreadNew(UsbTask, NULL, &usbTaskAttributes);
-    printf("g_usbTaskHandle=%d\r\n", g_usbTaskHandle);
+    printf("g_usbTaskHandle=%d\r\n", (int)(uintptr_t)g_usbTaskHandle);
 }
 
 void SetUsbState(bool enable)

@@ -861,7 +861,7 @@ static void RefreshQrCode(void)
     } else {
         lv_label_set_text(g_multiPathCoinReceiveWidgets.addressLabel, addressDataItem.address);
     }
-    lv_label_set_text_fmt(g_multiPathCoinReceiveWidgets.addressCountLabel, "%s-%u", _("account_head"), (addressDataItem.index + 1));
+    lv_label_set_text_fmt(g_multiPathCoinReceiveWidgets.addressCountLabel, "%s-%u", _("account_head"), (unsigned int)(addressDataItem.index + 1));
 }
 
 static void RefreshSwitchAccount(void)
@@ -872,7 +872,7 @@ static void RefreshSwitchAccount(void)
     bool end = false;
     for (uint32_t i = 0; i < 5; i++) {
         ModelGetAddress(index, &addressDataItem);
-        lv_label_set_text_fmt(g_multiPathCoinReceiveWidgets.switchAddressWidgets[i].addressCountLabel, "%s-%u", _("account_head"), (addressDataItem.index + 1));
+        lv_label_set_text_fmt(g_multiPathCoinReceiveWidgets.switchAddressWidgets[i].addressCountLabel, "%s-%u", _("account_head"), (unsigned int)(addressDataItem.index + 1));
         CutAndFormatString(string, sizeof(string), addressDataItem.address, 24);
         lv_label_set_text(g_multiPathCoinReceiveWidgets.switchAddressWidgets[i].addressLabel, string);
         if (end) {
@@ -1347,7 +1347,7 @@ static void ModelGetADAAddress(uint32_t index, AddressDataItem_t *item, uint8_t 
     char *xPub = NULL, hdPath[BUFFER_SIZE_128] = {0};
     SimpleResponse_c_char *result = NULL;
     xPub = GetCurrentAccountPublicKey(GetAdaXPubTypeByIndex(index));
-    snprintf_s(hdPath, BUFFER_SIZE_128, "m/1852'/1815'/%u'", index);
+    snprintf_s(hdPath, BUFFER_SIZE_128, "m/1852'/1815'/%u'", (unsigned int)index);
     switch (type) {
     case 1:
         result = cardano_get_enterprise_address(xPub, index, 1);
@@ -1422,8 +1422,8 @@ static void ModelGetAvaxAddress(uint32_t index, AddressDataItem_t *item)
         // x p chain address
         xPub = GetCurrentAccountPublicKey(XPUB_TYPE_AVAX_X_P_0 + index);
         ASSERT(xPub);
-        snprintf_s(hdPath, sizeof(hdPath), "m/44'/9000'/%u'/0/0", index);
-        snprintf_s(rootPath, sizeof(rootPath), "m/44'/9000'/%u'", index);
+        snprintf_s(hdPath, sizeof(hdPath), "m/44'/9000'/%u'/0/0", (unsigned int)index);
+        snprintf_s(rootPath, sizeof(rootPath), "m/44'/9000'/%u'", (unsigned int)index);
         SimpleResponse_c_char *result = avalanche_get_x_p_address(hdPath, xPub, rootPath);
         if (result->error_code == 0) {
             item->index = index;

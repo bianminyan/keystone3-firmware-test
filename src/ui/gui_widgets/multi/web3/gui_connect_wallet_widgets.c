@@ -950,7 +950,7 @@ static void AddChainAddress(void)
 
     char name[BUFFER_SIZE_32] = {0};
     snprintf_s(name, sizeof(name), "%s-%d", _("account_head"),
-               GetConnectWalletAccountIndex(GetWalletNameByIndex(g_connectWalletTileView.walletIndex)));
+               (int)GetConnectWalletAccountIndex(GetWalletNameByIndex(g_connectWalletTileView.walletIndex)));
     lv_obj_t *label = GuiCreateIllustrateLabel(g_bottomCont, name);
     lv_obj_align(label, LV_ALIGN_TOP_LEFT, 36, 24);
 
@@ -1005,7 +1005,7 @@ static void AddKeplrCoinsAndAddressUI(void)
     lv_obj_add_flag(g_bottomCont, LV_OBJ_FLAG_CLICKABLE);
     char name[BUFFER_SIZE_32] = {0};
     snprintf_s(name, sizeof(name), "%s-%d", _("account_head"),
-               GetConnectWalletAccountIndex(GetWalletNameByIndex(g_connectWalletTileView.walletIndex)));
+               (int)GetConnectWalletAccountIndex(GetWalletNameByIndex(g_connectWalletTileView.walletIndex)));
     lv_obj_t *label = GuiCreateIllustrateLabel(g_bottomCont, name);
     lv_obj_align(label, LV_ALIGN_TOP_LEFT, 36, 70);
 

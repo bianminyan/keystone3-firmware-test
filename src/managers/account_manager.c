@@ -627,7 +627,7 @@ int32_t DestroyAccount(uint8_t accountIndex)
     printf("destroy account %d\n", accountIndex);
     ret = SE_SetAccountStatus(accountIndex, ACCOUNT_STATUS_DELETING);
     if (ret != SUCCESS_CODE) {
-        printf("destroy account:set deleting status err,0x%X\n", ret);
+        printf("destroy account:set deleting status err,0x%X\n", (unsigned int)ret);
         CLEAR_ARRAY(data);
         return ret;
     }
@@ -646,17 +646,17 @@ int32_t DestroyAccount(uint8_t accountIndex)
         // no-op). Keep DELETING until all per-account cleanup succeeds so boot can resume after power loss.
         ret = SE_EraseAccount(accountIndex);
         if (ret != SUCCESS_CODE) {
-            printf("destroy account:erase se account err,0x%X\n", ret);
+            printf("destroy account:erase se account err,0x%X\n", (unsigned int)ret);
         } else {
             DeleteAccountPublicInfo(accountIndex);
             ClearAccountPassphrase(accountIndex);
             ret = SetWalletDataHash(accountIndex, data);
             if (ret != SUCCESS_CODE) {
-                printf("destroy account:clear wallet data hash err,0x%X\n", ret);
+                printf("destroy account:clear wallet data hash err,0x%X\n", (unsigned int)ret);
             } else {
                 ret = SE_SetAccountStatus(accountIndex, ACCOUNT_STATUS_UNKNOWN);  // deletion complete -> blank
                 if (ret != SUCCESS_CODE) {
-                    printf("destroy account:clear deleting status err,0x%X\n", ret);
+                    printf("destroy account:clear deleting status err,0x%X\n", (unsigned int)ret);
                 } else {
                     printf("destroy account:clear se done %d\n", accountIndex);
                 }
@@ -670,7 +670,7 @@ int32_t DestroyAccount(uint8_t accountIndex)
     if (ret == SUCCESS_CODE) {
         printf("destroy account %d all set\n", accountIndex);
     } else {
-        printf("destroy account %d finished with err,0x%X\n", accountIndex, ret);
+        printf("destroy account %d finished with err,0x%X\n", accountIndex, (unsigned int)ret);
     }
     return ret;
 }

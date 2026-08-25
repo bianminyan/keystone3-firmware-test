@@ -115,11 +115,11 @@ void DeviceSettingsInit(void)
 
     ret = Gd25FlashReadBuffer(SPI_FLASH_ADDR_NORMAL_PARAM, (uint8_t *)&size, sizeof(size));
     ASSERT(ret == 4);
-    printf("device settings size=%d\n", size);
+    printf("device settings size=%d\n", (int)size);
     do {
         if (size >= SPI_FLASH_SIZE_NORMAL_PARAM - 4) {
             needRegenerate = true;
-            printf("device settings size err,%d\r\n", size);
+            printf("device settings size err,%d\r\n", (int)size);
             break;
         }
         jsonString = SRAM_MALLOC(size + 1);
@@ -420,7 +420,7 @@ bool IsUpdateSuccess(void)
         SaveDeviceSettings();
         isUpdate = true;
     }
-    printf("g_deviceSettings.lastVersion=%#x\n", g_deviceSettings.lastVersion);
+    printf("g_deviceSettings.lastVersion=%#x\n", (unsigned int)g_deviceSettings.lastVersion);
 
     return isUpdate;
 }
@@ -501,7 +501,7 @@ void WipeDevice(void)
     SE_SetAccountStatus(2, ACCOUNT_STATUS_UNKNOWN);
     for (uint32_t addr = 0; addr < GD25QXX_FLASH_SIZE; addr += 1024 * 64) {
         Gd25FlashBlockErase(addr);
-        printf("flash erase address: %#x\n", addr);
+        printf("flash erase address: %#x\n", (unsigned int)addr);
     }
 }
 
@@ -516,15 +516,15 @@ void DeviceSettingsTest(int argc, char *argv[])
         printf("wipe over\n");
     } else if (strcmp(argv[0], "info") == 0) {
         printf("device settings verion=%s\n", g_deviceSettingsVersion);
-        printf("setupStep=%d\n", GetSetupStep());
-        printf("bright=%d\n", GetBright());
-        printf("autoLockScreen=%d\n", GetAutoLockScreen());
-        printf("autoPowerOff=%d\n", GetAutoPowerOff());
-        printf("vibration=%d\n", GetVibration());
-        printf("darkMode=%d\n", GetDarkMode());
-        printf("usbSwitch=%d\n", GetUSBSwitch());
-        printf("language=%d\n", GetLanguage());
-        printf("enableBlindSigning=%d\n", GetEnableBlindSigning());
+        printf("setupStep=%d\n", (int)GetSetupStep());
+        printf("bright=%d\n", (int)GetBright());
+        printf("autoLockScreen=%d\n", (int)GetAutoLockScreen());
+        printf("autoPowerOff=%d\n", (int)GetAutoPowerOff());
+        printf("vibration=%d\n", (int)GetVibration());
+        printf("darkMode=%d\n", (int)GetDarkMode());
+        printf("usbSwitch=%d\n", (int)GetUSBSwitch());
+        printf("language=%d\n", (int)GetLanguage());
+        printf("enableBlindSigning=%d\n", (int)GetEnableBlindSigning());
     } else if (strcmp(argv[0], "set") == 0) {
         SetSetupStep(0);
         SetBright(50);

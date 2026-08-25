@@ -4897,7 +4897,7 @@ static void Gsl1691UpdateFirmware(void)
     uint8_t sendBuf[5];
 
     fwSequenceLen = sizeof(g_gsl1691FirmwareData) / sizeof(g_gsl1691FirmwareData[0]);
-    printf("sequenceLen=%d\n", fwSequenceLen);
+    printf("sequenceLen=%d\n", (int)fwSequenceLen);
     for (i = 0; i < fwSequenceLen; i++) {
         if (g_gsl1691FirmwareData[i].offset == 0xF0) {
             sendBuf[0] = g_gsl1691FirmwareData[i].offset;

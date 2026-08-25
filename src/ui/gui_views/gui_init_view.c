@@ -108,7 +108,7 @@ int32_t GUI_InitViewEventProcess(void *self, uint16_t usEvent, void *param, uint
         break;
     case SIG_INIT_TRANSFER_NFT_SCREEN:
         rcvValue = *(uint32_t *)param;
-        printf("rcvValue=%d\r\n", rcvValue);
+        printf("rcvValue=%d\r\n", (int)rcvValue);
         if (rcvValue != 0) {
             OpenMsgBox(&g_guiMsgBoxNftScreen);
         } else {

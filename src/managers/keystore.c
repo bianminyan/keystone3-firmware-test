@@ -542,7 +542,7 @@ int32_t SetPassphrase(uint8_t accountIndex, const char *passphrase, const char *
         if (simpleResponse->error_code != 0) {
             printf("get_master_fingerprint error\r\n");
             if (simpleResponse->error_message != NULL) {
-                printf("error code = %d\r\nerror msg is: %s\r\n", simpleResponse->error_code, simpleResponse->error_message);
+                printf("error code = %d\r\nerror msg is: %s\r\n", (int)simpleResponse->error_code, simpleResponse->error_message);
             }
         }
         ret = simpleResponse->error_code;
@@ -738,7 +738,7 @@ static int32_t SaveAccountSecret(uint8_t accountIndex, const AccountSecret_t *ac
                 if (simpleResponse->error_code != 0) {
                     printf("get_master_fingerprint error\r\n");
                     if (simpleResponse->error_message != NULL) {
-                        printf("error code = %d\r\nerror msg is: %s\r\n", simpleResponse->error_code, simpleResponse->error_message);
+                        printf("error code = %d\r\nerror msg is: %s\r\n", (int)simpleResponse->error_code, simpleResponse->error_message);
                     }
                     ret = simpleResponse->error_code;
                     free_simple_response_u8(simpleResponse);   // was leaked on the error path

@@ -224,7 +224,7 @@ static void RefreshSwitchAddress(void)
     bool end = false;
     for (uint32_t i = 0; i < 5; i++) {
         ModelGetAddress(index, &addressDataItem);
-        lv_label_set_text_fmt(g_standardReceiveWidgets.switchAddressWidgets[i].addressCountLabel, "%s-%u", _("Address"), (addressDataItem.index));
+        lv_label_set_text_fmt(g_standardReceiveWidgets.switchAddressWidgets[i].addressCountLabel, "%s-%u", _("Address"), (unsigned int)(addressDataItem.index));
         char string[128] = {0};
         CutAndFormatString(string, sizeof(string), addressDataItem.address, 24);
         lv_label_set_text(g_standardReceiveWidgets.switchAddressWidgets[i].addressLabel, string);
@@ -273,7 +273,7 @@ static void InputAddressIndexKeyboardHandler(lv_event_t *e)
         strcpy_s(input, sizeof(input), lv_label_get_text(g_standardReceiveWidgets.inputAccountLabel));
         if (strcmp(txt, LV_SYMBOL_OK) == 0) {
             if (g_inputAccountValid) {
-                sscanf(input, "%u", &g_tmpIndex);
+                sscanf(input, "%u", (unsigned int *)&g_tmpIndex);
                 g_showIndex = g_tmpIndex / 5 * 5;
                 RefreshSwitchAddress();
                 lv_obj_add_flag(g_standardReceiveWidgets.inputAccountCont, LV_OBJ_FLAG_HIDDEN);
@@ -743,7 +743,7 @@ static void RefreshQrCode(void)
         lv_label_set_text(g_standardReceiveWidgets.addressLabel, addressDataItem.address);
     }
 #endif
-    lv_label_set_text_fmt(g_standardReceiveWidgets.addressCountLabel, "%s-%u", _("account_head"), addressDataItem.index);
+    lv_label_set_text_fmt(g_standardReceiveWidgets.addressCountLabel, "%s-%u", _("account_head"), (unsigned int)addressDataItem.index);
 }
 
 static void RefreshSwitchAccount(void)
@@ -754,7 +754,7 @@ static void RefreshSwitchAccount(void)
     bool end = false;
     for (uint32_t i = 0; i < 5; i++) {
         ModelGetAddress(index, &addressDataItem);
-        lv_label_set_text_fmt(g_standardReceiveWidgets.switchAddressWidgets[i].addressCountLabel, "%s-%u", _("account_head"), addressDataItem.index);
+        lv_label_set_text_fmt(g_standardReceiveWidgets.switchAddressWidgets[i].addressCountLabel, "%s-%u", _("account_head"), (unsigned int)addressDataItem.index);
         CutAndFormatString(string, sizeof(string), addressDataItem.address, 24);
         lv_label_set_text(g_standardReceiveWidgets.switchAddressWidgets[i].addressLabel, string);
         if (end) {
@@ -929,7 +929,7 @@ static void ModelGetAddress(uint32_t index, AddressDataItem_t *item)
     switch (g_chainCard) {
     case HOME_WALLET_CARD_TRX:
         xPub = GetCurrentAccountPublicKey(XPUB_TYPE_TRX);
-        snprintf_s(hdPath, BUFFER_SIZE_128, "m/44'/195'/0'/0/%u", index);
+        snprintf_s(hdPath, BUFFER_SIZE_128, "m/44'/195'/0'/0/%u", (unsigned int)index);
         result = tron_get_address(hdPath, xPub);
         break;
     case HOME_WALLET_CARD_SUI:
@@ -942,12 +942,12 @@ static void ModelGetAddress(uint32_t index, AddressDataItem_t *item)
         break;
     case HOME_WALLET_CARD_APT:
         xPub = GetCurrentAccountPublicKey(XPUB_TYPE_APT_0 + index);
-        snprintf_s(hdPath, BUFFER_SIZE_128, "m/44'/637'/%u'/0'/0'", index);
+        snprintf_s(hdPath, BUFFER_SIZE_128, "m/44'/637'/%u'/0'/0'", (unsigned int)index);
         result = aptos_generate_address(xPub);
         break;
     case HOME_WALLET_CARD_XRP:
         xPub = GetCurrentAccountPublicKey(XPUB_TYPE_XRP);
-        snprintf_s(hdPath, BUFFER_SIZE_128, "m/44'/144'/0'/0/%u", index);
+        snprintf_s(hdPath, BUFFER_SIZE_128, "m/44'/144'/0'/0/%u", (unsigned int)index);
         result = xrp_get_address(hdPath, xPub, "m/44'/144'/0'/");
         break;
     case HOME_WALLET_CARD_ARWEAVE:
@@ -956,12 +956,12 @@ static void ModelGetAddress(uint32_t index, AddressDataItem_t *item)
         break;
     case HOME_WALLET_CARD_ZEC:
         xPub = GetCurrentAccountPublicKey(XPUB_TYPE_ZEC_TRANSPARENT_LEGACY);
-        snprintf_s(hdPath, BUFFER_SIZE_128, "m/44'/133'/0'/0/%u", index);
+        snprintf_s(hdPath, BUFFER_SIZE_128, "m/44'/133'/0'/0/%u", (unsigned int)index);
         result = utxo_get_address(hdPath, xPub);
         break;
     case HOME_WALLET_CARD_XLM:
         xPub = GetCurrentAccountPublicKey(XPUB_TYPE_STELLAR_0 + index);
-        snprintf_s(hdPath, BUFFER_SIZE_64, "m/44'/148'/%u'", index);
+        snprintf_s(hdPath, BUFFER_SIZE_64, "m/44'/148'/%u'", (unsigned int)index);
         result = stellar_get_address(xPub);
         break;
     case HOME_WALLET_CARD_TON: {
@@ -973,7 +973,7 @@ static void ModelGetAddress(uint32_t index, AddressDataItem_t *item)
         if (IsCosmosChain(g_chainCard)) {
             result = (SimpleResponse_c_char *) GetCosmosChainAddressByCoinTypeAndIndex(g_chainCard, index);
         } else {
-            printf("Standard Receive ModelGetAddress cannot match %d\r\n", index);
+            printf("Standard Receive ModelGetAddress cannot match %d\r\n", (int)index);
             return;
         }
     }

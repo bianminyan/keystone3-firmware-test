@@ -147,7 +147,7 @@ void PrintU32Array(const char *name, const uint32_t *data, uint16_t length)
         if (i % 8 == 0 && i != 0) {
             printf("\r\n");
         }
-        printf("%8X ", data[i]);
+        printf("%8X ", (unsigned int)data[i]);
     }
     printf("\r\n");
 }

@@ -130,8 +130,9 @@ static bool DeriveConnectedAddress(void)
     }
     SimpleResponse_c_char *result = btcoin_get_address_with_network(hdPath, xpub, g_callData->network);
     if (result->error_code == 0 && result->data != NULL) {
-        g_address = SRAM_MALLOC(strnlen_s(result->data, BUFFER_SIZE_128) + 1);
-        strcpy(g_address, result->data);
+        size_t addressLen = strnlen_s(result->data, BUFFER_SIZE_128) + 1;
+        g_address = SRAM_MALLOC(addressLen);
+        strcpy_s(g_address, addressLen, result->data);
         free_simple_response_c_char(result);
         return true;
     }

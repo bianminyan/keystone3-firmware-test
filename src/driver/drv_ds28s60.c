@@ -356,7 +356,7 @@ static int32_t DS28S60_SendCmdAndGetResult(uint8_t cmd, uint8_t *para, uint8_t p
         if (ret == DS28S60_SUCCESS) {
             break;
         }
-        printf("retry %d\r\n", tryCount);
+        printf("retry %d\r\n", (int)tryCount);
     }
     assert(ret == 0);
     return ret;
@@ -645,11 +645,11 @@ static void DS28S60_PrintInfo(void)
         ret = DS28S60_GetBlockProtection(&blockProtection, i);
         UserDelay(50);
         if (ret != DS28S60_SUCCESS) {
-            printf("get block protection err,block=%d,ret=%d\r\n", i, ret);
+            printf("get block protection err,block=%d,ret=%d\r\n", (int)i, (int)ret);
             continue;
         }
         if (blockProtection.Secret.byte != 0x00 || blockProtection.Prot.byte != 0x00) {
-            printf("block %d protection info:\r\n", i);
+            printf("block %d protection info:\r\n", (int)i);
             printf("LOCK=%d,SEC_ID=0x%03X\r\n", blockProtection.Secret.b.LOCK, blockProtection.Secret.b.ID);
             printf("ECW=%d,ECH=%d,EPH=%d,APH=%d,WP=%d,RP=%d\r\n", blockProtection.Prot.b.ECW, \
                    blockProtection.Prot.b.ECH, blockProtection.Prot.b.EPH, blockProtection.Prot.b.APH, \
@@ -708,65 +708,65 @@ void DS28S60_Test(int argc, char *argv[])
 
     if (strcmp(argv[0], "random") == 0) {
         VALUE_CHECK(argc, 2);
-        sscanf(argv[1], "%d", &num);
-        printf("ds28s60 get rng,num=%d\r\n", num);
+        sscanf(argv[1], "%d", (int *)&num);
+        printf("ds28s60 get rng,num=%d\r\n", (int)num);
         data = SRAM_MALLOC(num);
         ret = DS28S60_GetRng(data, num);
         if (ret == DS28S60_SUCCESS) {
             PrintArray("data", data, num);
         } else {
-            printf("ds28s60 err=%d\r\n", ret);
+            printf("ds28s60 err=%d\r\n", (int)ret);
         }
         SRAM_FREE(data);
     } else if (strcmp(argv[0], "read") == 0) {
         VALUE_CHECK(argc, 2);
-        sscanf(argv[1], "%d", &page);
-        printf("ds28s60 read page %d\r\n", page);
+        sscanf(argv[1], "%d", (int *)&page);
+        printf("ds28s60 read page %d\r\n", (int)page);
         ret = DS28S60_ReadPage(pageData, page);
         if (ret == DS28S60_SUCCESS) {
             PrintArray("pageData", pageData, 32);
         } else {
-            printf("ds28s60 err=%d\r\n", ret);
+            printf("ds28s60 err=%d\r\n", (int)ret);
         }
     } else if (strcmp(argv[0], "write") == 0) {
         VALUE_CHECK(argc, 3);
-        sscanf(argv[1], "%d", &page);
+        sscanf(argv[1], "%d", (int *)&page);
         len = strlen(argv[2]) / 2;
         if (len != 32) {
-            printf("data len must be 32, now is %d\r\n", len);
+            printf("data len must be 32, now is %d\r\n", (int)len);
         }
         StrToHex(pageData, argv[2]);
-        printf("ds28s60 write page %d\r\n", page);
+        printf("ds28s60 write page %d\r\n", (int)page);
         ret = DS28S60_WritePage(pageData, page);
         if (ret == DS28S60_SUCCESS) {
             printf("write success\r\n");
         } else {
-            printf("ds28s60 err=%d\r\n", ret);
+            printf("ds28s60 err=%d\r\n", (int)ret);
         }
     } else if (strcmp(argv[0], "en_read") == 0) {
         VALUE_CHECK(argc, 2);
-        sscanf(argv[1], "%d", &page);
-        printf("ds28s60 en_read page %d\r\n", page);
+        sscanf(argv[1], "%d", (int *)&page);
+        printf("ds28s60 en_read page %d\r\n", (int)page);
         ret = DS28S60_HmacEncryptRead(pageData, page);
         if (ret == DS28S60_SUCCESS) {
             PrintArray("pageData", pageData, 32);
         } else {
-            printf("ds28s60 err=%d\r\n", ret);
+            printf("ds28s60 err=%d\r\n", (int)ret);
         }
     } else if (strcmp(argv[0], "en_write") == 0) {
         VALUE_CHECK(argc, 3);
-        sscanf(argv[1], "%d", &page);
+        sscanf(argv[1], "%d", (int *)&page);
         len = strlen(argv[2]) / 2;
         if (len != 32) {
-            printf("data len must be 32, now is %d\r\n", len);
+            printf("data len must be 32, now is %d\r\n", (int)len);
         }
         StrToHex(pageData, argv[2]);
-        printf("ds28s60 en_write page %d\r\n", page);
+        printf("ds28s60 en_write page %d\r\n", (int)page);
         ret = DS28S60_HmacEncryptWrite(pageData, page);
         if (ret == DS28S60_SUCCESS) {
             printf("write success\r\n");
         } else {
-            printf("ds28s60 err=%d\r\n", ret);
+            printf("ds28s60 err=%d\r\n", (int)ret);
         }
     } else if (strcmp(argv[0], "info") == 0) {
         DS28S60_PrintInfo();
@@ -775,20 +775,20 @@ void DS28S60_Test(int argc, char *argv[])
         if (ret == DS28S60_SUCCESS) {
             printf("write secret succ\r\n");
         } else {
-            printf("write secret err=%d\r\n", ret);
+            printf("write secret err=%d\r\n", (int)ret);
         }
     } else if (strcmp(argv[0], "auth") == 0) {
         VALUE_CHECK(argc, 2);
-        sscanf(argv[1], "%d", &page);
+        sscanf(argv[1], "%d", (int *)&page);
         ret = DS28S60_HmacAuthentication(page);
         if (ret == DS28S60_SUCCESS) {
             printf("hmac auth succ\r\n");
         } else {
-            printf("hmac auth err=%d\r\n", ret);
+            printf("hmac auth err=%d\r\n", (int)ret);
         }
     } else if (strcmp(argv[0], "setup_block") == 0) {
         VALUE_CHECK(argc, 2);
-        sscanf(argv[1], "%d", &block);
+        sscanf(argv[1], "%d", (int *)&block);
         memset(&blockProtection, 0, sizeof(DS28S60_BlockProtection_t));
         blockProtection.Secret.b.ID = DS28S60_SECRET_KEY_A;
         blockProtection.Prot.b.APH = 1;
@@ -797,11 +797,11 @@ void DS28S60_Test(int argc, char *argv[])
         if (ret == DS28S60_SUCCESS) {
             printf("set block protection succ\r\n");
         } else {
-            printf("set block protection err=%d\r\n", ret);
+            printf("set block protection err=%d\r\n", (int)ret);
         }
     } else if (strcmp(argv[0], "setup_device") == 0) {
         printf("ds28s60 setup\r\n");
         ret = DS28S60_Setup();
-        printf("DS28S60_Setup=%d\r\n", ret);
+        printf("DS28S60_Setup=%d\r\n", (int)ret);
     }
 }

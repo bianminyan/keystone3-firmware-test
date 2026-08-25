@@ -96,7 +96,7 @@ Rsa_primes_t *FlashReadRsaPrimes(void)
             break;
         }
         if (encData->error_code != SUCCESS_CODE) {
-            printf("aes256_decrypt_primes err,%d\n", encData->error_code);
+            printf("aes256_decrypt_primes err,%d\n", (int)encData->error_code);
             ret = encData->error_code;
             break;
         }

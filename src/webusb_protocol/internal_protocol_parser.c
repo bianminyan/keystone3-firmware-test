@@ -133,7 +133,7 @@ static uint8_t *ProtocolParse(const uint8_t *inData, uint32_t inLen, uint32_t *o
         memcpy_s(&receivedCrc, sizeof(receivedCrc), inData + inLen - 4, 4);
         calculatedCrc = crc32_ieee(0, inData, inLen - 4);
         if (receivedCrc != calculatedCrc) {
-            printf("crc err,receivedCrc=0x%08X,calculatedCrc=0x%08X\n", receivedCrc, calculatedCrc);
+            printf("crc err,receivedCrc=0x%08X,calculatedCrc=0x%08X\n", (unsigned int)receivedCrc, (unsigned int)calculatedCrc);
             break;
         }
         outData = ExecuteService(pHead, inData + sizeof(FrameHead_t), outLen);

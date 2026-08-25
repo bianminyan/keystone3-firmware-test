@@ -841,7 +841,7 @@ int32_t AccountPublicInfoReadFromFlash(uint8_t accountIndex, uint32_t addr)
     len = Gd25FlashReadBuffer(addr, (uint8_t *)&size, sizeof(size));
     ASSERT(len == 4);
     if (size > SPI_FLASH_SIZE_USER1_DATA - 4) {
-        printf("pubkey size err,%d\r\n", size);
+        printf("pubkey size err,%d\r\n", (int)size);
         return ERR_GENERAL_FAIL;
     }
     jsonString = SRAM_MALLOC(size + 1);
@@ -1905,7 +1905,7 @@ void MultiSigWalletSave(MultiSigWalletManager_t *manager)
     int len = 0;
 
     addr = SPI_FLASH_ADDR_USER1_MULTI_SIG_DATA + account * SPI_FLASH_ADDR_EACH_SIZE;
-    printf("MultiSigWalletsave save addr is %x\r\n", addr);
+    printf("MultiSigWalletsave save addr is %x\r\n", (unsigned int)addr);
     for (eraseAddr = addr; eraseAddr < addr + SPI_FLASH_SIZE_USER1_MULTI_SIG_DATA; eraseAddr += GD25QXX_SECTOR_SIZE) {
         Gd25FlashSectorErase(eraseAddr);
     }
@@ -1942,7 +1942,7 @@ int32_t MultiSigWalletGet(uint8_t accountIndex, const char *password, MultiSigWa
     uint8_t hash[32];
 
     addr = SPI_FLASH_ADDR_USER1_MULTI_SIG_DATA + accountIndex * SPI_FLASH_ADDR_EACH_SIZE;
-    printf("MultiSigWalletGet read addr is %x\r\n", addr);
+    printf("MultiSigWalletGet read addr is %x\r\n", (unsigned int)addr);
     ret = Gd25FlashReadBuffer(addr, (uint8_t *)&size, sizeof(size));
     ASSERT(ret == 4);
     if (size == 0xffffffff || size == 0) {

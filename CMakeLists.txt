@@ -314,6 +314,22 @@ if(COMPILE_KEYSTONE)
         list(REMOVE_ITEM objsrc ${excluded_files})
     endforeach()
 
+    # Vendored/third-party sources (FreeRTOS, the SoC driver library, USB stack,
+    # LVGL, safeclib, cm_backtrace) are not held to this project's -Werror=format
+    # policy: we don't hand-edit upstream drops to satisfy our own warning settings.
+    set_property(SOURCE
+        ${MH1903_DRIVER}
+        ${FREERTOS}
+        ${EXTERNAL}
+        ${USB_DRIVER}
+        ${LVGL}
+        ${SAFE_C}
+        ${CM_BACKTRACE}
+        APPEND PROPERTY COMPILE_OPTIONS
+        -Wno-format
+        -Wno-format-security
+    )
+
     set_property(SOURCE
         src/tasks/mpu_sandbox_runtime.c
         src/webusb_protocol/general/eapdu_framing.c

@@ -797,7 +797,7 @@ static void OpenInputRefQrCode(lv_event_t *e)
     char outpoint[160] = {0};
     snprintf_s(url, sizeof(url), "https://mempool.space/tx/%s", inputData->input_txid);
     snprintf_s(outpoint, sizeof(outpoint), "%s:\n%s:%u", "Outpoint", inputData->input_txid,
-               inputData->input_vout);
+               (unsigned int)inputData->input_vout);
 
     GuiQRCodeHintBoxOpenCompact(url, "Input Reference", outpoint);
 }

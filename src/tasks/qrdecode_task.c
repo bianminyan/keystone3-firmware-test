@@ -78,7 +78,7 @@ static void QrDecodeTask(void *argument)
                 if (g_qrDecodeState == QR_DECODE_STATE_OFF) {
                     SetLvglHandlerAndSnapShot(false);
                     ret = QrDecodeInit(GetLvglGramAddr());
-                    printf("decode init ret=%d\r\n", ret);
+                    printf("decode init ret=%d\r\n", (int)ret);
                     if (ret == DecodeInitSuccess) {
                         printf("start qrdecode\r\n");
                         g_qrDecodeState = QR_DECODE_STATE_ON;
@@ -187,7 +187,7 @@ void ProcessQr(uint32_t count)
                     }
                 } else {
                     retFromRust = MultiurResult->error_code;
-                    printf("error code: %d\r\n", MultiurResult->error_code);
+                    printf("error code: %d\r\n", (int)MultiurResult->error_code);
                     printf("error message: %s\r\n", MultiurResult->error_message);
                     if (urResult != NULL) {
                         free_ur_parse_result(urResult);
@@ -215,7 +215,7 @@ void ProcessQr(uint32_t count)
             GuiApiEmitSignal(SIG_QRCODE_VIEW_SCAN_FAIL, &urViewType, sizeof(urViewType));
         }
     } else if (ret < 0) {
-        printf("decode err=%d\r\n", ret);
+        printf("decode err=%d\r\n", (int)ret);
     }
     count++;
 }
