@@ -21,7 +21,11 @@ else()
 endif()
 
 if(CMAKE_HOST_WIN32)
-    set(RUST_TOOLCHAIN "${RUST_TOOLCHAIN}-x86_64-pc-windows-msvc")
+    if(BUILD_ENVIRONMENT STREQUAL "SIMULATOR")
+        set(RUST_TOOLCHAIN "${RUST_TOOLCHAIN}-x86_64-pc-windows-gnu")
+    else()
+        set(RUST_TOOLCHAIN "${RUST_TOOLCHAIN}-x86_64-pc-windows-msvc")
+    endif()
 endif()
 
 if(BUILD_ENVIRONMENT STREQUAL "SIMULATOR")

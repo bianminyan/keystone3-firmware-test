@@ -1,4 +1,3 @@
-set(CMAKE_SYSTEM_NAME Generic)
 cmake_minimum_required(VERSION 3.10)
 
 option(COMPILE_KEYSTONE "compile on MAIN target" ON)
@@ -239,6 +238,7 @@ file(GLOB_RECURSE CRYPTO_SLIP39
 )
 
 if(COMPILE_KEYSTONE)
+    set(CMAKE_SYSTEM_NAME Generic)
     message(STATUS "Compiling for MAIN target")
     set(CROSS_COMPILE_PREFIX arm-none-eabi)
     set(CMAKE_C_COMPILER ${CROSS_COMPILE_PREFIX}-gcc)
