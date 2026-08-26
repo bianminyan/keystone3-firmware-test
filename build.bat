@@ -49,6 +49,10 @@ ENDLOCAL & EXIT /B %BUILD_EXIT_CODE%
 IF "%build_language%"=="true" (
     pushd %LANGUAGE_PATH%
     %LANGUAGE_SCRIPT%
+    IF ERRORLEVEL 1 (
+        popd
+        EXIT /B 1
+    )
     popd
 )
 
