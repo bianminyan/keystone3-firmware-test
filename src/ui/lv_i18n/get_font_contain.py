@@ -13,7 +13,7 @@ from pathlib import Path
 
 g_font_size = 0
 
-def update_font_properties(file_path, font_size):
+def update_font_properties(file_path, font_size, output_path=None):
     font_properties = {
         20: (30, 7),
         24: (40, 11),
@@ -34,6 +34,9 @@ def update_font_properties(file_path, font_size):
                      f'.line_height = {line_height},          /*The maximum line height required by the font*/', content)
     content = re.sub(r'\.base_line = \d+,\s*/\*\s*Baseline measured from the bottom of the line\s*\*/',
                      f'.base_line = {base_line},             /*Baseline measured from the bottom of the line*/', content)
+    if output_path:
+        content = re.sub(r'(--format lvgl -o ).*',
+                         rf'\g<1>{output_path}', content, count=1)
 
     with open(file_path, 'w', encoding='utf-8') as file:
         file.write(content)
@@ -124,7 +127,8 @@ def parse_command_line(command_line="cmd_tool --bpp 8 --size 12 --font Arial.ttf
                 raise RuntimeError(
                     f"lv_font_conv failed with exit code {cmd_result.returncode}"
                 )
-            update_font_properties(temp_output, font_size)
+            stable_output = f"../gui_assets/font/{language}/{label}"
+            update_font_properties(temp_output, font_size, stable_output)
             shutil.copyfile(temp_output, output_file)
         # raise ValueError("Unique characters do not match the symbols provided in the command line.")
 
