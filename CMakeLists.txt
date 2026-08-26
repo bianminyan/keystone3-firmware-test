@@ -171,7 +171,7 @@ set(SRC_INCLUDE_PATH
 )
 
 set(INCLUDE_DIR
-    build/rust-builds
+    ${CMAKE_BINARY_DIR}/rust-builds
     ${SRC_INCLUDE_PATH}
     ${CRYPTO_INCLUDE_PATH}
     ${GUI_INCLUDE_PATH}
@@ -247,6 +247,7 @@ if(COMPILE_KEYSTONE)
     set(CMAKE_OBJCOPY ${CROSS_COMPILE_PREFIX}-objcopy)
     set(CMAKE_OBJDUMP ${CROSS_COMPILE_PREFIX}-objdump)
     set(CMAKE_SIZE ${CROSS_COMPILE_PREFIX}-size)
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
     project(mh1903)
     include(firmware.cmake)
 

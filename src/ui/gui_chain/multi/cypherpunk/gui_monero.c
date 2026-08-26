@@ -348,7 +348,7 @@ void GuiShowXmrTransactionDetails(lv_obj_t *parent, void *totalData)
     lv_obj_set_style_text_opa(label, 144, LV_PART_MAIN);
 
     for (size_t i = 0; i < data->inputs->size; i++) {
-        char inputIndex[BUFFER_SIZE_16] = {0};
+        char inputIndex[BUFFER_SIZE_32] = {0};
         snprintf(inputIndex, sizeof(inputIndex), "Pubkey %zu", i + 1);
         lv_obj_t *titleLabel = GuiCreateIllustrateLabel(inputsContainer, inputIndex);
         lv_obj_align(titleLabel, LV_ALIGN_DEFAULT, 24, 54 + i * 120);
@@ -375,7 +375,7 @@ void GuiShowXmrTransactionDetails(lv_obj_t *parent, void *totalData)
 
     for (size_t i = 0; i < data->outputs->size; i++) {
         bool is_change = data->outputs->data[i].is_change;
-        char outputIndex[BUFFER_SIZE_16] = {0};
+        char outputIndex[BUFFER_SIZE_32] = {0};
         snprintf(outputIndex, sizeof(outputIndex), "Address %zu", i + 1);
         lv_obj_t *titleLabel = GuiCreateIllustrateLabel(outputsContainer, outputIndex);
         lv_obj_align(titleLabel, LV_ALIGN_DEFAULT, 24, 54 + i * 150);

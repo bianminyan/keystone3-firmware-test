@@ -1106,7 +1106,7 @@ static void RefreshSwitchAccount(void)
         if (g_chainCard == HOME_WALLET_CARD_MONERO) {
             ModelGetAddress(index, &addressDataItem, 1);
             bool isPrimaryAccount = index == 0;
-            lv_label_set_text_fmt(g_multiAccountsReceiveWidgets.switchAccountWidgets[i].addressCountLabel, "%s-%u", isPrimaryAccount ? _("primary_account_head") : _("account_head"), (addressDataItem.index));
+            lv_label_set_text_fmt(g_multiAccountsReceiveWidgets.switchAccountWidgets[i].addressCountLabel, "%s-%u", isPrimaryAccount ? _("primary_account_head") : _("account_head"), (unsigned int)addressDataItem.index);
             char string[128] = {0};
             CutAndFormatString(string, sizeof(string), addressDataItem.address, 24);
             lv_label_set_text(g_multiAccountsReceiveWidgets.switchAccountWidgets[i].addressLabel, string);
@@ -1263,7 +1263,7 @@ static void ModelGetAddress(uint32_t index, AddressDataItem_t *item, uint8_t typ
         case 1:
             xPub = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_0);
             pvk = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_PVK_0);
-            snprintf_s(hdPath, BUFFER_SIZE_16, "");
+            hdPath[0] = '\0';
             bool isPrimaryAccount = index == 0;
             result = monero_get_address(xPub, pvk, index, 0, !isPrimaryAccount);
             break;
@@ -1272,7 +1272,7 @@ static void ModelGetAddress(uint32_t index, AddressDataItem_t *item, uint8_t typ
             pvk = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_PVK_0);
             uint32_t accountIndex = g_selectedAccount[GetCurrentAccountIndex()];
             bool isSubAddress = index != 0 || accountIndex != 0;
-            snprintf_s(hdPath, BUFFER_SIZE_128, "m/44'/128'/0'/0/%u", index);
+            snprintf_s(hdPath, BUFFER_SIZE_128, "m/44'/128'/0'/0/%u", (unsigned int)index);
             result = monero_get_address(xPub, pvk, accountIndex, index, isSubAddress);
             break;
         }
