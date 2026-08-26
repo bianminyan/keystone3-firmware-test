@@ -240,6 +240,13 @@ file(GLOB_RECURSE CRYPTO_SLIP39
 
 if(COMPILE_KEYSTONE)
     message(STATUS "Compiling for MAIN target")
+    set(CROSS_COMPILE_PREFIX arm-none-eabi)
+    set(CMAKE_C_COMPILER ${CROSS_COMPILE_PREFIX}-gcc)
+    set(CMAKE_CXX_COMPILER ${CROSS_COMPILE_PREFIX}-g++)
+    set(CMAKE_ASM_COMPILER ${CROSS_COMPILE_PREFIX}-gcc)
+    set(CMAKE_OBJCOPY ${CROSS_COMPILE_PREFIX}-objcopy)
+    set(CMAKE_OBJDUMP ${CROSS_COMPILE_PREFIX}-objdump)
+    set(CMAKE_SIZE ${CROSS_COMPILE_PREFIX}-size)
     project(mh1903)
     include(firmware.cmake)
 

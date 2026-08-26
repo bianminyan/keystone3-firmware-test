@@ -20,6 +20,10 @@ else()
     set(RUST_TOOLCHAIN "nightly-2026-05-22")
 endif()
 
+if(CMAKE_HOST_WIN32)
+    set(RUST_TOOLCHAIN "${RUST_TOOLCHAIN}-x86_64-pc-windows-msvc")
+endif()
+
 if(BUILD_ENVIRONMENT STREQUAL "SIMULATOR")
     set(FEATURE_ENVIRONMENT "simulator")
     set(TARGET_PATH	${CMAKE_SOURCE_DIR}/ui_simulator/lib/rust-builds)
@@ -79,8 +83,10 @@ message(STATUS "cargo build command: " ${CARGO_FLAG})
 
 #run build
 add_custom_target(rust_c ALL
+    BYPRODUCTS ${TARGET_PATH}/${LIB_NAME} ${TARGET_PATH}/librust_c.h
     COMMAND rustup run ${RUST_TOOLCHAIN} ${RUST_CARGO_EXECUTABLE} build ${CARGO_FLAG}
     COMMAND ${COPY_BUILD_TARGET}
     COMMAND ${COPY_BINDINGS_TARGET}
     WORKING_DIRECTORY ${RUST_DIR}
+    USES_TERMINAL
 )
