@@ -14,6 +14,7 @@
 static lv_obj_t *g_cont;
 static lv_obj_t *g_wipeDeviceHintBox = NULL;
 static lv_timer_t *g_countDownTimer;
+static int8_t g_countDown = 5;
 static PageWidget_t *g_pageWidget;
 static bool g_forceWipeDevice = false;
 static bool g_wipeDeviceRunning = false;
@@ -23,10 +24,12 @@ static void GuiWipeDeviceEntranceWidget(lv_obj_t *parent);
 static void WipeDeviceHandler(lv_event_t *e);
 static void NotNowHandler(lv_event_t *e);
 static void GuiShowWipeDeviceHintBox(void);
+static void GuiCreateWipeDeviceHintBox(void);
 static void ExecWipeDeviceHandler(lv_event_t *e);
 static void WipeDeviceDeal(void);
 static void CountDownTimerHandler(lv_timer_t *timer);
 static void GuiCountDownDestruct(void *obj, void* param);
+static void SetWipeConfirmationButtonState(lv_obj_t *button, bool enabled);
 
 void GuiWipeDeviceSetForced(bool forced)
 {
@@ -92,9 +95,14 @@ void GuiWipeDeviceEntranceWidget(lv_obj_t *parent)
     lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 140);
 
     label = GuiCreateNoticeLabel(parent, _("system_settings_wipe_device_wipe_desc"));
-    lv_obj_set_width(label, 406);
+    lv_obj_set_width(label, 408);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 192);
+
+    label = GuiCreateNoticeLabel(parent, _("system_settings_wipe_device_wipe_backup_desc"));
+    lv_obj_set_width(label, 408);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    GuiAlignToPrevObj(label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 12);
 
     label = GuiCreateTextLabel(parent, _("system_settings_wipe_device_wipe_button"));
     lv_obj_set_style_text_color(label, lv_color_hex(0xf55831), LV_PART_MAIN);
@@ -113,8 +121,7 @@ static void WipeDeviceHandler(lv_event_t *e)
 static void GuiShowWipeDeviceHintBox(void)
 {
     if (g_wipeDeviceHintBox == NULL) {
-        g_wipeDeviceHintBox = GuiCreateGeneralHintBox(&imgWarn, _("wipe_device"), _("system_settings_wipe_device_wipe_alert_desc"), NULL,
-                              _("not_now"), WHITE_COLOR_OPA20, _("system_settings_wipe_device_wipe_start_text"), ORANGE_COLOR);
+        GuiCreateWipeDeviceHintBox();
         lv_obj_t *leftBtn = GuiGetHintBoxLeftBtn(g_wipeDeviceHintBox);
         if (g_forceWipeDevice) {
             printf("wipe-device forced mode: hide not-now button\r\n");
@@ -125,10 +132,41 @@ static void GuiShowWipeDeviceHintBox(void)
         }
         lv_obj_t *rightBtn = GuiGetHintBoxRightBtn(g_wipeDeviceHintBox);
         lv_obj_add_event_cb(rightBtn, ExecWipeDeviceHandler, LV_EVENT_CLICKED, NULL);
-        lv_obj_clear_flag(rightBtn, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_style_bg_opa(rightBtn, LV_OPA_50, LV_STATE_DEFAULT);
+        SetWipeConfirmationButtonState(rightBtn, false);
+        g_countDown = 5;
         g_countDownTimer = lv_timer_create(CountDownTimerHandler, 1000, rightBtn);
     }
+}
+
+static void GuiCreateWipeDeviceHintBox(void)
+{
+    const uint16_t height = 416;
+    const uint16_t sheetTop = 800 - height;
+
+    g_wipeDeviceHintBox = GuiCreateHintBox(height);
+
+    lv_obj_t *img = GuiCreateImg(g_wipeDeviceHintBox, &imgWarn);
+    lv_obj_align(img, LV_ALIGN_DEFAULT, 36, sheetTop + 44);
+
+    lv_obj_t *title = GuiCreateLittleTitleLabel(g_wipeDeviceHintBox, _("wipe_device"));
+    lv_obj_align(title, LV_ALIGN_DEFAULT, 36, sheetTop + 142);
+
+    lv_obj_t *desc = GuiCreateIllustrateLabel(g_wipeDeviceHintBox,
+                                          _("system_settings_wipe_device_wipe_alert_desc"));
+    lv_obj_set_width(desc, 408);
+    lv_label_set_long_mode(desc, LV_LABEL_LONG_WRAP);
+    lv_obj_align(desc, LV_ALIGN_DEFAULT, 36, sheetTop + 194);
+
+    lv_obj_t *leftBtn = GuiCreateTextBtn(g_wipeDeviceHintBox, _("Cancel"));
+    lv_obj_set_size(leftBtn, 192, 66);
+    lv_obj_align(leftBtn, LV_ALIGN_BOTTOM_LEFT, 36, -24);
+    lv_obj_set_style_bg_color(leftBtn, WHITE_COLOR_OPA20, LV_PART_MAIN);
+
+    lv_obj_t *rightBtn = GuiCreateTextBtn(g_wipeDeviceHintBox,
+                                          _("system_settings_wipe_device_wipe_start_text"));
+    lv_obj_set_size(rightBtn, 192, 66);
+    lv_obj_align(rightBtn, LV_ALIGN_BOTTOM_RIGHT, -36, -24);
+    lv_obj_set_style_bg_color(rightBtn, DEEP_ORANGE_COLOR, LV_PART_MAIN);
 }
 
 static void NotNowHandler(lv_event_t *e)
@@ -139,6 +177,7 @@ static void NotNowHandler(lv_event_t *e)
 
 static void ExecWipeDeviceHandler(lv_event_t *e)
 {
+    GuiCountDownDestruct(NULL, NULL);
     GUI_DEL_OBJ(g_wipeDeviceHintBox);
     WipeDeviceDeal();
 }
@@ -178,21 +217,19 @@ static void WipeDeviceDeal(void)
 static void CountDownTimerHandler(lv_timer_t *timer)
 {
     lv_obj_t *obj = (lv_obj_t *)timer->user_data;
-    static int8_t countDown = 5;
     char buf[BUFFER_SIZE_16] = {0};
-    --countDown;
-    if (countDown > 0) {
-        snprintf_s(buf, BUFFER_SIZE_16, _("system_settings_wipe_device_wipe_fmt"), countDown);
+    --g_countDown;
+    if (g_countDown > 0) {
+        snprintf_s(buf, BUFFER_SIZE_16, _("system_settings_wipe_device_wipe_fmt"), g_countDown);
     } else {
         strcpy_s(buf, BUFFER_SIZE_16, _("system_settings_wipe_device_wipe_end_text"));
     }
     lv_label_set_text(lv_obj_get_child(obj, 0), buf);
 
-    if (countDown <= 0) {
-        lv_obj_set_style_bg_opa(obj, LV_OPA_100, LV_PART_MAIN);
-        lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+    if (g_countDown <= 0) {
+        SetWipeConfirmationButtonState(obj, true);
         lv_timer_del(timer);
-        countDown = 5;
+        g_countDown = 5;
         g_countDownTimer = NULL;
         UNUSED(g_countDownTimer);
     }
@@ -200,8 +237,30 @@ static void CountDownTimerHandler(lv_timer_t *timer)
 
 static void GuiCountDownDestruct(void *obj, void* param)
 {
+    g_countDown = 5;
     if (g_countDownTimer != NULL) {
         lv_timer_del(g_countDownTimer);
         g_countDownTimer = NULL;
+    }
+}
+
+static void SetWipeConfirmationButtonState(lv_obj_t *button, bool enabled)
+{
+    if (enabled) {
+        lv_obj_clear_state(button, LV_STATE_DISABLED);
+        lv_obj_set_style_bg_color(button, DEEP_ORANGE_COLOR, LV_PART_MAIN);
+        lv_obj_set_style_text_opa(lv_obj_get_child(button, 0), LV_OPA_100, LV_PART_MAIN);
+        lv_obj_add_flag(button, LV_OBJ_FLAG_CLICKABLE);
+    } else {
+        lv_obj_add_state(button, LV_STATE_DISABLED);
+        lv_obj_set_style_bg_color(button, DEEP_ORANGE_COLOR,
+                                  LV_PART_MAIN | LV_STATE_DISABLED);
+        lv_obj_set_style_bg_opa(button, LV_OPA_100,
+                                LV_PART_MAIN | LV_STATE_DISABLED);
+        lv_obj_set_style_text_color(lv_obj_get_child(button, 0), WHITE_COLOR,
+                                    LV_PART_MAIN | LV_STATE_DISABLED);
+        lv_obj_set_style_text_opa(lv_obj_get_child(button, 0), LV_OPA_100,
+                                  LV_PART_MAIN | LV_STATE_DISABLED);
+        lv_obj_clear_flag(button, LV_OBJ_FLAG_CLICKABLE);
     }
 }
