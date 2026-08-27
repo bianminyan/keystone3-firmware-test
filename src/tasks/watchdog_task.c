@@ -22,7 +22,7 @@ bool WatchdogTaskCreate(void)
         .cb_size = sizeof(g_watchdogTaskBuffer),
         .stack_mem = g_watchdogTaskStack,
         .stack_size = sizeof(g_watchdogTaskStack),
-        .priority = (osPriority_t)osPriorityIdle,
+        .priority = (osPriority_t)osPriorityRealtime7,
     };
 
     if (g_watchdogTaskHandle != NULL) {
