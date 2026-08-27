@@ -198,7 +198,7 @@ void RestartCountdownOnLcd(void)
 
     for (int secondsLeft = RESTART_COUNTDOWN_SECONDS; secondsLeft > 0; secondsLeft--) {
         snprintf_s(line, sizeof(line), "Restart in %ds", secondsLeft);
-        RedrawCenteredLineOnLcd(RESTART_COUNTDOWN_LINE_Y, line, 0xFFFF, &openSans_20);
+        RedrawCenteredLineOnLcd(RESTART_COUNTDOWN_LINE_Y, line, 0x21F4U, &openSans_20);
         for (int waited = 0; waited < 1000; waited += RESTART_POLL_INTERVAL_MS) {
             if (ButtonPress()) {
                 NVIC_SystemReset();

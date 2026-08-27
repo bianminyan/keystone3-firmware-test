@@ -380,7 +380,7 @@ static void GuiCreateGotoAddressWidgets(lv_obj_t *parent)
         lv_label_set_text_fmt(label, "%s-", _("Address"));
         lv_obj_align(label, LV_ALIGN_TOP_LEFT, 36, 108 + 270);
         g_standardReceiveWidgets.inputAccountLabel = GuiCreateTextLabel(cont, "");
-        lv_obj_align(g_standardReceiveWidgets.inputAccountLabel, LV_ALIGN_TOP_LEFT, 38 + lv_obj_get_self_width(label), 108 + 270);
+        lv_obj_align(g_standardReceiveWidgets.inputAccountLabel, LV_ALIGN_TOP_LEFT, 38 + lv_obj_get_self_width(label), 108 + 260);
         label = GuiCreateIllustrateLabel(cont, _("receive_btc_receive_change_address_limit"));
         lv_obj_align(label, LV_ALIGN_TOP_LEFT, 36, 170 + 270);
         lv_obj_set_style_text_color(label, RED_COLOR, LV_PART_MAIN);

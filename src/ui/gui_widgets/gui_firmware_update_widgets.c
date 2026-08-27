@@ -29,7 +29,6 @@ typedef enum {
 #endif
     FIRMWARE_UPDATE_USB_UPDATING,
 
-    /* Keep the existing tile ids stable; setup-only content is appended. */
     FIRMWARE_UPDATE_CHECK,
 
     FIRMWARE_UPDATE_BUTT,
@@ -384,7 +383,7 @@ static void GuiCreateFirmwareCheckTile(lv_obj_t *parent)
     lv_obj_t *label, *button, *img;
     lv_obj_clean(parent);
 
-    label = GuiCreateTitleLabel(parent, _("firmware_check_title"));
+    label = GuiCreateScrollTitleLabel(parent, _("firmware_check_title"));
     lv_obj_align(label, LV_ALIGN_TOP_LEFT, 36, 12);
 
     label = GuiCreateNoticeLabel(parent, _("firmware_check_desc"));
@@ -399,25 +398,25 @@ static void GuiCreateFirmwareCheckTile(lv_obj_t *parent)
 
     label = GuiCreateIllustrateLabel(parent, FIRMWARE_CHECK_LINK);
     lv_obj_set_style_text_color(label, lv_color_hex(0x1BE0C6), LV_PART_MAIN);
-    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 60, 272);
+    GuiAlignToPrevObj(label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 0);
     lv_obj_add_flag(label, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(label, GuiQrcodeHandler, LV_EVENT_CLICKED, NULL);
     img = GuiCreateImg(parent, &imgQrcodeTurquoise);
-    lv_obj_align(img, LV_ALIGN_TOP_LEFT, 322, 275);
+    GuiAlignToPrevObj(img, LV_ALIGN_OUT_RIGHT_MID, 12, 0);
     lv_obj_add_flag(img, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(img, GuiQrcodeHandler, LV_EVENT_CLICKED, NULL);
 
-    label = GuiCreateOrangeIllustrateLabel(parent, "2");
-    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 36, 316);
+    lv_obj_t *tempLabel = GuiCreateOrangeIllustrateLabel(parent, "2");
+    lv_obj_align_to(tempLabel, label, LV_ALIGN_OUT_BOTTOM_LEFT, -24, 0);
     label = GuiCreateIllustrateLabel(parent, _("firmware_check_step2"));
     lv_obj_set_width(label, 384);
-    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 60, 316);
+    GuiAlignToPrevObj(label, LV_ALIGN_DEFAULT, 24, 0);
 
     label = GuiCreateOrangeIllustrateLabel(parent, "3");
-    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 36, 390);
+    GuiAlignToPrevObj(label, LV_ALIGN_OUT_BOTTOM_LEFT, -24, 0);
     label = GuiCreateIllustrateLabel(parent, _("firmware_check_step3"));
     lv_obj_set_width(label, 384);
-    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 60, 390);
+    GuiAlignToPrevObj(label, LV_ALIGN_DEFAULT, 24, 0);
 
     label = GuiCreateIllustrateLabel(parent, "");
     lv_label_set_text_fmt(label, _("firmware_check_version_fmt"), GetSoftwareVersionString());
