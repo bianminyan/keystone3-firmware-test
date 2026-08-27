@@ -24,6 +24,7 @@
 #include "drv_motor.h"
 #include "hal_lcd.h"
 #include "cmsis_os.h"
+#include "task.h"
 #include "user_msg.h"
 #include "cmd_task.h"
 #include "ui_display_task.h"
@@ -164,3 +165,11 @@ void assert_failed(uint8_t* file, uint32_t line)
     while (1);
 }
 #endif
+
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+{
+    (void)xTask;
+    (void)pcTaskName;
+    cm_backtrace_assert(cmb_get_sp());
+    NVIC_SystemReset();
+}
