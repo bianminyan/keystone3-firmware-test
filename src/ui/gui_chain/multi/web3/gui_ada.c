@@ -1690,9 +1690,14 @@ UREncodeResult *GuiGetAdaSignCatalystVotingRegistrationQrCodeData(void)
             char *mnemonic = NULL;
             bip39_mnemonic_from_bytes(NULL, entropy, len, &mnemonic);
             encodeResult = cardano_sign_catalyst_with_ledger_bitbox02(data, mnemonic, GetPassphrase(GetCurrentAccountIndex()));
+            if (mnemonic != NULL) {
+                ClearSensitiveCString(mnemonic);
+                SRAM_FREE(mnemonic);
+            }
         } else {
             encodeResult = cardano_sign_catalyst(data, entropy, len, GetPassphrase(GetCurrentAccountIndex()), isSlip39);
         }
+        memset_s(entropy, sizeof(entropy), 0, sizeof(entropy));
         ClearSecretCache();
         CHECK_CHAIN_BREAK(encodeResult);
     } while (0);
@@ -1718,9 +1723,14 @@ UREncodeResult *GuiGetAdaSignSignDataQrCodeData(void)
             char *mnemonic = NULL;
             bip39_mnemonic_from_bytes(NULL, entropy, len, &mnemonic);
             encodeResult = cardano_sign_sign_data_with_ledger_bitbox02(data, mnemonic, GetPassphrase(GetCurrentAccountIndex()));
+            if (mnemonic != NULL) {
+                ClearSensitiveCString(mnemonic);
+                SRAM_FREE(mnemonic);
+            }
         } else {
             encodeResult = cardano_sign_sign_data(data, entropy, len, GetPassphrase(GetCurrentAccountIndex()), isSlip39);
         }
+        memset_s(entropy, sizeof(entropy), 0, sizeof(entropy));
         ClearSecretCache();
         CHECK_CHAIN_BREAK(encodeResult);
     } while (0);
@@ -1746,9 +1756,14 @@ UREncodeResult *GuiGetAdaSignSignCip8DataQrCodeData(void)
             char *mnemonic = NULL;
             bip39_mnemonic_from_bytes(NULL, entropy, len, &mnemonic);
             encodeResult = cardano_sign_sign_cip8_data_with_ledger_bitbox02(data, mnemonic, GetPassphrase(GetCurrentAccountIndex()));
+            if (mnemonic != NULL) {
+                ClearSensitiveCString(mnemonic);
+                SRAM_FREE(mnemonic);
+            }
         } else {
             encodeResult = cardano_sign_sign_cip8_data(data, entropy, len, GetPassphrase(GetCurrentAccountIndex()), isSlip39);
         }
+        memset_s(entropy, sizeof(entropy), 0, sizeof(entropy));
         ClearSecretCache();
         CHECK_CHAIN_BREAK(encodeResult);
     } while (0);
@@ -1774,9 +1789,14 @@ UREncodeResult *GuiGetAdaSignQrCodeData(void)
             char *mnemonic = NULL;
             bip39_mnemonic_from_bytes(NULL, entropy, len, &mnemonic);
             encodeResult = cardano_sign_tx_with_ledger_bitbox02(data, mfp, g_xpub, mnemonic, GetPassphrase(GetCurrentAccountIndex()), false);
+            if (mnemonic != NULL) {
+                ClearSensitiveCString(mnemonic);
+                SRAM_FREE(mnemonic);
+            }
         } else {
             encodeResult = cardano_sign_tx(data, mfp, g_xpub, entropy, len, GetPassphrase(GetCurrentAccountIndex()), false, isSlip39);
         }
+        memset_s(entropy, sizeof(entropy), 0, sizeof(entropy));
         ClearSecretCache();
         CHECK_CHAIN_BREAK(encodeResult);
     } while (0);
@@ -1808,9 +1828,14 @@ UREncodeResult *GuiGetAdaSignTxHashQrCodeData(void)
             char *mnemonic = NULL;
             bip39_mnemonic_from_bytes(NULL, entropy, len, &mnemonic);
             encodeResult = cardano_sign_tx_with_ledger_bitbox02(data, mfp, g_xpub, mnemonic, GetPassphrase(GetCurrentAccountIndex()), true);
+            if (mnemonic != NULL) {
+                ClearSensitiveCString(mnemonic);
+                SRAM_FREE(mnemonic);
+            }
         } else {
             encodeResult = cardano_sign_tx(data, mfp, g_xpub, entropy, len, GetPassphrase(GetCurrentAccountIndex()), true, isSlip39);
         }
+        memset_s(entropy, sizeof(entropy), 0, sizeof(entropy));
         ClearSecretCache();
         CHECK_CHAIN_BREAK(encodeResult);
     } while (0);
@@ -2019,9 +2044,14 @@ UREncodeResult *GuiGetAdaSignUrDataUnlimited(void)
             char *mnemonic = NULL;
             bip39_mnemonic_from_bytes(NULL, entropy, len, &mnemonic);
             encodeResult = cardano_sign_tx_with_ledger_bitbox02_unlimited(data, mfp, g_xpub, mnemonic, GetPassphrase(GetCurrentAccountIndex()));
+            if (mnemonic != NULL) {
+                ClearSensitiveCString(mnemonic);
+                SRAM_FREE(mnemonic);
+            }
         } else {
             encodeResult = cardano_sign_tx_unlimited(data, mfp, g_xpub, entropy, len, GetPassphrase(GetCurrentAccountIndex()), isSlip39);
         }
+        memset_s(entropy, sizeof(entropy), 0, sizeof(entropy));
         ClearSecretCache();
         CHECK_CHAIN_BREAK(encodeResult);
     } while (0);

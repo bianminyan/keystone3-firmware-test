@@ -617,6 +617,8 @@ static UREncodeResult *ModelGenerateSyncUR(void)
                         SimpleResponse_c_char* cip3_response = get_icarus_master_key(entropy, entropyLen, GetPassphrase(GetCurrentAccountIndex()));
                         char* icarusMasterKey = cip3_response->data;
                         pubkey[i] = derive_bip32_ed25519_extended_pubkey(icarusMasterKey, path);
+                        memset_s(entropy, sizeof(entropy), 0, sizeof(entropy));
+                        free_simple_response_c_char(cip3_response);
                     }
 #endif
 #ifdef CYPHERPUNK_VERSION
@@ -626,6 +628,8 @@ static UREncodeResult *ModelGenerateSyncUR(void)
                     SimpleResponse_c_char* cip3_response = get_icarus_master_key(entropy, entropyLen, GetPassphrase(GetCurrentAccountIndex()));
                     char* icarusMasterKey = cip3_response->data;
                     pubkey[i] = derive_bip32_ed25519_extended_pubkey(icarusMasterKey, path);
+                    memset_s(entropy, sizeof(entropy), 0, sizeof(entropy));
+                    free_simple_response_c_char(cip3_response);
 #endif
                 } else if (g_adaDerivationAlgo == HD_LEDGER_BITBOX_ADA || g_isUsb) {
                     // seed -> mnemonic --> master key(m) -> derive key
@@ -637,6 +641,12 @@ static UREncodeResult *ModelGenerateSyncUR(void)
                     SimpleResponse_c_char *ledger_bitbox02_response  = get_ledger_bitbox02_master_key(mnemonic, GetPassphrase(GetCurrentAccountIndex()));
                     char* ledgerBitbox02Key = ledger_bitbox02_response->data;
                     pubkey[i] = derive_bip32_ed25519_extended_pubkey(ledgerBitbox02Key, path);
+                    memset_s(entropy, sizeof(entropy), 0, sizeof(entropy));
+                    if (mnemonic != NULL) {
+                        ClearSensitiveCString(mnemonic);
+                        SRAM_FREE(mnemonic);
+                    }
+                    free_simple_response_c_char(ledger_bitbox02_response);
                 }
                 break;
             default:

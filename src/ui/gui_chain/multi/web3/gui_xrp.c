@@ -145,6 +145,7 @@ UREncodeResult *GuiGetXrpSignQrCodeData(void)
         GetAccountSeed(GetCurrentAccountIndex(), seed, SecretCacheGetPassword());
         int len = GetMnemonicType() == MNEMONIC_TYPE_BIP39 ? sizeof(seed) : GetCurrentAccountEntropyLen();
         encodeResult = xrp_sign_tx(data, g_hdPath, seed, len);
+        memset_s(seed, sizeof(seed), 0, sizeof(seed));
         ClearSecretCache();
         CHECK_CHAIN_BREAK(encodeResult);
     } while (0);

@@ -259,6 +259,7 @@ static UREncodeResult *GetBtcSignDataDynamic(bool unLimit)
         char *xPub = NULL;
 #ifdef WEB3_VERSION
         if (0 != GuiGetUtxoPubKeyAndHdPath(viewType, &xPub, &hdPath)) {
+            memset_s(seed, sizeof(seed), 0, sizeof(seed));
             return NULL;
         }
         encodeResult = utxo_sign_keystone(data, urType, mfp, sizeof(mfp), xPub, SOFTWARE_VERSION, seed, len);

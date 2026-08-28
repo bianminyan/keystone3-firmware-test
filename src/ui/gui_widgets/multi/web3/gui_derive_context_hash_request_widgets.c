@@ -335,7 +335,7 @@ static UREncodeResult *ModelGenerateSyncUR(void)
     int seedLen = (mnemonicType == MNEMONIC_TYPE_SLIP39) ? GetCurrentAccountEntropyLen() : sizeof(seed);
     GetAccountSeed(GetCurrentAccountIndex(), seed, password);
     UREncodeResult *urResult = generate_derive_context_hash_ur(g_data, seed, seedLen, g_address);
-    memset(seed, 0, sizeof(seed));
+    memset_s(seed, sizeof(seed), 0, sizeof(seed));
     ClearSecretCache();
     SetLockScreen(enable);
     return urResult;

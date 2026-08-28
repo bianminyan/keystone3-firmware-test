@@ -159,6 +159,7 @@ UREncodeResult *GuiGetEthBatchTxSignQrCodeData()
     int len = GetMnemonicType() == MNEMONIC_TYPE_BIP39 ? sizeof(seed) : GetCurrentAccountEntropyLen();
     GetAccountSeed(GetCurrentAccountIndex(), seed, SecretCacheGetPassword());
     encodeResult = eth_sign_batch_tx(data, seed, len);
+    memset_s(seed, sizeof(seed), 0, sizeof(seed));
     ClearSecretCache();
     return encodeResult;
 }

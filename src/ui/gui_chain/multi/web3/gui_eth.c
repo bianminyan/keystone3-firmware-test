@@ -724,6 +724,7 @@ static UREncodeResult *GetEthSignDataDynamic(bool isUnlimited)
         } else {
             encodeResult = eth_sign_tx(data, seed, len);
         }
+        memset_s(seed, sizeof(seed), 0, sizeof(seed));
         ClearSecretCache();
         CHECK_CHAIN_BREAK(encodeResult);
     } while (0);
