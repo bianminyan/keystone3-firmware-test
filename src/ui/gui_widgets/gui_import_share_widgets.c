@@ -52,8 +52,7 @@ static void ShowBackupConfirmation(void)
 {
     GuiCreateBackupConfirmationHintBox(&g_backupConfirmation);
     g_noticeWindow = g_backupConfirmation.container;
-    lv_obj_add_event_cb(g_backupConfirmation.closeButton, CloseHintBoxHandler,
-                        LV_EVENT_CLICKED, &g_noticeWindow);
+    lv_obj_add_flag(g_backupConfirmation.closeButton, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_event_cb(g_backupConfirmation.continueButton, BackupConfirmationHandler,
                         LV_EVENT_CLICKED, &g_noticeWindow);
 }

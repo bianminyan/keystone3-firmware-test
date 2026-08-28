@@ -55,8 +55,7 @@ static void ShowBackupConfirmation(void)
 {
     GuiCreateBackupConfirmationHintBox(&g_backupConfirmation);
     g_noticeWindow = g_backupConfirmation.container;
-    lv_obj_add_event_cb(g_backupConfirmation.closeButton, CloseHintBoxHandler,
-                        LV_EVENT_CLICKED, &g_noticeWindow);
+    lv_obj_add_flag(g_backupConfirmation.closeButton, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_event_cb(g_backupConfirmation.continueButton, BackupConfirmationHandler,
                         LV_EVENT_CLICKED, &g_noticeWindow);
 }
@@ -98,7 +97,7 @@ static void GuiInputPhraseWidget(lv_obj_t *parent)
     label = GuiCreateNoticeLabel(parent, _("import_wallet_phrase_desc"));
     lv_obj_align(label, LV_ALIGN_DEFAULT, 36, 216 - GUI_MAIN_AREA_OFFSET);
 
-    label = GuiCreateNoticeLabel(parent, _("seed_phrase_privacy_notice"));
+    label = GuiCreateIllustrateLabel(parent, _("seed_phrase_privacy_notice"));
     lv_obj_set_style_text_color(label, ORANGE_COLOR, LV_PART_MAIN);
     GuiAlignToPrevObj(label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 4);
 
@@ -181,7 +180,14 @@ int8_t GuiImportPhraseNextTile(const char *passphrase)
             SetMidBtnLabel(g_pageWidget->navBarWidget, NVS_BAR_MID_LABEL, _("Passphrase"));
             SetNavBarRightBtn(g_pageWidget->navBarWidget, NVS_BAR_QUESTION_MARK, OpenPassphraseTutorialHandler, NULL);
         } else {
-            if (!g_backupConfirmationAccepted) {
+            uint8_t entropy[BUFFER_SIZE_32] = {0};
+            size_t entropyInLen = sizeof(entropy);
+            size_t entropyOutLen = 0;
+            int32_t ret = bip39_mnemonic_to_bytes(NULL, SecretCacheGetMnemonic(), entropy, entropyInLen, &entropyOutLen);
+            memset_s(entropy, sizeof(entropy), 0, sizeof(entropy));
+            entropyInLen = 0;
+            entropyOutLen = 0;
+            if (ret == SUCCESS_CODE && !g_backupConfirmationAccepted) {
                 ShowBackupConfirmation();
                 return SUCCESS_CODE;
             }

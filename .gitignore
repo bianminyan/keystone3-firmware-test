@@ -17,3 +17,5 @@ pyenv
 /target
 /.agents/
 /.agenthome
+/.codegraph
+/.cursor

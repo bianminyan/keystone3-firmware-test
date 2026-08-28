@@ -391,7 +391,7 @@ static void GuiShareBackupWidget(lv_obj_t *parent)
     lv_obj_refr_size(label);
     height -= lv_obj_get_self_height(label);
 
-    label = GuiCreateNoticeLabel(parent, _("seed_phrase_privacy_notice"));
+    label = GuiCreateIllustrateLabel(parent, _("seed_phrase_privacy_notice"));
     lv_obj_set_style_text_color(label, ORANGE_COLOR, LV_PART_MAIN);
     GuiAlignToPrevObj(label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 12);
     lv_obj_refr_size(label);

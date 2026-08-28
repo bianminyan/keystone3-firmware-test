@@ -281,7 +281,10 @@ static void BackupConfirmationCheckHandler(lv_event_t *e)
 
 void * GuiCreateBackupConfirmationHintBox(BackupConfirmationHintBox_t *hintBox)
 {
-    const uint16_t height = 474;
+    lv_point_t titleSize, descSize;
+    lv_txt_get_size(&titleSize, _("seed_backup_confirm_title"), g_defLittleTitleFont, 0, 0, 408, LV_TEXT_FLAG_NONE);
+    lv_txt_get_size(&descSize, _("seed_backup_confirm_desc"), g_defIllustrateFont, 0, 0, 408, LV_TEXT_FLAG_NONE);
+    const uint16_t height = 358 + titleSize.y + descSize.y;
     const uint16_t sheetTop = 800 - height;
     lv_obj_t *cont = GuiCreateHintBox(height);
     lv_obj_t *img = GuiCreateImg(cont, &imgWarn);
@@ -318,7 +321,7 @@ void * GuiCreateBackupConfirmationHintBox(BackupConfirmationHintBox_t *hintBox)
 
     hintBox->continueButton = GuiCreateTextBtn(cont, _("Continue"));
     lv_obj_set_size(hintBox->continueButton, 408, 66);
-    lv_obj_align(hintBox->continueButton, LV_ALIGN_BOTTOM_LEFT, 36, -24);
+    lv_obj_align_to(hintBox->continueButton, checkRow, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 24);
     SetBackupConfirmationButtonState(hintBox->continueButton, false);
 
     return cont;
