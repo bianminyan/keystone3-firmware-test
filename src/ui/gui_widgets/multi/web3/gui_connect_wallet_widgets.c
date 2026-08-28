@@ -140,12 +140,6 @@ static const lv_img_dsc_t *g_fewchaCoinArray[FEWCHA_COINS_BUTT] = {
     &coinSui,
 };
 
-static const lv_img_dsc_t *g_coreCoinArray[] = {
-    &coinAva,
-    &coinEth,
-    &coinBtc,
-};
-
 static const lv_img_dsc_t *g_petraCoinArray[1] = {
     &coinApt,
 };
@@ -215,7 +209,6 @@ WalletListItem_t g_walletListArray[] = {
     {WALLET_LIST_SOLFARE, &walletSolflare, "Solflare", g_solfareCoinArray, 1, true, WALLET_FILTER_SOL},
     {WALLET_LIST_JUPITER, &walletJupiter, "Jupiter", g_solfareCoinArray, 1, true, WALLET_FILTER_SOL},
     {WALLET_LIST_NUFI, &walletNufi, "NuFi", g_nufiCoinArray, 5, true, WALLET_FILTER_BTC | WALLET_FILTER_ETH | WALLET_FILTER_SOL | WALLET_FILTER_ADA},
-    {WALLET_LIST_CORE, &walletCore, "Core Wallet", g_coreCoinArray, 3, true, WALLET_FILTER_BTC | WALLET_FILTER_ETH | WALLET_FILTER_OTHER},
     {WALLET_LIST_HELIUM, &walletHelium, "Helium Wallet", g_heliumCoinArray, 2, true, WALLET_FILTER_SOL},
     {WALLET_LIST_BTC_WALLET, &coinBtc, "Bitcoin Wallets", g_btcWalletCoinArray, NUMBER_OF_ARRAYS(g_btcWalletCoinArray), true, WALLET_FILTER_BTC},
     {WALLET_LIST_TONKEEPER, &walletTonkeeper, "Tonkeeper", g_tonKeeperCoinArray, 1, false, WALLET_FILTER_OTHER},
@@ -1173,10 +1166,6 @@ void GuiConnectWalletSetQrdata(WALLET_LIST_INDEX_ENUM index)
     case WALLET_LIST_IMTOKEN:
         func = GuiGetImTokenData;
         AddCoinsFromArray(g_ethWalletCoinArray, NUMBER_OF_ARRAYS(g_ethWalletCoinArray), true, 132);
-        break;
-    case WALLET_LIST_CORE:
-        func = GuiGetCoreWalletData;
-        AddCoinsFromArray(g_coreCoinArray, NUMBER_OF_ARRAYS(g_coreCoinArray), false, 0);
         break;
     case WALLET_LIST_BITGET:
         func = GuiGetBitgetWalletData;
