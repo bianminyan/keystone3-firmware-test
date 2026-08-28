@@ -359,6 +359,16 @@ static int32_t SetSeHash(uint8_t page, const uint8_t *info)
     return ret;
 }
 
+// writeExpectedIfEmpty controls the blank-baseline (all-00/all-FF) first-use path: adopt the
+// presented `info` as the new baseline (true) or leave it blank and just pass (false). Adopt ONLY
+// when `info` has already been validated against seed-derived data, so we are not promoting
+// unverified content into a trust anchor:
+//   - RSA primes (true): the caller runs HasMatchingPrimesHash(primes, hash) against the
+//     seed-decrypted primes BEFORE this, so `info` is trustworthy -> safe to adopt.
+//   - wallet / multisig (false): `info` is sha256 of RAW flash content that THIS guard is the anchor
+//     for (no independent validation), so adopting it would trust unverified flash. Leave it blank
+//     and let the write path (SaveCurrentPublicInfoToFlash etc.) establish the baseline from
+//     freshly-generated, seed-derived data instead.
 static bool VerifySeHash(uint8_t page, uint8_t *info, bool writeExpectedIfEmpty)
 {
     uint8_t data[SE_HASH_LEN] = {0};
