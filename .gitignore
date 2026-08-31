@@ -19,3 +19,4 @@ pyenv
 /.agenthome
 /.codegraph
 /.cursor
+/.artifacts
