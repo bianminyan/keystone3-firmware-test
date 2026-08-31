@@ -5,10 +5,11 @@ use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 use app_utils::{impl_internal_struct, impl_public_struct};
+use bech32::{Bech32, Hrp};
 use cardano_serialization_lib::{
-    Address, BaseAddress, CredKind, Credential, DRepKind, EnterpriseAddress,
+    Address, BaseAddress, CredKind, Credential, DRep, DRepKind, EnterpriseAddress,
     FixedTransaction as Transaction, GovernanceActionKind, MIRKind, MIRPot, MultiAsset,
-    NetworkIdKind, RewardAddress, VoteKind, VoterKind,
+    NetworkIdKind, RewardAddress, VoteKind, Voter, VoterKind,
 };
 
 use alloc::format;
@@ -134,6 +135,12 @@ const LABEL_ANCHOR_URL: &str = "Anchor URL";
 const LABEL_ANCHOR_DATA_HASH: &str = "Anchor Data Hash";
 const LABEL_COLD_KEY: &str = "Cold Key";
 const LABEL_HOT_KEY: &str = "Hot Key";
+const CIP129_CC_HOT_KEY_HASH_HEADER: u8 = 0x02;
+const CIP129_CC_HOT_SCRIPT_HASH_HEADER: u8 = 0x03;
+const CIP129_CC_COLD_KEY_HASH_HEADER: u8 = 0x12;
+const CIP129_CC_COLD_SCRIPT_HASH_HEADER: u8 = 0x13;
+const CIP129_DREP_KEY_HASH_HEADER: u8 = 0x22;
+const CIP129_DREP_SCRIPT_HASH_HEADER: u8 = 0x23;
 
 impl_public_struct!(CardanoWithdrawal {
     address: String,
@@ -472,30 +479,11 @@ impl ParsedCardanoTx {
                         VoteKind::Yes => "Yes".to_string(),
                         VoteKind::Abstain => "Abstain".to_string(),
                     };
-                    let voter_hash = voter
-                        .to_key_hash()
-                        .map(|hash| hash.to_string())
-                        .or_else(|| {
-                            voter
-                                .to_constitutional_committee_hot_credential()
-                                .and_then(|credential| credential.to_scripthash())
-                                .map(|hash| hash.to_string())
-                        })
-                        .or_else(|| {
-                            voter
-                                .to_drep_credential()
-                                .and_then(|credential| credential.to_scripthash())
-                                .map(|hash| hash.to_string())
-                        })
-                        .ok_or_else(|| {
-                            CardanoError::InvalidTransaction(
-                                "unsupported voting credential".to_string(),
-                            )
-                        })?;
+                    let voter_id = Self::format_voter(&voter)?;
                     let voter_type = Self::voter_type_name(voter.kind());
                     voting_procedures.push(VotingProcedure {
                         voter_type: voter_type.to_string(),
-                        voter: voter_hash,
+                        voter: voter_id,
                         transaction_id: action.transaction_id_ref().to_string(),
                         index: action.index().to_string(),
                         vote,
@@ -978,6 +966,120 @@ impl ParsedCardanoTx {
         .ok_or_else(|| CardanoError::InvalidTransaction("invalid stake credential".to_string()))
     }
 
+    fn format_governance_credential(
+        hrp: &str,
+        key_hash_header: u8,
+        script_hash_header: u8,
+        credential: &Credential,
+    ) -> Result<String> {
+        let (header, hash) = match credential.kind() {
+            CredKind::Key => (
+                key_hash_header,
+                credential
+                    .to_keyhash()
+                    .ok_or_else(|| {
+                        CardanoError::InvalidTransaction("Invalid governance key hash".to_string())
+                    })?
+                    .to_bytes(),
+            ),
+            CredKind::Script => (
+                script_hash_header,
+                credential
+                    .to_scripthash()
+                    .ok_or_else(|| {
+                        CardanoError::InvalidTransaction(
+                            "Invalid governance script hash".to_string(),
+                        )
+                    })?
+                    .to_bytes(),
+            ),
+        };
+        let mut payload = Vec::with_capacity(hash.len() + 1);
+        payload.push(header);
+        payload.extend_from_slice(&hash);
+        bech32::encode::<Bech32>(Hrp::parse_unchecked(hrp), &payload)
+            .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))
+    }
+
+    fn format_drep_credential(credential: &Credential) -> Result<String> {
+        Self::format_governance_credential(
+            "drep",
+            CIP129_DREP_KEY_HASH_HEADER,
+            CIP129_DREP_SCRIPT_HASH_HEADER,
+            credential,
+        )
+    }
+
+    fn format_committee_hot_credential(credential: &Credential) -> Result<String> {
+        Self::format_governance_credential(
+            "cc_hot",
+            CIP129_CC_HOT_KEY_HASH_HEADER,
+            CIP129_CC_HOT_SCRIPT_HASH_HEADER,
+            credential,
+        )
+    }
+
+    fn format_committee_cold_credential(credential: &Credential) -> Result<String> {
+        Self::format_governance_credential(
+            "cc_cold",
+            CIP129_CC_COLD_KEY_HASH_HEADER,
+            CIP129_CC_COLD_SCRIPT_HASH_HEADER,
+            credential,
+        )
+    }
+
+    fn format_drep(drep: &DRep) -> Result<(String, String)> {
+        match drep.kind() {
+            DRepKind::AlwaysAbstain => Ok(("Abstain".to_string(), LABEL_VOTE.to_string())),
+            DRepKind::AlwaysNoConfidence => {
+                Ok(("No Confidence".to_string(), LABEL_VOTE.to_string()))
+            }
+            DRepKind::KeyHash => Ok((
+                Self::format_drep_credential(&Credential::from_keyhash(
+                    &drep.to_key_hash().ok_or_else(|| {
+                        CardanoError::InvalidTransaction("Invalid DRep key hash".to_string())
+                    })?,
+                ))?,
+                LABEL_DREP.to_string(),
+            )),
+            DRepKind::ScriptHash => Ok((
+                Self::format_drep_credential(&Credential::from_scripthash(
+                    &drep.to_script_hash().ok_or_else(|| {
+                        CardanoError::InvalidTransaction("Invalid DRep script hash".to_string())
+                    })?,
+                ))?,
+                LABEL_DREP.to_string(),
+            )),
+        }
+    }
+
+    fn format_voter(voter: &Voter) -> Result<String> {
+        match voter.kind() {
+            VoterKind::ConstitutionalCommitteeHotKeyHash
+            | VoterKind::ConstitutionalCommitteeHotScriptHash => {
+                Self::format_committee_hot_credential(
+                    &voter
+                        .to_constitutional_committee_hot_credential()
+                        .ok_or_else(|| {
+                            CardanoError::InvalidTransaction("Invalid committee voter".to_string())
+                        })?,
+                )
+            }
+            VoterKind::DRepKeyHash | VoterKind::DRepScriptHash => {
+                Self::format_drep_credential(&voter.to_drep_credential().ok_or_else(|| {
+                    CardanoError::InvalidTransaction("Invalid DRep voter".to_string())
+                })?)
+            }
+            VoterKind::StakingPoolKeyHash => voter
+                .to_stake_pool_key_hash()
+                .ok_or_else(|| {
+                    CardanoError::InvalidTransaction("Invalid stake pool voter".to_string())
+                })?
+                .to_bech32("pool")
+                .map_err(|e| CardanoError::InvalidTransaction(e.to_string())),
+        }
+    }
+
     fn parse_certificates(
         tx: &Transaction,
         network_id: Option<u8>,
@@ -1046,38 +1148,7 @@ impl ParsedCardanoTx {
                     ));
                 }
                 if let Some(_cert) = cert.as_vote_delegation_ref() {
-                    let (variant2, variant2_label) = match _cert.drep().kind() {
-                        DRepKind::AlwaysAbstain => ("Abstain".to_string(), LABEL_VOTE.to_string()),
-                        DRepKind::AlwaysNoConfidence => {
-                            ("No Confidence".to_string(), LABEL_VOTE.to_string())
-                        }
-                        DRepKind::KeyHash => (
-                            _cert
-                                .drep()
-                                .to_key_hash()
-                                .ok_or_else(|| {
-                                    CardanoError::InvalidTransaction(
-                                        "Invalid DRep key hash".to_string(),
-                                    )
-                                })?
-                                .to_bech32("drep")
-                                .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-                            LABEL_DREP.to_string(),
-                        ),
-                        DRepKind::ScriptHash => (
-                            _cert
-                                .drep()
-                                .to_script_hash()
-                                .ok_or_else(|| {
-                                    CardanoError::InvalidTransaction(
-                                        "Invalid DRep script hash".to_string(),
-                                    )
-                                })?
-                                .to_bech32("")
-                                .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-                            LABEL_DREP.to_string(),
-                        ),
-                    };
+                    let (variant2, variant2_label) = Self::format_drep(&_cert.drep())?;
                     let fields = vec![
                         CertField {
                             label: LABEL_ADDRESS.to_string(),
@@ -1195,49 +1266,15 @@ impl ParsedCardanoTx {
                     let fields = vec![
                         CertField {
                             label: LABEL_HOT_KEY.to_string(),
-                            value: match _cert.committee_hot_credential().kind() {
-                                CredKind::Key => _cert
-                                    .committee_hot_credential()
-                                    .to_keyhash()
-                                    .ok_or_else(|| {
-                                        CardanoError::InvalidTransaction(
-                                            "Invalid committee hot key hash".to_string(),
-                                        )
-                                    })?
-                                    .to_string(),
-                                CredKind::Script => _cert
-                                    .committee_hot_credential()
-                                    .to_scripthash()
-                                    .ok_or_else(|| {
-                                        CardanoError::InvalidTransaction(
-                                            "Invalid committee hot script hash".to_string(),
-                                        )
-                                    })?
-                                    .to_string(),
-                            },
+                            value: Self::format_committee_hot_credential(
+                                &_cert.committee_hot_credential(),
+                            )?,
                         },
                         CertField {
                             label: LABEL_COLD_KEY.to_string(),
-                            value: match _cert.committee_cold_credential().kind() {
-                                CredKind::Key => _cert
-                                    .committee_cold_credential()
-                                    .to_keyhash()
-                                    .ok_or_else(|| {
-                                        CardanoError::InvalidTransaction(
-                                            "Invalid committee cold key hash".to_string(),
-                                        )
-                                    })?
-                                    .to_string(),
-                                CredKind::Script => _cert
-                                    .committee_cold_credential()
-                                    .to_scripthash()
-                                    .ok_or_else(|| {
-                                        CardanoError::InvalidTransaction(
-                                            "Invalid committee cold script hash".to_string(),
-                                        )
-                                    })?
-                                    .to_string(),
-                            },
+                            value: Self::format_committee_cold_credential(
+                                &_cert.committee_cold_credential(),
+                            )?,
                         },
                     ];
                     certs.push(CardanoCertificate::new(
@@ -1248,26 +1285,9 @@ impl ParsedCardanoTx {
                 if let Some(_cert) = cert.as_committee_cold_resign_ref() {
                     let mut fields = vec![CertField {
                         label: LABEL_COLD_KEY.to_string(),
-                        value: match _cert.committee_cold_credential().kind() {
-                            CredKind::Key => _cert
-                                .committee_cold_credential()
-                                .to_keyhash()
-                                .ok_or_else(|| {
-                                    CardanoError::InvalidTransaction(
-                                        "Invalid committee cold key hash".to_string(),
-                                    )
-                                })?
-                                .to_string(),
-                            CredKind::Script => _cert
-                                .committee_cold_credential()
-                                .to_scripthash()
-                                .ok_or_else(|| {
-                                    CardanoError::InvalidTransaction(
-                                        "Invalid committee cold script hash".to_string(),
-                                    )
-                                })?
-                                .to_string(),
-                        },
+                        value: Self::format_committee_cold_credential(
+                            &_cert.committee_cold_credential(),
+                        )?,
                     }];
                     if let Some(anchor) = _cert.anchor_ref() {
                         fields.push(CertField {
@@ -1286,29 +1306,10 @@ impl ParsedCardanoTx {
                 }
                 if let Some(_cert) = cert.as_drep_deregistration_ref() {
                     let deposit = normalize_coin(u64::from(&_cert.coin()));
-                    let (variant1, variant1_label) = match _cert.voting_credential().kind() {
-                        CredKind::Key => (
-                            _cert
-                                .voting_credential()
-                                .to_keyhash()
-                                .unwrap()
-                                .to_bech32("drep")
-                                .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-                            LABEL_DREP.to_string(),
-                        ),
-                        CredKind::Script => (
-                            _cert
-                                .voting_credential()
-                                .to_scripthash()
-                                .unwrap()
-                                .to_bech32("")
-                                .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-                            LABEL_DREP.to_string(),
-                        ),
-                    };
+                    let variant1 = Self::format_drep_credential(&_cert.voting_credential())?;
                     let fields = vec![
                         CertField {
-                            label: variant1_label,
+                            label: LABEL_DREP.to_string(),
                             value: variant1,
                         },
                         CertField {
@@ -1323,29 +1324,10 @@ impl ParsedCardanoTx {
                 }
                 if let Some(_cert) = cert.as_drep_registration_ref() {
                     let deposit = normalize_coin(u64::from(&_cert.coin()));
-                    let (variant1, variant1_label) = match _cert.voting_credential().kind() {
-                        CredKind::Key => (
-                            _cert
-                                .voting_credential()
-                                .to_keyhash()
-                                .unwrap()
-                                .to_bech32("drep")
-                                .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-                            LABEL_DREP.to_string(),
-                        ),
-                        CredKind::Script => (
-                            _cert
-                                .voting_credential()
-                                .to_scripthash()
-                                .unwrap()
-                                .to_bech32("")
-                                .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-                            LABEL_DREP.to_string(),
-                        ),
-                    };
+                    let variant1 = Self::format_drep_credential(&_cert.voting_credential())?;
                     let fields = vec![
                         CertField {
-                            label: variant1_label,
+                            label: LABEL_DREP.to_string(),
                             value: variant1,
                         },
                         CertField {
@@ -1376,29 +1358,10 @@ impl ParsedCardanoTx {
                     let anchor_data_hash = _cert
                         .anchor_ref()
                         .map(|anchor| anchor.anchor_data_hash_ref().to_string());
-                    let (variant1, variant1_label) = match _cert.voting_credential().kind() {
-                        CredKind::Key => (
-                            _cert
-                                .voting_credential()
-                                .to_keyhash()
-                                .unwrap()
-                                .to_bech32("drep")
-                                .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-                            LABEL_DREP.to_string(),
-                        ),
-                        CredKind::Script => (
-                            _cert
-                                .voting_credential()
-                                .to_scripthash()
-                                .unwrap()
-                                .to_bech32("")
-                                .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-                            LABEL_DREP.to_string(),
-                        ),
-                    };
+                    let variant1 = Self::format_drep_credential(&_cert.voting_credential())?;
                     let fields = vec![
                         CertField {
-                            label: variant1_label,
+                            label: LABEL_DREP.to_string(),
                             value: variant1,
                         },
                         CertField {
@@ -1416,30 +1379,7 @@ impl ParsedCardanoTx {
                     certs.push(CardanoCertificate::new("Drep Update".to_string(), fields));
                 }
                 if let Some(_cert) = cert.as_stake_and_vote_delegation_ref() {
-                    let (variant3, variant3_label) = match _cert.drep().kind() {
-                        DRepKind::AlwaysAbstain => ("Abstain".to_string(), LABEL_VOTE.to_string()),
-                        DRepKind::AlwaysNoConfidence => {
-                            ("No Confidence".to_string(), LABEL_VOTE.to_string())
-                        }
-                        DRepKind::KeyHash => (
-                            _cert
-                                .drep()
-                                .to_key_hash()
-                                .unwrap()
-                                .to_bech32("drep")
-                                .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-                            LABEL_DREP.to_string(),
-                        ),
-                        DRepKind::ScriptHash => (
-                            _cert
-                                .drep()
-                                .to_script_hash()
-                                .unwrap()
-                                .to_bech32("")
-                                .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-                            LABEL_DREP.to_string(),
-                        ),
-                    };
+                    let (variant3, variant3_label) = Self::format_drep(&_cert.drep())?;
                     let fields = vec![
                         CertField {
                             label: LABEL_ADDRESS.to_string(),
@@ -1493,30 +1433,7 @@ impl ParsedCardanoTx {
                     ));
                 }
                 if let Some(_cert) = cert.as_stake_vote_registration_and_delegation_ref() {
-                    let (variant3, variant3_label) = match _cert.drep().kind() {
-                        DRepKind::AlwaysAbstain => ("Abstain".to_string(), LABEL_VOTE.to_string()),
-                        DRepKind::AlwaysNoConfidence => {
-                            ("No Confidence".to_string(), LABEL_VOTE.to_string())
-                        }
-                        DRepKind::KeyHash => (
-                            _cert
-                                .drep()
-                                .to_key_hash()
-                                .unwrap()
-                                .to_bech32("drep")
-                                .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-                            LABEL_DREP.to_string(),
-                        ),
-                        DRepKind::ScriptHash => (
-                            _cert
-                                .drep()
-                                .to_script_hash()
-                                .unwrap()
-                                .to_bech32("")
-                                .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-                            LABEL_DREP.to_string(),
-                        ),
-                    };
+                    let (variant3, variant3_label) = Self::format_drep(&_cert.drep())?;
                     let deposit = normalize_coin(u64::from(&_cert.coin()));
                     let fields = vec![
                         CertField {
@@ -1548,30 +1465,7 @@ impl ParsedCardanoTx {
                     ));
                 }
                 if let Some(_cert) = cert.as_vote_registration_and_delegation_ref() {
-                    let (variant2, variant2_label) = match _cert.drep().kind() {
-                        DRepKind::AlwaysAbstain => ("Abstain".to_string(), LABEL_VOTE.to_string()),
-                        DRepKind::AlwaysNoConfidence => {
-                            ("No Confidence".to_string(), LABEL_VOTE.to_string())
-                        }
-                        DRepKind::KeyHash => (
-                            _cert
-                                .drep()
-                                .to_key_hash()
-                                .unwrap()
-                                .to_bech32("drep")
-                                .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-                            LABEL_DREP.to_string(),
-                        ),
-                        DRepKind::ScriptHash => (
-                            _cert
-                                .drep()
-                                .to_script_hash()
-                                .unwrap()
-                                .to_bech32("")
-                                .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-                            LABEL_DREP.to_string(),
-                        ),
-                    };
+                    let (variant2, variant2_label) = Self::format_drep(&_cert.drep())?;
                     let deposit = normalize_coin(u64::from(&_cert.coin()));
                     let fields = vec![
                         CertField {
@@ -2021,8 +1915,8 @@ mod tests {
     use bitcoin::bip32::DerivationPath;
     use cardano_serialization_lib::{
         AssetName, Assets, Certificate, Certificates, Ed25519KeyHash, Ed25519KeyHashes, Int, Mint,
-        MintAssets, MultiAsset, PolicyID, PoolParams, PoolRegistration, Relays, TransactionBody,
-        TransactionHash, TransactionInput, TransactionInputs, TransactionOutput,
+        MintAssets, MultiAsset, PolicyID, PoolParams, PoolRegistration, Relays, ScriptHash,
+        TransactionBody, TransactionHash, TransactionInput, TransactionInputs, TransactionOutput,
         TransactionOutputs, TransactionWitnessSet, UnitInterval, VRFKeyHash, Value,
     };
     use core::str::FromStr;
@@ -2040,6 +1934,62 @@ mod tests {
         let value = 1_000_000u64;
         let result = normalize_value(value);
         assert_eq!(result, "1");
+    }
+
+    #[test]
+    fn test_format_governance_credentials_use_cip129_headers() {
+        let key_hash = Ed25519KeyHash::from_bytes(
+            hex::decode("44270cf214e6f56c590b21a216758a8b985841411126deb9728f0107").unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            ParsedCardanoTx::format_drep_credential(&Credential::from_keyhash(&key_hash)).unwrap(),
+            "drep1yfzzwr8jznn02mzepvs6y9n4329eskzpgygjdh4ew28szpcd5hr4f"
+        );
+
+        let script_hash = ScriptHash::from_bytes(vec![0; 28]).unwrap();
+        assert_eq!(
+            ParsedCardanoTx::format_drep_credential(&Credential::from_scripthash(&script_hash))
+                .unwrap(),
+            "drep1yvqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq770f95"
+        );
+        assert_eq!(
+            ParsedCardanoTx::format_committee_hot_credential(&Credential::from_keyhash(
+                &Ed25519KeyHash::from_bytes(vec![0; 28]).unwrap(),
+            ))
+            .unwrap(),
+            "cc_hot1qgqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqvcdjk7"
+        );
+        assert_eq!(
+            ParsedCardanoTx::format_committee_cold_credential(&Credential::from_scripthash(
+                &script_hash,
+            ))
+            .unwrap(),
+            "cc_cold1zvqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq6kflvs"
+        );
+    }
+
+    #[test]
+    fn test_format_voter_uses_role_specific_identifier() {
+        let key_hash = Ed25519KeyHash::from_bytes(vec![0; 28]).unwrap();
+        assert_eq!(
+            ParsedCardanoTx::format_voter(&Voter::new_constitutional_committee_hot_credential(
+                &Credential::from_keyhash(&key_hash),
+            ))
+            .unwrap(),
+            "cc_hot1qgqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqvcdjk7"
+        );
+        assert_eq!(
+            ParsedCardanoTx::format_voter(&Voter::new_drep_credential(&Credential::from_keyhash(
+                &key_hash
+            ),))
+            .unwrap(),
+            "drep1ygqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq7vlc9n"
+        );
+        assert_eq!(
+            ParsedCardanoTx::format_voter(&Voter::new_stake_pool_key_hash(&key_hash)).unwrap(),
+            "pool1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq8a7a2d"
+        );
     }
 
     #[test]
