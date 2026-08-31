@@ -133,7 +133,7 @@ static void Gsl1691CheckData(void)
     PrintArray("0xB0", checkData, 4);
 }
 
-Gsl1691FirmwareData_t g_gsl1691FirmwareData[] = {
+static const Gsl1691FirmwareData_t g_gsl1691FirmwareData[] = {
     {0xf0, 0x2},
     {0x00, 0x00000000},
     {0x04, 0x00000000},
