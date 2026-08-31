@@ -15,6 +15,7 @@
 #include "drv_aw32001.h"
 #include "device_setting.h"
 #include "gui_setup_widgets.h"
+#include "usbd_cdc_core.h"
 #include "low_power.h"
 #include "account_manager.h"
 #ifndef BTC_ONLY
@@ -74,6 +75,7 @@ static void UsbTask(void *argument)
                 USBD_OTG_ISR_Handler((USB_OTG_CORE_HANDLE *)rcvMsg.value);
                 NVIC_ClearPendingIRQ(USB_IRQn);
                 NVIC_EnableIRQ(USB_IRQn);
+                USBD_cdc_TxPump();
             }
             break;
             case USB_MSG_SET_STATE: {
