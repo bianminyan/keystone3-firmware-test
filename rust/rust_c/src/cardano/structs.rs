@@ -465,12 +465,45 @@ impl From<CardanoTo> for DisplayCardanoTo {
     }
 }
 
+fn crc8(bytes: &[u8]) -> u8 {
+    let mut crc = 0u8;
+    for byte in bytes {
+        crc ^= byte;
+        for _ in 0..8 {
+            crc = if crc & 0x80 != 0 {
+                (crc << 1) ^ 0x07
+            } else {
+                crc << 1
+            };
+        }
+    }
+    crc
+}
+
+fn cip67_asset_name_content(name: &[u8]) -> Option<&[u8]> {
+    if name.len() <= 4 || name[0] & 0xf0 != 0 || name[3] & 0x0f != 0 {
+        return None;
+    }
+
+    let label = [
+        (name[0] << 4) | (name[1] >> 4),
+        (name[1] << 4) | (name[2] >> 4),
+    ];
+    let checksum = (name[2] << 4) | (name[3] >> 4);
+    (crc8(&label) == checksum).then_some(&name[4..])
+}
+
+fn printable_asset_name(name: &[u8]) -> Option<String> {
+    let content = cip67_asset_name_content(name).unwrap_or(name);
+    core::str::from_utf8(content)
+        .ok()
+        .filter(|value| !value.chars().any(char::is_control))
+        .map(ToString::to_string)
+}
+
 impl DisplayCardanoAsset {
     fn new(policy_id: Vec<u8>, name: Vec<u8>, amount: String) -> Self {
-        let printable_name = core::str::from_utf8(&name)
-            .ok()
-            .filter(|value| !value.chars().any(char::is_control))
-            .map(ToString::to_string);
+        let printable_name = printable_asset_name(&name);
         Self {
             name: printable_name.map(convert_c_char).unwrap_or(null_mut()),
             name_hex: convert_c_char(hex::encode(name)),
@@ -607,3 +640,27 @@ make_free_method!(TransactionParseResult<DisplayCardanoTx>);
 make_free_method!(TransactionParseResult<DisplayCardanoCatalyst>);
 make_free_method!(TransactionParseResult<DisplayCardanoSignData>);
 make_free_method!(TransactionParseResult<DisplayCardanoSignTxHash>);
+
+#[cfg(test)]
+mod tests {
+    use super::{cip67_asset_name_content, printable_asset_name};
+
+    #[test]
+    fn displays_raw_printable_asset_name() {
+        assert_eq!(printable_asset_name(b"STRIKE").as_deref(), Some("STRIKE"));
+    }
+
+    #[test]
+    fn displays_printable_content_after_valid_cip67_label() {
+        let gens = hex::decode("0014df1047454e53").unwrap();
+        assert_eq!(cip67_asset_name_content(&gens), Some(b"GENS".as_slice()));
+        assert_eq!(printable_asset_name(&gens).as_deref(), Some("GENS"));
+    }
+
+    #[test]
+    fn does_not_strip_invalid_cip67_label() {
+        let invalid = hex::decode("0014de1047454e53").unwrap();
+        assert_eq!(cip67_asset_name_content(&invalid), None);
+        assert_eq!(printable_asset_name(&invalid), None);
+    }
+}

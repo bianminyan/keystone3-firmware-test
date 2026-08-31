@@ -9,6 +9,7 @@
 #include "assert.h"
 #include "gui_ada.h"
 #include "gui_hintbox.h"
+#include "gui_qr_hintbox.h"
 #include "gui.h"
 #include "user_memory.h"
 #include "drv_mpu.h"
@@ -21,6 +22,9 @@
 #define ADA_TX_CONTENT_HEIGHT       (ADA_TX_VIEW_HEIGHT - ADA_TX_TAB_BAR_HEIGHT)
 #define ADA_TX_PAGER_HEIGHT         (ADA_TX_CONTENT_HEIGHT - ADA_TAB_CONTENT_TOP_GAP - 64)
 #define ADA_ASSETS_PER_PAGE         8
+#define ADA_POLICY_ID_HEX_LEN       56
+#define ADA_ASSET_NAME_HEX_MAX_LEN  64
+#define ADA_ASSET_VERIFY_URL_PREFIX "https://cardanoscan.io/token/"
 
 static bool g_isMulti = false;
 static struct URParseResult *g_urResult = NULL;
@@ -582,7 +586,7 @@ static void GuiAdaAppendDetailValue(lv_obj_t *card, uint16_t *height,
 
 static void GuiAdaAppendAssetDetailValue(lv_obj_t *card, uint16_t *height,
                                          const char *labelText,
-                                         const char *value)
+                                         const char *value, bool highlight)
 {
     if (value == NULL) {
         return;
@@ -595,9 +599,61 @@ static void GuiAdaAppendAssetDetailValue(lv_obj_t *card, uint16_t *height,
     label = GuiCreateIllustrateLabel(card, value[0] == '\0' ? "(empty)" : value);
     lv_obj_set_width(label, ADA_TAB_CONTENT_WIDTH - 96);
     lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    if (highlight) {
+        lv_obj_set_style_text_color(label, ORANGE_COLOR, LV_PART_MAIN);
+    }
     lv_obj_align(label, LV_ALIGN_TOP_LEFT, 24, *height);
     lv_obj_update_layout(label);
     *height += lv_obj_get_height(label) + 12;
+}
+
+static void GuiAdaOpenAssetVerifyQrCode(lv_event_t *e)
+{
+    DisplayCardanoAsset *asset = (DisplayCardanoAsset *)lv_event_get_user_data(e);
+    if (asset == NULL || asset->policy_id == NULL || asset->name_hex == NULL) {
+        return;
+    }
+
+    size_t policyIdLen = strnlen_s(asset->policy_id, ADA_POLICY_ID_HEX_LEN + 1);
+    size_t assetNameLen = strnlen_s(asset->name_hex, ADA_ASSET_NAME_HEX_MAX_LEN + 1);
+    if (policyIdLen != ADA_POLICY_ID_HEX_LEN || assetNameLen > ADA_ASSET_NAME_HEX_MAX_LEN) {
+        return;
+    }
+
+    char url[sizeof(ADA_ASSET_VERIFY_URL_PREFIX) + ADA_POLICY_ID_HEX_LEN +
+             ADA_ASSET_NAME_HEX_MAX_LEN] = {0};
+    snprintf_s(url, sizeof(url), "%s%s%s", ADA_ASSET_VERIFY_URL_PREFIX,
+               asset->policy_id, asset->name_hex);
+    GuiQRCodeHintBoxOpenCompact(url, "Verify asset", "cardanoscan.io");
+}
+
+static void GuiAdaAppendAssetVerifyLink(lv_obj_t *card, uint16_t *height,
+                                        DisplayCardanoAsset *asset)
+{
+    if (asset == NULL) {
+        return;
+    }
+
+    lv_obj_t *container = GuiCreateContainerWithParent(card, 180, 36);
+    lv_obj_set_style_bg_opa(container, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(container, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(container, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(container, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_align(container, LV_ALIGN_TOP_LEFT, 24, *height);
+    lv_obj_add_event_cb(container, GuiAdaOpenAssetVerifyQrCode,
+                        LV_EVENT_CLICKED, asset);
+
+    lv_obj_t *label = GuiCreateIllustrateLabel(container, "Verify asset");
+    lv_obj_set_style_text_color(label, BLUE_GREEN_COLOR, LV_PART_MAIN);
+    lv_obj_align(label, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_clear_flag(label, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t *icon = GuiCreateImg(container, &imgQrcodeTurquoise);
+    lv_obj_align_to(icon, label, LV_ALIGN_OUT_RIGHT_MID, 12, 0);
+    lv_obj_clear_flag(icon, LV_OBJ_FLAG_CLICKABLE);
+
+    *height += 48;
 }
 
 static void GuiAdaAppendAssets(lv_obj_t *card, uint16_t *height,
@@ -630,11 +686,17 @@ static void GuiAdaAppendAssets(lv_obj_t *card, uint16_t *height,
         assetHeight += 42;
 
         DisplayCardanoAsset *asset = &assets->data[i];
-        GuiAdaAppendAssetDetailValue(assetCard, &assetHeight, "Asset name", asset->name);
-        GuiAdaAppendAssetDetailValue(assetCard, &assetHeight, "Raw amount", asset->amount);
         GuiAdaAppendAssetDetailValue(
-            assetCard, &assetHeight, "Asset name (hex)", asset->name_hex);
-        GuiAdaAppendAssetDetailValue(assetCard, &assetHeight, "Policy ID", asset->policy_id);
+            assetCard, &assetHeight, "Asset name",
+            asset->name == NULL ? "(not readable)" : asset->name,
+            asset->name == NULL);
+        GuiAdaAppendAssetDetailValue(
+            assetCard, &assetHeight, "Raw amount", asset->amount, false);
+        GuiAdaAppendAssetDetailValue(
+            assetCard, &assetHeight, "Asset name (hex)", asset->name_hex, false);
+        GuiAdaAppendAssetDetailValue(
+            assetCard, &assetHeight, "Policy ID", asset->policy_id, false);
+        GuiAdaAppendAssetVerifyLink(assetCard, &assetHeight, asset);
         lv_obj_set_height(assetCard, assetHeight + 4);
         *height += assetHeight + 20;
     }
@@ -667,12 +729,17 @@ static void GuiAdaAppendOverviewAsset(lv_obj_t *card, uint16_t *height,
             amount++;
         }
     }
-    GuiAdaAppendAssetDetailValue(card, height, "Asset name", asset->name);
     GuiAdaAppendAssetDetailValue(
-        card, height, showMintAction ? "Amount" : "Raw amount", amount);
+        card, height, "Asset name",
+        asset->name == NULL ? "(not readable)" : asset->name,
+        asset->name == NULL);
     GuiAdaAppendAssetDetailValue(
-        card, height, "Asset name (hex)", asset->name_hex);
-    GuiAdaAppendAssetDetailValue(card, height, "Policy ID", asset->policy_id);
+        card, height, showMintAction ? "Amount" : "Raw amount", amount, false);
+    GuiAdaAppendAssetDetailValue(
+        card, height, "Asset name (hex)", asset->name_hex, false);
+    GuiAdaAppendAssetDetailValue(
+        card, height, "Policy ID", asset->policy_id, false);
+    GuiAdaAppendAssetVerifyLink(card, height, asset);
 }
 
 static void GuiAdaAddOwnershipBadge(lv_obj_t *card, lv_obj_t *anchor,
@@ -1420,6 +1487,7 @@ void GuiShowAdaTx(lv_obj_t *parent, void *totalData)
     lv_obj_set_style_bg_color(tabContent, BLACK_COLOR, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(tabContent, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_scroll_dir(tabContent, LV_DIR_HOR);
+    lv_obj_clear_flag(tabContent, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(tabContent, LV_OBJ_FLAG_SCROLL_CHAIN_VER);
     lv_obj_set_scrollbar_mode(tabContent, LV_SCROLLBAR_MODE_OFF);
 

@@ -1825,7 +1825,7 @@ impl ParsedCardanoTx {
                         .flat_map(|(policy_id, assets)| {
                             assets.iter().map(move |(name, quantity)| {
                                 let policy_id = policy_id.to_bytes();
-                                let name = name.to_bytes();
+                                let name = name.name();
                                 let value = u64::from(quantity);
                                 ParsedCardanoMultiAsset {
                                     id: format!(
@@ -1858,7 +1858,7 @@ impl ParsedCardanoTx {
                     .iter()
                     .map(move |(name, quantity)| ParsedCardanoNativeAsset {
                         policy_id: policy_id.to_bytes(),
-                        name: name.to_bytes(),
+                        name: name.name(),
                         amount: quantity.to_str(),
                     })
             })
@@ -1876,7 +1876,7 @@ impl ParsedCardanoTx {
                     .iter()
                     .map(move |(name, quantity)| ParsedCardanoNativeAsset {
                         policy_id: policy_id.to_bytes(),
-                        name: name.to_bytes(),
+                        name: name.name(),
                         amount: quantity.to_string(),
                     })
             })
@@ -2963,9 +2963,19 @@ mod tests {
         assert!(parsed.get_has_unknown_inputs());
         assert_eq!(parsed.outputs_ref().len(), 1);
         assert_eq!(parsed.outputs_ref()[0].assets_ref().count(), 1);
+        assert_eq!(
+            parsed.outputs_ref()[0]
+                .assets_ref()
+                .next()
+                .unwrap()
+                .name_ref(),
+            b"TOKEN"
+        );
         assert_eq!(parsed.mint_assets_ref().len(), 1);
+        assert_eq!(parsed.mint_assets_ref()[0].name_ref(), b"TOKEN");
         assert_eq!(parsed.mint_assets_ref()[0].amount_ref(), "-3");
         assert_eq!(parsed.collateral_assets_ref().len(), 1);
+        assert_eq!(parsed.collateral_assets_ref()[0].name_ref(), b"TOKEN");
         assert_eq!(parsed.get_collateral_inputs_count(), 1);
         assert_eq!(parsed.get_reference_inputs_count(), 1);
         assert_eq!(parsed.get_required_signers_count(), 1);
