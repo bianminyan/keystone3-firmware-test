@@ -5,7 +5,6 @@
 #include "string.h"
 #include "mhscpu.h"
 //#include "drv_spi.h"
-#include "drv_mpu.h"
 #include "drv_spi_io.h"
 #include "cmsis_os.h"
 #include "user_memory.h"
@@ -418,9 +417,7 @@ static int32_t DS28S60_Binding(void)
     do {
         ret = DS28S60_GetBlockProtection(&blockProtection, SECRET_A_BLOCK);
         CHECK_ERRCODE_BREAK("get block protection", ret);
-        MpuSetOtpProtection(false);
-        OTP_PowerOn();
-        memcpy(keys, (uint8_t *)OTP_ADDR_DS28S60, sizeof(keys));
+        ReadOtpData(OTP_ADDR_DS28S60, keys, sizeof(keys));
         if (CheckEntropy(keys, 96)) {
             //OTP key exist
             if (!blockProtection.Prot.b.WP) {
@@ -449,7 +446,6 @@ static int32_t DS28S60_Binding(void)
             }
         }
     } while (0);
-    MpuSetOtpProtection(true);
     CLEAR_ARRAY(keys);
     // assert if binding error
     assert(ret == 0);
@@ -717,10 +713,7 @@ static void GetMasterSecret(uint8_t *masterSecret)
 #ifdef DS28S60_TEST_MODE
     memcpy(masterSecret, MASTER_SECRET, sizeof(MASTER_SECRET));
 #else
-    MpuSetOtpProtection(false);
-    OTP_PowerOn();
-    memcpy(masterSecret, (uint8_t *)MASTER_SECRET_ADDR, 32);
-    MpuSetOtpProtection(true);
+    ReadOtpData(MASTER_SECRET_ADDR, masterSecret, 32);
 #endif
 }
 
@@ -731,10 +724,7 @@ static void GetBindingPageData(uint8_t *bindingPageData)
 #ifdef DS28S60_TEST_MODE
     memcpy(bindingPageData, BINDING_PAGE_DATA, sizeof(BINDING_PAGE_DATA));
 #else
-    MpuSetOtpProtection(false);
-    OTP_PowerOn();
-    memcpy(bindingPageData, (uint8_t *)BINDING_PAGE_DATA_ADDR, 32);
-    MpuSetOtpProtection(true);
+    ReadOtpData(BINDING_PAGE_DATA_ADDR, bindingPageData, 32);
 #endif
 }
 
@@ -745,10 +735,7 @@ static void GetPartialSecret(uint8_t *partialSecret)
 #ifdef DS28S60_TEST_MODE
     memcpy(partialSecret, PARTIAL_SECRET, sizeof(PARTIAL_SECRET));
 #else
-    MpuSetOtpProtection(false);
-    OTP_PowerOn();
-    memcpy(partialSecret, (uint8_t *)PARTIAL_SECRET_ADDR, 32);
-    MpuSetOtpProtection(true);
+    ReadOtpData(PARTIAL_SECRET_ADDR, partialSecret, 32);
 #endif
 }
 

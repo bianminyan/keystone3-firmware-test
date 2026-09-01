@@ -22,7 +22,7 @@
 #include "lv_i18n_api.h"
 #include "fetch_sensitive_data_task.h"
 #include "ctaes.h"
-#include "drv_mpu.h"
+#include "drv_otp.h"
 #include "log_print.h"
 #ifdef COMPILE_SIMULATOR
 #include "simulator_model.h"
@@ -349,15 +349,12 @@ static void AesEncryptBuffer(uint8_t *cipher, uint32_t sz, uint8_t *plain)
     uint8_t key128[16] = {0};
     uint8_t iv[16] = {0};
 
-    MpuSetOtpProtection(false);
-    OTP_PowerOn();
-    memcpy(key128, (uint32_t *)(0x40009128), 16);
-    memcpy(iv, (uint32_t *)(0x40009138), 16);
+    ReadOtpData(OTP_ADDR_DEVICE_AES_KEY, key128, sizeof(key128));
+    ReadOtpData(OTP_ADDR_DEVICE_AES_IV, iv, sizeof(iv));
 
     AES128_CBC_ctx ctx;
     AES128_CBC_init(&ctx, key128, iv);
     AES128_CBC_encrypt(&ctx, sz / 16, cipher, plain);
-    MpuSetOtpProtection(true);
 }
 
 static void AesDecryptBuffer(uint8_t *plain, uint32_t sz, uint8_t *cipher)
@@ -366,13 +363,10 @@ static void AesDecryptBuffer(uint8_t *plain, uint32_t sz, uint8_t *cipher)
     uint8_t key128[16] = {0};
     uint8_t iv[16] = {0};
 
-    MpuSetOtpProtection(false);
-    OTP_PowerOn();
-    memcpy(key128, (uint32_t *)(0x40009128), 16);
-    memcpy(iv, (uint32_t *)(0x40009138), 16);
+    ReadOtpData(OTP_ADDR_DEVICE_AES_KEY, key128, sizeof(key128));
+    ReadOtpData(OTP_ADDR_DEVICE_AES_IV, iv, sizeof(iv));
     AES128_CBC_init(&ctx, key128, iv);
     AES128_CBC_decrypt(&ctx, sz / 16, plain, cipher);
-    MpuSetOtpProtection(true);
 }
 
 bool GetBootSecureCheckFlag(void)

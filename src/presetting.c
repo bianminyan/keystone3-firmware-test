@@ -6,17 +6,13 @@
 #include "user_memory.h"
 #include "err_code.h"
 #include "assert.h"
-#include "drv_mpu.h"
 
 #define FACTORY_RESULT_CHECK_ENABLE         1
 
 int32_t GetSerialNumber(char *serialNumber)
 {
-    MpuSetOtpProtection(false);
     char temp[256];
-    OTP_PowerOn();
-    memcpy(temp, (uint8_t *)OTP_ADDR_SN, 256);
-    MpuSetOtpProtection(true);
+    ReadOtpData(OTP_ADDR_SN, (uint8_t *)temp, sizeof(temp));
     if (CheckEntropy((uint8_t *)temp, 256) == false) {
         serialNumber[0] = '\0';
         return ERR_SERIAL_NUMBER_NOT_EXIST;
@@ -41,7 +37,6 @@ int32_t SetSerialNumber(const char *serialNumber)
         return ret;
     }
     ASSERT(strnlen_s(serialNumber, SERIAL_NUMBER_MAX_LEN - 1) < SERIAL_NUMBER_MAX_LEN);
-    OTP_PowerOn();
     CLEAR_ARRAY(temp);
     strcpy_s(temp, SERIAL_NUMBER_MAX_LEN, serialNumber);
     WriteOtpData(OTP_ADDR_SN, (uint8_t *)temp, SERIAL_NUMBER_MAX_LEN);
@@ -51,17 +46,13 @@ int32_t SetSerialNumber(const char *serialNumber)
 int32_t GetWebAuthRsaKey(uint8_t *key)
 {
     uint8_t *data;
-    MpuSetOtpProtection(false);
 
-    OTP_PowerOn();
     data = SRAM_MALLOC(WEB_AUTH_RSA_KEY_LEN);
-    memcpy(data, (uint8_t *)OTP_ADDR_WEB_AUTH_RSA_KEY, WEB_AUTH_RSA_KEY_LEN);
+    ReadOtpData(OTP_ADDR_WEB_AUTH_RSA_KEY, data, WEB_AUTH_RSA_KEY_LEN);
     if (CheckEntropy(data, WEB_AUTH_RSA_KEY_LEN) == false) {
-        MpuSetOtpProtection(true);
         SRAM_FREE(data);
         return ERR_WEB_AUTH_KEY_NOT_EXIST;
     }
-    MpuSetOtpProtection(true);
     memcpy(key, data, WEB_AUTH_RSA_KEY_LEN);
     SRAM_FREE(data);
     return SUCCESS_CODE;
@@ -78,7 +69,6 @@ int32_t SetWebAuthRsaKey(const uint8_t *key)
         SRAM_FREE(data);
         return ERR_WEB_AUTH_KEY_ALREADY_EXIST;
     }
-    OTP_PowerOn();
     memcpy_s(data, WEB_AUTH_RSA_KEY_LEN, key, WEB_AUTH_RSA_KEY_LEN);
     for (uint32_t i = 0; i < WEB_AUTH_RSA_KEY_LEN; i += 256) {
         WriteOtpData(OTP_ADDR_WEB_AUTH_RSA_KEY + i, data + i, 256);
@@ -90,12 +80,9 @@ int32_t SetWebAuthRsaKey(const uint8_t *key)
 
 bool GetFactoryResult(void)
 {
-    MpuSetOtpProtection(false);
 #if (FACTORY_RESULT_CHECK_ENABLE == 1)
     uint32_t data;
-    OTP_PowerOn();
-    memcpy(&data, (uint32_t *)OTA_ADDR_FACTORY_BASE, 4);
-    MpuSetOtpProtection(true);
+    ReadOtpData(OTA_ADDR_FACTORY_BASE, (uint8_t *)&data, sizeof(data));
     if (data != 0xFFFFFFFF) {
         printf("data=%#x........\n", (unsigned int)data);
         printf("factory pass\n");
@@ -128,9 +115,8 @@ int32_t GetUpdatePubKey(uint8_t *pubKey)
     uint8_t data[UPDATE_PUB_KEY_LEN];
     uint32_t addr;
 
-    OTP_PowerOn();
     for (addr = OTP_ADDR_UPDATE_PUB_KEY + 1024 - UPDATE_PUB_KEY_LEN; addr >= OTP_ADDR_UPDATE_PUB_KEY; addr -= UPDATE_PUB_KEY_LEN) {
-        memcpy_s(data, sizeof(data), (uint8_t *)addr, UPDATE_PUB_KEY_LEN);
+        ReadOtpData(addr, data, UPDATE_PUB_KEY_LEN);
         PrintArray("read pub key", data, UPDATE_PUB_KEY_LEN);
         if (CheckAllFF(data, UPDATE_PUB_KEY_LEN) == false) {
             if (CheckEntropy(data, UPDATE_PUB_KEY_LEN)) {
@@ -161,9 +147,8 @@ int32_t SetUpdatePubKey(const uint8_t *pubKey)
     uint8_t data[UPDATE_PUB_KEY_LEN];
     uint32_t addr;
 
-    OTP_PowerOn();
     for (addr = OTP_ADDR_UPDATE_PUB_KEY; addr < OTP_ADDR_UPDATE_PUB_KEY + 1024; addr += UPDATE_PUB_KEY_LEN) {
-        memcpy_s(data, UPDATE_PUB_KEY_LEN, (uint8_t *)addr, UPDATE_PUB_KEY_LEN);
+        ReadOtpData(addr, data, UPDATE_PUB_KEY_LEN);
         PrintArray("read pub key", data, UPDATE_PUB_KEY_LEN);
         if (CheckAllFF(data, UPDATE_PUB_KEY_LEN)) {
             printf("writeable addr found:0x%08X\n", (unsigned int)addr);

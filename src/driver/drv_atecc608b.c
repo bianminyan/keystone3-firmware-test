@@ -10,7 +10,6 @@
 #include "sha256.h"
 #include "drv_otp.h"
 #include "assert.h"
-#include "drv_mpu.h"
 
 //#define ATECC608B_TEST_MODE
 
@@ -304,9 +303,7 @@ static int32_t Atecc608bBinding(void)
     do {
         ret = atcab_is_config_locked(&isLock);
         CHECK_ATECC608B_RET("get lock", ret);
-        MpuSetOtpProtection(false);
-        OTP_PowerOn();
-        memcpy(keys, (uint8_t *)OTP_ADDR_ATECC608B, sizeof(keys));
+        ReadOtpData(OTP_ADDR_ATECC608B, keys, sizeof(keys));
         if (CheckEntropy(keys, 96)) {
             //OTP key exist
             if (!isLock) {
@@ -330,7 +327,6 @@ static int32_t Atecc608bBinding(void)
             }
         }
     } while (0);
-    MpuSetOtpProtection(true);
     CLEAR_ARRAY(keys);
 
     assert(ret == 0);
@@ -345,10 +341,7 @@ static void GetIoProtectKey(uint8_t *ioProtectKey)
 #ifdef ATECC608B_TEST_MODE
     memcpy(ioProtectKey, g_ateccTestIoProtectKey, sizeof(g_ateccTestIoProtectKey));
 #else
-    MpuSetOtpProtection(false);
-    OTP_PowerOn();
-    memcpy(ioProtectKey, (uint8_t *)IO_PROTECT_KEY_ADDR, 32);
-    MpuSetOtpProtection(true);
+    ReadOtpData(IO_PROTECT_KEY_ADDR, ioProtectKey, 32);
 #endif
 }
 
@@ -359,10 +352,7 @@ static void GetAuthKey(uint8_t *authKey)
 #ifdef ATECC608B_TEST_MODE
     memcpy(authKey, g_ateccTestAuthKey, sizeof(g_ateccTestAuthKey));
 #else
-    MpuSetOtpProtection(false);
-    OTP_PowerOn();
-    memcpy(authKey, (uint8_t *)AUTH_KEY_ADDR, 32);
-    MpuSetOtpProtection(true);
+    ReadOtpData(AUTH_KEY_ADDR, authKey, 32);
 #endif
 }
 
@@ -373,10 +363,7 @@ static void GetEncryptKey(uint8_t *encryptKey)
 #ifdef ATECC608B_TEST_MODE
     memcpy(encryptKey, g_ateccTestEncryptKey, sizeof(g_ateccTestEncryptKey));
 #else
-    MpuSetOtpProtection(false);
-    OTP_PowerOn();
-    memcpy(encryptKey, (uint8_t *)ENCRYPT_KEY_ADDR, 32);
-    MpuSetOtpProtection(true);
+    ReadOtpData(ENCRYPT_KEY_ADDR, encryptKey, 32);
 #endif
 }
 

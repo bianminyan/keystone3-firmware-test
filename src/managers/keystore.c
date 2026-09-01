@@ -27,7 +27,6 @@
 #include "librust_c.h"
 #include "assert.h"
 #include "secret_cache.h"
-#include "drv_mpu.h"
 #include "background_task.h"
 #ifdef COMPILE_SIMULATOR
 #include "simulator_model.h"
@@ -932,15 +931,12 @@ static void CombineInnerAesKey(uint8_t *aesKey)
     uint8_t aesPiece[AES_KEY_LEN];
 #ifndef COMPILE_SIMULATOR
 
-    MpuSetOtpProtection(false);
-    OTP_PowerOn();
-    memcpy_s(aesPiece, sizeof(aesPiece), (uint8_t *)OTP_ADDR_AES_KEY, AES_KEY_LEN);
+    ReadOtpData(OTP_ADDR_AES_KEY, aesPiece, AES_KEY_LEN);
     if (CheckEntropy(aesPiece, AES_KEY_LEN) == false) {
         printf("need generate inner aes piece\r\n");
         TrngGet(aesPiece, AES_KEY_LEN);
         WriteOtpData(OTP_ADDR_AES_KEY, aesPiece, AES_KEY_LEN);
     }
-    MpuSetOtpProtection(true);
 #else
     TrngGet(aesPiece, AES_KEY_LEN);
 #endif
