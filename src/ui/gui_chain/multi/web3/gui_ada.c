@@ -2045,7 +2045,7 @@ void GuiShowAdaSignTxHashDetails(lv_obj_t *parent, void *totalData)
         char formattedPath[128] = {0};
         snprintf(formattedPath, sizeof(formattedPath), "m/%s", path);
         char num[BUFFER_SIZE_32] = {0};
-        snprintf(num, sizeof(num), "%zu", i + 1);
+        snprintf(num, sizeof(num), "%u", (unsigned int)(i + 1));
         lv_obj_t *num_label = GuiCreateIllustrateLabel(from_container, num);
         lv_obj_set_style_text_color(num_label, WHITE_COLOR, LV_PART_MAIN);
         lv_obj_set_style_text_opa(num_label, 144, LV_PART_MAIN | LV_STATE_DEFAULT);

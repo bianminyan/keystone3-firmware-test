@@ -9,7 +9,8 @@ use bech32::{Bech32, Hrp};
 use cardano_serialization_lib::{
     Address, BaseAddress, CredKind, Credential, DRep, DRepKind, EnterpriseAddress,
     FixedTransaction as Transaction, GovernanceActionKind, MIRKind, MIRPot, MultiAsset,
-    NetworkIdKind, RewardAddress, VoteKind, Voter, VoterKind,
+    NetworkIdKind, PlutusData, PlutusDataKind, RewardAddress, TransactionOutput, VoteKind, Voter,
+    VoterKind,
 };
 
 use alloc::format;
@@ -709,22 +710,38 @@ impl ParsedCardanoTx {
 
     fn parse_auxiliary_data(tx: &Transaction) -> Result<Option<String>> {
         tx.auxiliary_data_ref()
-            .map(|v| {
-                v.to_json()
-                    .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))
+            .map(|v| match v.to_json() {
+                Ok(json) => Ok(json),
+                Err(_) => serde_json::to_string_pretty(&Self::cbor_fallback_value(v.to_bytes()))
+                    .map_err(|e| CardanoError::InvalidTransaction(e.to_string())),
             })
             .transpose()
     }
 
-    fn insert_json_field(
+    fn cbor_fallback_value(cbor: Vec<u8>) -> serde_json::Value {
+        serde_json::json!({
+            "cbor": hex::encode(cbor),
+            "note": "not JSON-readable"
+        })
+    }
+
+    fn json_or_cbor_value<E>(
+        json: core::result::Result<String, E>,
+        cbor: Vec<u8>,
+    ) -> serde_json::Value {
+        json.ok()
+            .and_then(|value| serde_json::from_str(&value).ok())
+            .map(Self::normalize_json_for_display)
+            .unwrap_or_else(|| Self::cbor_fallback_value(cbor))
+    }
+
+    fn insert_json_or_cbor_field<E>(
         map: &mut serde_json::Map<String, serde_json::Value>,
         key: &str,
-        json: String,
-    ) -> Result<()> {
-        let value = serde_json::from_str(&json)
-            .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?;
-        map.insert(key.to_string(), Self::normalize_json_for_display(value));
-        Ok(())
+        json: core::result::Result<String, E>,
+        cbor: Vec<u8>,
+    ) {
+        map.insert(key.to_string(), Self::json_or_cbor_value(json, cbor));
     }
 
     fn normalize_json_for_display(value: serde_json::Value) -> serde_json::Value {
@@ -807,44 +824,141 @@ impl ParsedCardanoTx {
         Ok(Some(json))
     }
 
+    fn plutus_data_json(data: &PlutusData, depth: usize) -> serde_json::Value {
+        if depth >= 64 {
+            return serde_json::json!({
+                "cbor": hex::encode(data.to_bytes()),
+                "note": "maximum display depth reached"
+            });
+        }
+
+        match data.kind() {
+            PlutusDataKind::ConstrPlutusData => data
+                .as_constr_plutus_data()
+                .map(|constr| {
+                    let fields = constr.data();
+                    serde_json::json!({
+                        "constructor": constr.alternative().to_str(),
+                        "fields": (0..fields.len())
+                            .map(|index| Self::plutus_data_json(&fields.get(index), depth + 1))
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .unwrap_or_else(|| Self::cbor_fallback_value(data.to_bytes())),
+            PlutusDataKind::Map => data
+                .as_map()
+                .map(|map| {
+                    let keys = map.keys();
+                    let mut entries = Vec::new();
+                    for index in 0..keys.len() {
+                        let key = keys.get(index);
+                        if let Some(values) = map.get(&key) {
+                            for value_index in 0..values.len() {
+                                if let Some(value) = values.get(value_index) {
+                                    entries.push(serde_json::json!({
+                                        "k": Self::plutus_data_json(&key, depth + 1),
+                                        "v": Self::plutus_data_json(&value, depth + 1)
+                                    }));
+                                }
+                            }
+                        }
+                    }
+                    serde_json::json!({ "map": entries })
+                })
+                .unwrap_or_else(|| Self::cbor_fallback_value(data.to_bytes())),
+            PlutusDataKind::List => data
+                .as_list()
+                .map(|list| {
+                    serde_json::json!({
+                        "list": (0..list.len())
+                            .map(|index| Self::plutus_data_json(&list.get(index), depth + 1))
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .unwrap_or_else(|| Self::cbor_fallback_value(data.to_bytes())),
+            PlutusDataKind::Integer => data
+                .as_integer()
+                .map(|integer| serde_json::json!({ "int": integer.to_str() }))
+                .unwrap_or_else(|| Self::cbor_fallback_value(data.to_bytes())),
+            PlutusDataKind::Bytes => data
+                .as_bytes()
+                .map(|bytes| serde_json::json!({ "bytes": hex::encode(bytes) }))
+                .unwrap_or_else(|| Self::cbor_fallback_value(data.to_bytes())),
+        }
+    }
+
+    fn output_with_data_json(output: &TransactionOutput) -> serde_json::Value {
+        let mut value = serde_json::Map::new();
+        value.insert(
+            "address".to_string(),
+            output
+                .address()
+                .to_bech32(None)
+                .map(serde_json::Value::String)
+                .unwrap_or_else(|_| {
+                    serde_json::Value::String(hex::encode(output.address().to_bytes()))
+                }),
+        );
+        let amount = output.amount();
+        value.insert(
+            "amount".to_string(),
+            Self::json_or_cbor_value(amount.to_json(), amount.to_bytes()),
+        );
+        if let Some(data_hash) = output.data_hash() {
+            value.insert(
+                "data_hash".to_string(),
+                serde_json::Value::String(data_hash.to_string()),
+            );
+        }
+        if let Some(plutus_data) = output.plutus_data() {
+            value.insert(
+                "plutus_data".to_string(),
+                Self::normalize_json_for_display(Self::plutus_data_json(&plutus_data, 0)),
+            );
+        }
+        if let Some(script_ref) = output.script_ref() {
+            value.insert(
+                "script_ref".to_string(),
+                Self::json_or_cbor_value(script_ref.to_json(), script_ref.to_bytes()),
+            );
+        }
+        serde_json::Value::Object(value)
+    }
+
     fn parse_advanced_data(tx: &Transaction) -> Result<Option<String>> {
         let body = tx.body_ref();
         let mut map = serde_json::Map::new();
         if let Some(value) = tx.auxiliary_data_ref() {
-            Self::insert_json_field(
+            Self::insert_json_or_cbor_field(
                 &mut map,
                 "auxiliary_data",
-                value
-                    .to_json()
-                    .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-            )?;
+                value.to_json(),
+                value.to_bytes(),
+            );
         }
         if let Some(value) = body.voting_proposals_ref() {
-            Self::insert_json_field(
+            Self::insert_json_or_cbor_field(
                 &mut map,
                 "voting_proposals",
-                value
-                    .to_json()
-                    .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-            )?;
+                value.to_json(),
+                value.to_bytes(),
+            );
         }
         if let Some(value) = body.voting_procedures_ref() {
-            Self::insert_json_field(
+            Self::insert_json_or_cbor_field(
                 &mut map,
                 "voting_procedures",
-                value
-                    .to_json()
-                    .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-            )?;
+                value.to_json(),
+                value.to_bytes(),
+            );
         }
         if let Some(value) = body.certs_ref() {
-            Self::insert_json_field(
+            Self::insert_json_or_cbor_field(
                 &mut map,
                 "certificates",
-                value
-                    .to_json()
-                    .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-            )?;
+                value.to_json(),
+                value.to_bytes(),
+            );
         }
         if let Some(value) = body.auxiliary_data_hash() {
             map.insert(
@@ -853,13 +967,12 @@ impl ParsedCardanoTx {
             );
         }
         if let Some(value) = body.update() {
-            Self::insert_json_field(
+            Self::insert_json_or_cbor_field(
                 &mut map,
                 "protocol_update",
-                value
-                    .to_json()
-                    .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-            )?;
+                value.to_json(),
+                value.to_bytes(),
+            );
         }
         if let Some(value) = body.script_data_hash() {
             map.insert(
@@ -868,40 +981,36 @@ impl ParsedCardanoTx {
             );
         }
         if let Some(value) = body.collateral() {
-            Self::insert_json_field(
+            Self::insert_json_or_cbor_field(
                 &mut map,
                 "collateral_inputs",
-                value
-                    .to_json()
-                    .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-            )?;
+                value.to_json(),
+                value.to_bytes(),
+            );
         }
         if let Some(value) = body.required_signers() {
-            Self::insert_json_field(
+            Self::insert_json_or_cbor_field(
                 &mut map,
                 "required_signers",
-                value
-                    .to_json()
-                    .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-            )?;
+                value.to_json(),
+                value.to_bytes(),
+            );
         }
         if let Some(value) = body.collateral_return() {
-            Self::insert_json_field(
+            Self::insert_json_or_cbor_field(
                 &mut map,
                 "collateral_return",
-                value
-                    .to_json()
-                    .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-            )?;
+                value.to_json(),
+                value.to_bytes(),
+            );
         }
         if let Some(value) = body.reference_inputs() {
-            Self::insert_json_field(
+            Self::insert_json_or_cbor_field(
                 &mut map,
                 "reference_inputs",
-                value
-                    .to_json()
-                    .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-            )?;
+                value.to_json(),
+                value.to_bytes(),
+            );
         }
         if let Some(value) = body.current_treasury_value() {
             map.insert(
@@ -916,19 +1025,13 @@ impl ParsedCardanoTx {
             .filter(|output| {
                 output.has_data_hash() || output.has_plutus_data() || output.has_script_ref()
             })
-            .map(|output| output.to_json())
-            .collect::<core::result::Result<Vec<_>, _>>()
-            .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?;
+            .map(Self::output_with_data_json)
+            .collect::<Vec<_>>();
         if !outputs_with_data.is_empty() {
-            let values = outputs_with_data
-                .into_iter()
-                .map(|json| {
-                    serde_json::from_str::<serde_json::Value>(&json)
-                        .map(Self::normalize_json_for_display)
-                        .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))
-                })
-                .collect::<Result<Vec<_>>>()?;
-            map.insert("outputs_with_datum_or_script".to_string(), values.into());
+            map.insert(
+                "outputs_with_datum_or_script".to_string(),
+                outputs_with_data.into(),
+            );
         }
 
         let witness_set = tx.witness_set();
@@ -937,13 +1040,12 @@ impl ParsedCardanoTx {
             || witness_set.plutus_data().is_some()
             || witness_set.redeemers().is_some()
         {
-            Self::insert_json_field(
+            Self::insert_json_or_cbor_field(
                 &mut map,
                 "witness_set",
-                witness_set
-                    .to_json()
-                    .map_err(|e| CardanoError::InvalidTransaction(e.to_string()))?,
-            )?;
+                witness_set.to_json(),
+                witness_set.to_bytes(),
+            );
         }
         Self::finish_json(map)
     }
@@ -1914,10 +2016,11 @@ mod tests {
     use super::*;
     use bitcoin::bip32::DerivationPath;
     use cardano_serialization_lib::{
-        AssetName, Assets, Certificate, Certificates, Ed25519KeyHash, Ed25519KeyHashes, Int, Mint,
-        MintAssets, MultiAsset, PolicyID, PoolParams, PoolRegistration, Relays, ScriptHash,
-        TransactionBody, TransactionHash, TransactionInput, TransactionInputs, TransactionOutput,
-        TransactionOutputs, TransactionWitnessSet, UnitInterval, VRFKeyHash, Value,
+        AssetName, Assets, BigInt, Certificate, Certificates, Ed25519KeyHash, Ed25519KeyHashes,
+        Int, Mint, MintAssets, MultiAsset, PolicyID, PoolParams, PoolRegistration, Relays,
+        ScriptHash, TransactionBody, TransactionHash, TransactionInput, TransactionInputs,
+        TransactionOutput, TransactionOutputs, TransactionWitnessSet, UnitInterval, VRFKeyHash,
+        Value,
     };
     use core::str::FromStr;
     use ur_registry::cardano::cardano_sign_request::CardanoSignRequest;
@@ -2958,22 +3061,49 @@ mod tests {
         assert_eq!(normalized["map"]["second"], "two");
 
         let mut map = serde_json::Map::new();
-        ParsedCardanoTx::insert_json_field(
+        ParsedCardanoTx::insert_json_or_cbor_field::<String>(
             &mut map,
             "payload",
-            "{\"string\":\"decoded\"}".to_string(),
-        )
-        .unwrap();
+            Ok("{\"string\":\"decoded\"}".to_string()),
+            vec![],
+        );
         let json = ParsedCardanoTx::finish_json(map).unwrap().unwrap();
         assert!(json.contains("decoded"));
         assert!(ParsedCardanoTx::finish_json(serde_json::Map::new())
             .unwrap()
             .is_none());
-        assert!(ParsedCardanoTx::insert_json_field(
-            &mut serde_json::Map::new(),
+        let mut fallback = serde_json::Map::new();
+        ParsedCardanoTx::insert_json_or_cbor_field::<String>(
+            &mut fallback,
             "invalid",
-            "not-json".to_string(),
-        )
-        .is_err());
+            Ok("not-json".to_string()),
+            vec![0x01, 0x02],
+        );
+        assert_eq!(fallback["invalid"]["cbor"], "0102");
+    }
+
+    #[test]
+    fn test_parse_inline_datum_with_large_integer() {
+        let key_hash = Ed25519KeyHash::from_bytes(vec![7u8; 28]).unwrap();
+        let address = EnterpriseAddress::new(0, &Credential::from_keyhash(&key_hash)).to_address();
+        let output_value = Value::new(&2_000_000u64.into());
+        let mut output = TransactionOutput::new(&address, &output_value);
+        output.set_plutus_data(&PlutusData::new_integer(
+            &BigInt::from_str("443000000000000000000").unwrap(),
+        ));
+        let mut outputs = TransactionOutputs::new();
+        outputs.add(&output);
+
+        let input = TransactionInput::new(&TransactionHash::from_bytes(vec![9u8; 32]).unwrap(), 0);
+        let mut inputs = TransactionInputs::new();
+        inputs.add(&input);
+        let body = TransactionBody::new_tx_body(&inputs, &outputs, &200_000u64.into());
+        let witness_set = TransactionWitnessSet::new();
+        let tx = Transaction::new(&body.to_bytes(), &witness_set.to_bytes(), true).unwrap();
+        let parsed =
+            ParsedCardanoTx::from_cardano_tx(tx, ParseContext::new(vec![], vec![], None, vec![]))
+                .unwrap();
+        let advanced = parsed.get_advanced_data().unwrap();
+        assert!(advanced.contains("443000000000000000000"));
     }
 }
