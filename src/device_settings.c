@@ -83,8 +83,8 @@ static void AesDecryptBuffer(uint8_t *plain, uint32_t sz, uint8_t *cipher);
 static void InitBootParam(void);
 
 typedef struct {
-    // boot check
-    uint8_t bootCheckFlag[16];
+    // Reserved to preserve the encrypted boot-parameter layout.
+    uint8_t reserve[16];
 
     // recovery mode switch
     uint8_t recoveryModeSwitch[16];
@@ -168,24 +168,32 @@ void InitBootParam(void)
     BootParam_t bootParam;
     bool needSave = false;
     Gd25FlashReadBuffer(BOOT_SECURE_PARAM_FLAG, (uint8_t *)&bootParam, sizeof(bootParam));
-    PrintArray("bootParam.bootCheckFlag", bootParam.bootCheckFlag, sizeof(bootParam.bootCheckFlag));
+    PrintArray("bootParam.reserve", bootParam.reserve, sizeof(bootParam.reserve));
     PrintArray("bootParam.recoveryModeSwitch", bootParam.recoveryModeSwitch, sizeof(bootParam.recoveryModeSwitch));
-    if (CheckAllFF(bootParam.bootCheckFlag, sizeof(bootParam.bootCheckFlag))) {
-        memcpy(g_bootParam.bootCheckFlag, g_integrityFlag, sizeof(bootParam.bootCheckFlag));
+    if (CheckAllFF(bootParam.reserve, sizeof(bootParam.reserve))) {
+        memcpy(g_bootParam.reserve, g_integrityFlag, sizeof(bootParam.reserve));
+        memset(g_bootParam.recoveryModeSwitch, 0, sizeof(g_bootParam.recoveryModeSwitch));
+        SaveBootParam();
+        return;
+    }
+
+    AesDecryptBuffer((uint8_t *)&g_bootParam, sizeof(g_bootParam),
+                     (uint8_t *)&bootParam);
+    PrintArray("bootParam.reserve", g_bootParam.reserve, sizeof(g_bootParam.reserve));
+    PrintArray("bootParam.recoveryModeSwitch", g_bootParam.recoveryModeSwitch, sizeof(g_bootParam.recoveryModeSwitch));
+
+    if (memcmp(g_bootParam.reserve, g_integrityFlag,
+               sizeof(g_bootParam.reserve)) != 0) {
+        memcpy(g_bootParam.reserve, g_integrityFlag, sizeof(g_bootParam.reserve));
+        needSave = true;
+    }
+    if (memcmp(g_bootParam.recoveryModeSwitch, g_recoveryModeFlag,
+               sizeof(g_bootParam.recoveryModeSwitch)) == 0) {
+        memset(g_bootParam.recoveryModeSwitch, 0, sizeof(g_bootParam.recoveryModeSwitch));
         needSave = true;
     }
     if (needSave) {
         SaveBootParam();
-    } else {
-        AesDecryptBuffer((uint8_t *)&g_bootParam, sizeof(g_bootParam),
-                         (uint8_t *)&bootParam);
-        PrintArray("bootParam.bootCheckFlag", g_bootParam.bootCheckFlag, sizeof(g_bootParam.bootCheckFlag));
-        PrintArray("bootParam.recoveryModeSwitch", g_bootParam.recoveryModeSwitch, sizeof(g_bootParam.recoveryModeSwitch));
-        if (memcmp(g_bootParam.recoveryModeSwitch, g_recoveryModeFlag,
-                   sizeof(g_bootParam.recoveryModeSwitch)) == 0) {
-            memset(g_bootParam.recoveryModeSwitch, 0, sizeof(g_bootParam.recoveryModeSwitch));
-            SaveBootParam();
-        }
     }
 #endif
 }
@@ -193,7 +201,7 @@ void InitBootParam(void)
 void ResetBootParam(void)
 {
     memset(g_bootParam.recoveryModeSwitch, 0, sizeof(g_bootParam.recoveryModeSwitch));
-    memcpy(g_bootParam.bootCheckFlag, g_integrityFlag, sizeof(g_bootParam.bootCheckFlag));
+    memcpy(g_bootParam.reserve, g_integrityFlag, sizeof(g_bootParam.reserve));
     SaveBootParam();
 }
 
@@ -367,21 +375,6 @@ static void AesDecryptBuffer(uint8_t *plain, uint32_t sz, uint8_t *cipher)
     ReadOtpData(OTP_ADDR_DEVICE_AES_IV, iv, sizeof(iv));
     AES128_CBC_init(&ctx, key128, iv);
     AES128_CBC_decrypt(&ctx, sz / 16, plain, cipher);
-}
-
-bool GetBootSecureCheckFlag(void)
-{
-    return (memcmp(g_bootParam.bootCheckFlag, g_integrityFlag, sizeof(g_bootParam.bootCheckFlag)) == 0);
-}
-
-void SetBootSecureCheckFlag(bool isSet)
-{
-    if (isSet) {
-        memcpy(g_bootParam.bootCheckFlag, g_integrityFlag, sizeof(g_integrityFlag));
-    } else {
-        memset(g_bootParam.bootCheckFlag, 0, sizeof(g_bootParam.bootCheckFlag));
-    }
-    SaveBootParam();
 }
 
 bool GetRecoveryModeSwitch(void)
