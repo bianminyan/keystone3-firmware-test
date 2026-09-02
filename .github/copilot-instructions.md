@@ -18,6 +18,34 @@ holds the rules that apply to every pull request.
 - Technical terms with an established English form (TRNG, nonce, PSBT, sighash, MPU, OTP,
   SE, UR, FFI, zeroize) may stay in English inside the Chinese sentence.
 
+## Blocking findings
+
+- Start the inline comment with the exact tag `[BLOCKER]` (the first characters of the
+  comment body, before the Chinese text) when the finding is in one of these consequence
+  tiers: seed or private-key disclosure, code execution on the MCU, or signing something
+  other than what the user approved. A CI gate (`.github/workflows/copilot-review-gate.yml`)
+  blocks merging while any `[BLOCKER]` thread is unresolved.
+- These patterns always land in a blocking tier, so tag them:
+  - Randomness that is not the device TRNG path (`TrngGet` / `random_buffer` /
+    `GenerateTRNGRandomness` in C, `OsRng` / `getrandom` in Rust) feeding mnemonic or seed
+    entropy, SLIP39 shares or identifiers, key generation, signature nonces or randomizers,
+    or the per-device salt. Includes libc `rand()`, an LCG, a constant or time or
+    message-derived seed, and a weak-symbol fallback that can shadow the TRNG
+    implementation at link time.
+  - A signature nonce, randomizer, or ring scalar that is reused, caller-supplied, or
+    derived only from public data.
+  - A seed, private key, mnemonic, or PIN written to a log, an error string, a USB or QR
+    response, or persistent storage in plaintext.
+  - An attacker-controlled length, offset, or index reaching a memory write without a
+    bound against the real destination buffer.
+  - A confirmation screen value that is not derived from the bytes being signed, or a
+    request that skips the master-fingerprint or derivation-path check.
+- Put the tag on the inline comment anchored to the offending line, one tag per finding.
+  Do not put it only in the review summary; the gate reads inline threads.
+- Use the tag only when the attacker step is concrete in this diff. Do not use it for lower
+  tiers (secret residency, PIN or lock bypass, denial of service, information leak) or for
+  style, test, or documentation issues; describe those without the tag.
+
 ## Threat model and how to rank findings
 
 - Attacker model: a malicious USB host or cable, a malicious QR code, SD card, or fingerprint

@@ -1,0 +1,20 @@
+# Files that steer GitHub Copilot code review or the copilot-review-gate workflow.
+# Pair with the branch ruleset option "Require review from Code Owners" so a PR cannot
+# weaken the [BLOCKER] rules it is reviewed under. Keep this list in sync with
+# INSTRUCTION_PATHS in .github/workflows/copilot-review-gate.yml.
+#
+# Owners can be individual logins or a team such as @KeystoneHQ/security. GitHub silently
+# ignores lines whose owner does not exist, so double-check after editing.
+
+/.github/copilot-instructions.md            @aaroninks
+/.github/instructions/                      @aaroninks
+/.github/skills/                            @aaroninks
+/.github/CODEOWNERS                         @aaroninks
+/.github/workflows/copilot-review-gate.yml  @aaroninks
+/.github/workflows/copilot-code-review.yml  @aaroninks
+/.github/workflows/copilot-setup-steps.yml  @aaroninks
+AGENTS.md                                   @aaroninks
+CLAUDE.md                                   @aaroninks
+REVIEW.md                                   @aaroninks
+GEMINI.md                                   @aaroninks
+*.instructions.md                           @aaroninks

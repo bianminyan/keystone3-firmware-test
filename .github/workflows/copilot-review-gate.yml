@@ -1,0 +1,356 @@
+# Copilot review gate
+#
+# Hard merge gate for GitHub Copilot code review findings. Copilot can only submit
+# "Comment" reviews, so this workflow turns its findings into a commit status that a
+# branch ruleset can require:
+#
+#   1. .github/copilot-instructions.md tells Copilot to start an inline comment with the
+#      tag "[BLOCKER]" for the top consequence tiers (seed/key disclosure, code execution,
+#      signing something other than what the user approved).
+#   2. On every relevant event this workflow first sets the commit status
+#      "copilot-review-gate" on the PR head to "pending", then evaluates and sets:
+#        failure  - a thread opened by Copilot starts with the tag and has not been
+#                   resolved by a human other than the PR author, or the PR changes a
+#                   Copilot instruction / gate file and no human other than the author
+#                   currently approves the head commit, or the evaluation itself threw
+#                   an error
+#        pending  - Copilot has not reviewed the current head commit yet
+#        success  - otherwise
+#   3. Enable it in Settings > Rules > Rulesets > (branch ruleset for master):
+#        - "Require status checks to pass": add BOTH "copilot-review-gate" (the commit
+#          status) and "copilot-review-gate-job" (this job), so a run that dies before it
+#          can write a status still blocks the merge.
+#        - "Automatically request Copilot code review" with "Review new pushes" ticked;
+#          without it every push leaves the status pending until someone re-requests a
+#          Copilot review by hand.
+#        - "Require review from Code Owners" (plus "Dismiss stale pull request approvals"
+#          and "Require approval of the most recent reviewable push"), with
+#          .github/CODEOWNERS covering the instruction and gate files listed in
+#          INSTRUCTION_PATHS below. That is what decides WHO may approve such a change.
+#
+# Why the instruction guard exists: Copilot reads its instructions from the PR head
+# branch, so a PR could weaken the [BLOCKER] rule and then add a dangerous change. This
+# workflow only checks THAT a human (a GraphQL User, never an App or bot) other than the
+# author currently approves the exact head commit when such a file changes, taking each
+# reviewer's latest APPROVED / CHANGES_REQUESTED / DISMISSED review so a later "changes
+# requested" overrides an earlier approval; the code-owner rule above decides who counts. If CODEOWNERS is misconfigured (unknown team, rule switched
+# off) this check still forces a second pair of eyes instead of letting the change
+# through unreviewed or auto-approved by a bot.
+#
+# Clearing a blocker: fix the code and push (Copilot re-reviews), then have someone
+# OTHER than the PR author resolve the thread with a reason ("Addressed", "Won't fix",
+# "Incorrect"). A thread resolved by the author never counts: GitHub lets authors resolve
+# conversations on their own PR, and GraphQL exposes no resolve timestamp, so an approval
+# cannot be proven to post-date the resolution and is not accepted as a substitute.
+# Resolving a thread does not emit a webhook, so re-run this check afterwards: leave any
+# comment on the PR, click "Re-run" on the failed check, or use workflow_dispatch with
+# the PR number.
+#
+# The workflow never checks out PR code; pull_request_target is used on purpose so the
+# gate definition always comes from the base branch and a PR cannot edit it away.
+
+name: Copilot review gate
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  pull_request_review_comment:
+    types: [created, edited, deleted]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number to re-evaluate"
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+# Serialise runs per PR and never cancel one mid-flight: every run writes its own final
+# state, and the last run for a PR always reflects the latest evaluation.
+concurrency:
+  group: copilot-review-gate-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}
+  cancel-in-progress: false
+
+env:
+  BLOCKER_TAG: "[BLOCKER]"
+  REVIEWER_LOGIN: "copilot-pull-request-reviewer"
+  STATUS_CONTEXT: "copilot-review-gate"
+  # Keep the status "pending" until Copilot has reviewed the PR at least once.
+  REQUIRE_COPILOT_REVIEW: "true"
+  # Require a Copilot review on the current head commit, so a push after the last review
+  # cannot be merged before Copilot re-reviews it. Needs "Review new pushes" in the ruleset.
+  REQUIRE_REVIEW_ON_HEAD: "true"
+  # Files that shape what Copilot reviews or how this gate decides. A PR touching any of
+  # them needs an approval on its current head from someone other than the author.
+  # One entry per line. An entry ending in "/" is a directory prefix; a bare file name
+  # matches at any depth; an entry starting with "*" is a suffix.
+  INSTRUCTION_PATHS: |
+    .github/copilot-instructions.md
+    .github/instructions/
+    .github/skills/
+    .github/CODEOWNERS
+    .github/workflows/copilot-review-gate.yml
+    .github/workflows/copilot-code-review.yml
+    .github/workflows/copilot-setup-steps.yml
+    AGENTS.md
+    CLAUDE.md
+    REVIEW.md
+    GEMINI.md
+    *.instructions.md
+
+jobs:
+  copilot-review-gate-job:
+    # issue_comment fires for issues too; only continue for PR comments.
+    if: github.event_name != 'issue_comment' || github.event.issue.pull_request != null
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate Copilot blocker threads
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER_INPUT: ${{ inputs.pr_number }}
+        with:
+          script: |
+            const tag = process.env.BLOCKER_TAG;
+            const reviewerLogin = process.env.REVIEWER_LOGIN.toLowerCase();
+            const statusContext = process.env.STATUS_CONTEXT;
+            const requireReview = process.env.REQUIRE_COPILOT_REVIEW === 'true';
+            const requireOnHead = process.env.REQUIRE_REVIEW_ON_HEAD === 'true';
+            const instructionPaths = process.env.INSTRUCTION_PATHS
+              .split('\n').map((s) => s.trim()).filter(Boolean);
+            const { owner, repo } = context.repo;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            let number;
+            if (context.eventName === 'workflow_dispatch') {
+              number = Number(process.env.PR_NUMBER_INPUT);
+            } else if (context.eventName === 'issue_comment') {
+              number = context.payload.issue.number;
+            } else {
+              number = context.payload.pull_request.number;
+            }
+            if (!number) {
+              core.setFailed('Could not determine the pull request number');
+              return;
+            }
+
+            // Resolve the head first and mark it pending before doing anything else, so a
+            // run that fails later can never leave a stale "success" in place.
+            const { data: prInfo } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            const headSha = prInfo.head.sha;
+            const prAuthor = (prInfo.user && prInfo.user.login || '').toLowerCase();
+            const postStatus = (state, description) => github.rest.repos.createCommitStatus({
+              owner, repo, sha: headSha, state, context: statusContext,
+              description: description.slice(0, 140), target_url: runUrl,
+            });
+            await postStatus('pending', '正在评估 Copilot review');
+
+            const isReviewer = (login) =>
+              !!login && login.toLowerCase().replace(/\[bot\]$/, '') === reviewerLogin;
+
+            // The tag must lead the comment body. Markdown decoration (heading, bold,
+            // quote, list marker) and a leading emoji are tolerated; a tag mentioned
+            // later in the text (for example while explaining why something is NOT a
+            // blocker) does not count.
+            const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const tagAtStart = new RegExp(
+              `^(?:[\\s#>*_~\`\\-]|\\p{Extended_Pictographic}|\\uFE0F)*${escapedTag}`,
+              'u',
+            );
+            const hasLeadingTag = (body) => tagAtStart.test(body || '');
+
+            const isInstructionPath = (path) => instructionPaths.some((entry) => {
+              if (entry.endsWith('/')) return path.startsWith(entry);
+              if (entry.startsWith('*')) return path.endsWith(entry.slice(1));
+              if (entry.includes('/')) return path === entry;
+              return path === entry || path.endsWith(`/${entry}`);
+            });
+
+            const threadQuery = `
+              query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    reviewThreads(first: 100, after: $cursor) {
+                      pageInfo { hasNextPage endCursor }
+                      nodes {
+                        isResolved
+                        isOutdated
+                        resolvedBy { __typename login }
+                        path
+                        line
+                        comments(first: 1) { nodes { author { login } body url } }
+                      }
+                    }
+                  }
+                }
+              }`;
+            const reviewQuery = `
+              query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    reviews(first: 100, after: $cursor) {
+                      pageInfo { hasNextPage endCursor }
+                      nodes { author { __typename login } state submittedAt commit { oid } }
+                    }
+                  }
+                }
+              }`;
+            const fileQuery = `
+              query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    files(first: 100, after: $cursor) {
+                      pageInfo { hasNextPage endCursor }
+                      nodes { path }
+                    }
+                  }
+                }
+              }`;
+
+            let state;
+            let description;
+            let blockers = [];
+            let touchedInstructionFiles = [];
+            try {
+              let cursor = null;
+              const threads = [];
+              do {
+                const data = await github.graphql(threadQuery, { owner, repo, number, cursor });
+                const conn = data.repository.pullRequest.reviewThreads;
+                threads.push(...conn.nodes);
+                cursor = conn.pageInfo.hasNextPage ? conn.pageInfo.endCursor : null;
+              } while (cursor);
+
+              const reviews = [];
+              cursor = null;
+              do {
+                const data = await github.graphql(reviewQuery, { owner, repo, number, cursor });
+                const conn = data.repository.pullRequest.reviews;
+                reviews.push(...conn.nodes);
+                cursor = conn.pageInfo.hasNextPage ? conn.pageInfo.endCursor : null;
+              } while (cursor);
+
+              const files = [];
+              cursor = null;
+              do {
+                const data = await github.graphql(fileQuery, { owner, repo, number, cursor });
+                const conn = data.repository.pullRequest.files;
+                files.push(...conn.nodes.map((n) => n.path));
+                cursor = conn.pageInfo.hasNextPage ? conn.pageInfo.endCursor : null;
+              } while (cursor);
+
+              const copilotReviews = reviews.filter((r) => isReviewer(r.author && r.author.login));
+              const reviewedHead = copilotReviews.some((r) => r.commit && r.commit.oid === headSha);
+
+              // An approval on the current head from a human who is not the PR author.
+              // "Human" means a GraphQL actor of type User: GitHub Apps and bots (Copilot
+              // included) are type Bot and never satisfy this, so an auto-approving app
+              // cannot stand in for a reviewer. Used both for the instruction guard and to
+              // require blocker resolution by a human other than the PR author.
+              const isOtherHuman = (actor) =>
+                !!actor
+                && actor.__typename === 'User'
+                && !!actor.login
+                && actor.login.toLowerCase() !== prAuthor.toLowerCase();
+              // GitHub keeps every review record, so an old APPROVED review survives a
+              // later CHANGES_REQUESTED from the same person. Take each reviewer's latest
+              // state-changing review (COMMENTED and PENDING do not change a reviewer's
+              // state) and count it only if that latest review is an approval of the head.
+              const stateChanging = new Set(['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED']);
+              const latestByReviewer = new Map();
+              for (const r of reviews) {
+                if (!isOtherHuman(r.author) || !stateChanging.has(r.state) || !r.submittedAt) continue;
+                const key = r.author.login.toLowerCase();
+                const prev = latestByReviewer.get(key);
+                if (!prev || new Date(r.submittedAt) > new Date(prev.submittedAt)) {
+                  latestByReviewer.set(key, r);
+                }
+              }
+              const approvedHeadByOther = [...latestByReviewer.values()].some((r) =>
+                r.state === 'APPROVED' && r.commit && r.commit.oid === headSha);
+
+              const copilotThreads = threads.filter((t) => {
+                const first = t.comments.nodes[0];
+                return first && isReviewer(first.author && first.author.login);
+              });
+              // A blocker thread is cleared only when a human other than the PR author
+              // resolved it. GitHub lets authors resolve threads on their own PR, and the
+              // API exposes no resolve timestamp, so neither isResolved alone nor "an
+              // approval exists on the head" can prove someone reviewed the resolution.
+              const isCleared = (t) => t.isResolved && isOtherHuman(t.resolvedBy);
+              const taggedThreads = copilotThreads.filter((t) => hasLeadingTag(t.comments.nodes[0].body));
+              blockers = taggedThreads.filter((t) => !isCleared(t));
+              const authorResolved = blockers.filter((t) => t.isResolved).length;
+              for (const t of copilotThreads) {
+                const body = t.comments.nodes[0].body || '';
+                if (!t.isResolved && !hasLeadingTag(body) && body.includes(tag)) {
+                  core.warning(`${tag} appears mid-body, not counted: ${t.comments.nodes[0].url}`);
+                }
+              }
+
+              // Instruction guard: a change to the files that steer Copilot or this gate
+              // needs an approval on the current head from a human other than the PR
+              // author. Who is allowed to approve is enforced by the code-owner rule.
+              touchedInstructionFiles = files.filter(isInstructionPath);
+
+              if (blockers.length > 0) {
+                state = 'failure';
+                description = authorResolved > 0
+                  ? `${blockers.length} 个 ${tag} finding 未清除（其中 ${authorResolved} 个由作者自行 resolve，不接受），需非作者 resolve`
+                  : `${blockers.length} 个未解决的 ${tag} finding，修复后由非作者 resolve 再重新运行此检查`;
+              } else if (touchedInstructionFiles.length > 0 && !approvedHeadByOther) {
+                state = 'failure';
+                description = `PR 修改了 ${touchedInstructionFiles.length} 个 Copilot instruction/gate 文件，需要 code owner 在当前 head 上 Approve`;
+              } else if (requireReview && copilotReviews.length === 0) {
+                state = 'pending';
+                description = '等待 Copilot code review';
+              } else if (requireOnHead && !reviewedHead) {
+                state = 'pending';
+                description = '最新 commit 尚未经过 Copilot review，等待自动复审或手动 re-request';
+              } else {
+                state = 'success';
+                description = `没有未解决的 ${tag} finding`;
+              }
+              core.info(`threads=${threads.length} copilotReviews=${copilotReviews.length} blockers=${blockers.length} instructionFiles=${touchedInstructionFiles.length} state=${state}`);
+            } catch (err) {
+              state = 'failure';
+              description = `gate 评估失败: ${String(err.message || err).slice(0, 100)}`;
+              await postStatus(state, description);
+              throw err;
+            }
+
+            await postStatus(state, description);
+
+            const summary = core.summary
+              .addHeading(`Copilot review gate: ${state}`)
+              .addRaw(`PR #${number} @ ${headSha.slice(0, 10)} — ${description}`)
+              .addEOL();
+            if (blockers.length > 0) {
+              summary.addList(blockers.map((t) => {
+                const c = t.comments.nodes[0];
+                const where = t.path ? `${t.path}:${t.line ?? '?'}` : '(no path)';
+                const stale = t.isOutdated ? ' (outdated)' : '';
+                const who = t.isResolved
+                  ? ` (resolved by ${t.resolvedBy && t.resolvedBy.login || 'unknown'}, not accepted)`
+                  : '';
+                return `${where}${stale}${who} ${c.url}`;
+              }));
+              for (const t of blockers) {
+                core.error(`${tag} ${t.path}:${t.line ?? '?'} ${t.comments.nodes[0].url}`);
+              }
+            }
+            if (touchedInstructionFiles.length > 0) {
+              summary.addHeading('Instruction / gate files changed in this PR', 3)
+                .addList(touchedInstructionFiles);
+            }
+            await summary.write();
+
+            if (state === 'failure') {
+              core.setFailed(description);
+            }
