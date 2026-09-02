@@ -497,42 +497,52 @@ int32_t DS28S60_HmacAuthentication(uint8_t page)
     challenge[0] = page;
     challenge[1] = 0x00;            //Secret A
     TrngGet(&challenge[2], 32);
-    if (g_ds28s60Info.valid == false) {
-        ret = DS28S60_GetInfo();
-        if (ret != DS28S60_SUCCESS) {
-            return ret;
+    do {
+        if (g_ds28s60Info.valid == false) {
+            ret = DS28S60_GetInfo();
+            if (ret != DS28S60_SUCCESS) {
+                break;
+            }
         }
-    }
-    ret = DS28S60_SendCmdAndGetResult(DS28S60_CMD_CRPA, challenge, 34, 32, hmacDevice);
-    if (ret != DS28S60_SUCCESS) {
-        return ret;
-    }
-    UserDelay(50);
-    ret = DS28S60_ReadPage(&msg[8], page);
-    if (ret != DS28S60_SUCCESS) {
-        return ret;
-    }
-    UserDelay(50);
-    DS28S60_GetHmacKey(secretKey, &g_ds28s60Info, BINDING_DATA_PAGE, DS28S60_CMD_CPT_SECRET);
-    memcpy(&msg[0], g_ds28s60Info.ROMID, 8);
-    memcpy(&msg[40], &challenge[2], 32);
-    msg[72] = page;
-    memcpy(&msg[73], g_ds28s60Info.MANID, 2);
-    msg[75] = DS28S60_CMD_CRPA;
-    //PrintArray("msg", msg, 76);
-    hmac_sha256(secretKey, 32, msg, 76, hmacCalc);
-    //PrintArray("hmacCalc", hmacCalc, 32);
-    //PrintArray("hmacCalc", hmacDevice, 32);
-    if (memcmp(hmacCalc, hmacDevice, 32) != 0) {
-        return ERR_DS28S60_AUTH;
-    }
+        ret = DS28S60_SendCmdAndGetResult(DS28S60_CMD_CRPA, challenge, 34, 32, hmacDevice);
+        if (ret != DS28S60_SUCCESS) {
+            break;
+        }
+        UserDelay(50);
+        ret = DS28S60_ReadPage(&msg[8], page);
+        if (ret != DS28S60_SUCCESS) {
+            break;
+        }
+        UserDelay(50);
+        DS28S60_GetHmacKey(secretKey, &g_ds28s60Info, BINDING_DATA_PAGE, DS28S60_CMD_CPT_SECRET);
+        memcpy(&msg[0], g_ds28s60Info.ROMID, 8);
+        memcpy(&msg[40], &challenge[2], 32);
+        msg[72] = page;
+        memcpy(&msg[73], g_ds28s60Info.MANID, 2);
+        msg[75] = DS28S60_CMD_CRPA;
+        //PrintArray("msg", msg, 76);
+        hmac_sha256(secretKey, 32, msg, 76, hmacCalc);
+        //PrintArray("hmacCalc", hmacCalc, 32);
+        //PrintArray("hmacCalc", hmacDevice, 32);
+        // memcmp returns at the first differing byte and leaks the matching prefix length
+        // through timing. timingsafe_bcmp compares all 32 bytes unconditionally; it also
+        // returns non-zero on its own constraint errors, so any failure counts as a mismatch.
+        if (timingsafe_bcmp(hmacCalc, hmacDevice, 32) != 0) {
+            ret = ERR_DS28S60_AUTH;
+            break;
+        }
+        ret = DS28S60_SUCCESS;
+    } while (0);
+
+    // Wipe on every path, including the failure path that an attacker drives (a fake SE
+    // fails auth). The early returns above used to leave secretKey and msg on the stack.
     CLEAR_ARRAY(hmacDevice);
     CLEAR_ARRAY(hmacCalc);
     CLEAR_ARRAY(challenge);
     CLEAR_ARRAY(secretKey);
     CLEAR_ARRAY(msg);
 
-    return DS28S60_SUCCESS;
+    return ret;
 }
 
 int32_t DS28S60_HmacEncryptRead(uint8_t *data, uint8_t page)
@@ -609,7 +619,8 @@ int32_t DS28S60_HmacAuthenticatedRead(uint8_t *data, uint8_t page)
         memcpy(&msg[73], g_ds28s60Info.MANID, 2);
         msg[75] = DS28S60_CMD_CRPA;
         hmac_sha256(secretKey, 32, msg, 76, hmacCalc);
-        if (memcmp(hmacCalc, hmacDevice, 32) != 0) {
+        // constant-time: see DS28S60_HmacAuthentication
+        if (timingsafe_bcmp(hmacCalc, hmacDevice, 32) != 0) {
             ret = ERR_DS28S60_AUTH;
             break;
         }

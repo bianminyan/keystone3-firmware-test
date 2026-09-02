@@ -837,7 +837,9 @@ static int32_t VerifyAccountBlobFromSE(uint8_t accountIndex, const char *passwor
                     ACCOUNT_TOTAL_LEN - HMAC_LEN, hmacCalc);
         KEYSTORE_PRINT_ARRAY("accountEncryptData", accountEncryptData, ACCOUNT_TOTAL_LEN);
         KEYSTORE_PRINT_ARRAY("accountBlobAuthKey", accountBlobAuthKey, AUTH_KEY_LEN);
-        ret = ((memcmp(hmacCalc, hmac, HMAC_LEN) == 0) ? SUCCESS_CODE : ERR_KEYSTORE_AUTH);
+        // constant-time compare: memcmp exits at the first differing byte and leaks how many
+        // leading bytes of the stored HMAC a wrong-password attempt matched.
+        ret = ((timingsafe_bcmp(hmacCalc, hmac, HMAC_LEN) == 0) ? SUCCESS_CODE : ERR_KEYSTORE_AUTH);
         CHECK_ERRCODE_BREAK("check hmac", ret);
         // PIN proven correct here -> notify the SE backend of a successful unlock (gen-1: no-op).
         ret = SE_OnUnlockSuccess(accountIndex);
