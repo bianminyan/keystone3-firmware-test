@@ -93,7 +93,7 @@ bool NeedUpdateBoot(void)
     if (GetBootSoftwareVersion(&major, &minor, &build) == false) {
         return true;
     }
-    if (major == 0 && minor == 3 && build == 0) {
+    if (major == 0 && minor == 4 && build == 0) {
         return false;
     }
     return true;
