@@ -140,10 +140,14 @@ holds the rules that apply to every pull request.
   `multi-coins`, `btc-only`, and `cypherpunk`, and cbindgen maps features to C defines in
   `rust/rust_c/cbindgen.toml`. New chain or wallet code must be gated consistently on both
   sides so nothing leaks into `btc_only` or `cypherpunk`.
-- CI runs only Rust crate tests and `rustfmt`; it does not build the firmware image. For C
-  changes the pull request description must say how it was built and tested (three variants
-  via `python3 build.py -t <variant>`, and the simulator via `-o simulator` where relevant).
-  Flag a C change with no such statement.
+- CI runs only Rust crate tests and `rustfmt`; it does not build the firmware image. That is
+  a known, accepted gap and is not a review finding. Do not comment that a change "has not
+  been verified by a firmware build", do not ask the author to run the three variants or the
+  simulator, and do not ask for a build-or-test statement in the pull request description.
+  Whether and how a change was built is verified by the maintainers before merge, outside
+  the review. Review what the diff does instead: if you can point to a concrete compile or
+  link problem (an undefined symbol, a missing include, a mismatched prototype, a gate that
+  leaves a call unresolved in one variant), report that specific problem.
 
 ### Tests and documentation
 
