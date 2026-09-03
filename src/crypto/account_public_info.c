@@ -59,7 +59,7 @@ static bool GetPublicKeyFromJsonString(const char *string);
 static char *GetJsonStringFromPublicKey(void);
 static cJSON* ReadAndParseAccountJson(uint32_t *outAddr, uint32_t *outSize);
 static void WriteJsonToFlash(uint32_t addr, cJSON *rootJson);
-static uint32_t GetTemplateWalletValue(const char* walletName, const char* key);
+static uint32_t GetTemplateWalletValue(const char* walletName, const char* key, uint32_t defaultValue);
 static void SetTemplateWalletValue(const char* walletName, const char* key, uint32_t value);
 static void CleanupJson(cJSON* json);
 static void FreePublicKeyRam(void);
@@ -245,7 +245,7 @@ uint32_t GetAccountMultiReceiveIndexFromFlash(char *verifyCode)
 {
     char key[BUFFER_SIZE_64] = {0};
     snprintf_s(key, sizeof(key), "multiRecvIndex_%s", verifyCode);
-    return GetTemplateWalletValue("BTC", key);
+    return GetTemplateWalletValue("BTC", key, 0);
 }
 
 void SetAccountMultiReceiveIndex(uint32_t index, char *verifyCode)
@@ -290,7 +290,7 @@ void DeleteAccountMultiReceiveIndex(const char* chainName, char *verifyCode)
 
 uint32_t GetAccountTestReceiveIndex(const char* chainName)
 {
-    return GetTemplateWalletValue(chainName, "testRecvIndex");
+    return GetTemplateWalletValue(chainName, "testRecvIndex", 0);
 }
 
 void SetAccountTestReceiveIndex(const char* chainName, uint32_t index)
@@ -300,7 +300,7 @@ void SetAccountTestReceiveIndex(const char* chainName, uint32_t index)
 
 uint32_t GetAccountTestReceivePath(const char* chainName)
 {
-    return GetTemplateWalletValue(chainName, "testRecvPath");
+    return GetTemplateWalletValue(chainName, "testRecvPath", 0);
 }
 
 void SetAccountTestReceivePath(const char* chainName, uint32_t index)
@@ -696,7 +696,10 @@ void AccountPublicHomeCoinGet(WalletState_t *walletList, uint8_t count)
         for (int i = 0; i < count; i++) {
             jsonItem = cJSON_CreateObject();
             cJSON_AddItemToObject(jsonItem, "recvIndex", cJSON_CreateNumber(0));
-            cJSON_AddItemToObject(jsonItem, "recvPath", cJSON_CreateNumber(0));
+            // new accounts default SOL to the change/single-address path (SOLBip44Change); existing accounts already have this key and are unaffected.
+            int solCmpResult = -1;
+            uint32_t defaultRecvPath = (strcmp_s(walletList[i].name, strlen(walletList[i].name) + 1, "SOL", &solCmpResult) == EOK && solCmpResult == 0) ? 2 : 0;
+            cJSON_AddItemToObject(jsonItem, "recvPath", cJSON_CreateNumber(defaultRecvPath));
             cJSON_AddItemToObject(jsonItem, "firstRecv", cJSON_CreateBool(false));
             if ((!strcmp(walletList[i].name, "BTC") || !strcmp(walletList[i].name, "ETH"))) {
                 cJSON_AddItemToObject(jsonItem, "manage", cJSON_CreateBool(true));
@@ -2087,9 +2090,12 @@ uint32_t GetAccountReceivePath(const char* chainName)
 
     cJSON *item = cJSON_GetObjectItem(rootJson, chainName);
     if (item == NULL) {
+        // new accounts default SOL to the change/single-address path (SOLBip44Change); existing accounts already have this key and are unaffected.
+        int solCmpResult = -1;
+        index = (strcmp_s(chainName, strlen(chainName) + 1, "SOL", &solCmpResult) == EOK && solCmpResult == 0) ? 2 : 0;
         cJSON *jsonItem = cJSON_CreateObject();
         cJSON_AddItemToObject(jsonItem, "recvIndex", cJSON_CreateNumber(0)); // recvIndex is the address index
-        cJSON_AddItemToObject(jsonItem, "recvPath", cJSON_CreateNumber(0)); // recvPath is the derivation path type
+        cJSON_AddItemToObject(jsonItem, "recvPath", cJSON_CreateNumber(index)); // recvPath is the derivation path type
         cJSON_AddItemToObject(jsonItem, "firstRecv", cJSON_CreateBool(true)); // firstRecv is the first receive address
         if ((!strcmp(chainName, "BTC") || !strcmp(chainName, "ETH"))) {
             cJSON_AddItemToObject(jsonItem, "manage", cJSON_CreateBool(true));
@@ -2187,7 +2193,19 @@ uint32_t GetConnectWalletPathIndex(const char* walletName)
     char name[BUFFER_SIZE_32];
     strncpy_s(name, BUFFER_SIZE_32, walletName, BUFFER_SIZE_32);
     RemoveFormatChar(name);
-    return GetTemplateWalletValue(name, "derivePath");
+    // Only Solflare and Helium actually show the SOL derivation path picker
+    // (Jupiter/NuFi connect over USB with a fixed path, not this picker), so
+    // only they get the new default of the change/single-address path
+    // (SOLBip44Change = 2); every other wallet keeps its original default of
+    // 0. GetWalletNameByIndex(WALLET_LIST_HELIUM) returns "Helium", not the
+    // display table's "Helium Wallet" - that's the string that reaches here.
+    int cmpResult = -1;
+    uint32_t defaultIndex = 0;
+    if ((strcmp_s(name, sizeof(name), "Solflare", &cmpResult) == EOK && cmpResult == 0) ||
+            (strcmp_s(name, sizeof(name), "Helium", &cmpResult) == EOK && cmpResult == 0)) {
+        defaultIndex = 2;
+    }
+    return GetTemplateWalletValue(name, "derivePath", defaultIndex);
 }
 
 void SetConnectWalletPathIndex(const char* walletName, uint32_t index)
@@ -2289,16 +2307,16 @@ void SetConnectWalletNetwork(const char* walletName, uint32_t index)
     }
 }
 
-static uint32_t GetTemplateWalletValue(const char* walletName, const char* key)
+static uint32_t GetTemplateWalletValue(const char* walletName, const char* key, uint32_t defaultValue)
 {
-    uint32_t value = 0;
+    uint32_t value = defaultValue;
     cJSON* rootJson = ReadAndParseAccountJson(NULL, NULL);
     cJSON* item = cJSON_GetObjectItem(rootJson, walletName);
     if (item == NULL) {
         printf("GetTemplateWalletValue get %s not exist\r\n", walletName);
     } else {
         cJSON* valueItem = cJSON_GetObjectItem(item, key);
-        value = valueItem ? valueItem->valueint : 0;
+        value = valueItem ? valueItem->valueint : defaultValue;
     }
     CleanupJson(rootJson);
     return value;

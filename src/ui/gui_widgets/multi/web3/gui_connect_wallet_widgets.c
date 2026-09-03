@@ -301,10 +301,6 @@ static char g_derivationPathAddr[LedgerLegacy + 1][DERIVATION_PATH_EG_LEN][64];
 static char g_solDerivationPathAddr[SOLBip44Change + 1][DERIVATION_PATH_EG_LEN][64];
 static char g_adaDerivationPathAddr[LEDGER_ADA + 1][DERIVATION_PATH_EG_LEN][64];
 static lv_obj_t *g_derivationCheck[LedgerLegacy + 1];
-static ETHAccountType g_currentEthPathIndex[3] = {Bip44Standard, Bip44Standard, Bip44Standard};
-static SOLAccountType g_currentSOLPathIndex[3] = {SOLBip44, SOLBip44, SOLBip44};
-static SOLAccountType g_currentHeliumPathIndex[3] = {SOLBip44, SOLBip44, SOLBip44};
-static AdaXPubType g_currentAdaPathIndex[3] = {STANDARD_ADA, STANDARD_ADA, STANDARD_ADA};
 
 static lv_obj_t *g_egAddress[DERIVATION_PATH_EG_LEN];
 static lv_obj_t *g_egAddressIndex[DERIVATION_PATH_EG_LEN];
@@ -1343,21 +1339,6 @@ static int GetAccountType(void)
 
 static void SetAccountType(uint8_t index)
 {
-    switch (g_connectWalletTileView.walletIndex) {
-    case WALLET_LIST_SOLFARE:
-        g_currentSOLPathIndex[GetCurrentAccountIndex()] = index;
-        break;
-    case WALLET_LIST_HELIUM:
-        g_currentHeliumPathIndex[GetCurrentAccountIndex()] = index;
-        break;
-    case WALLET_LIST_VESPR:
-        g_currentAdaPathIndex[GetCurrentAccountIndex()] = index;
-        break;
-    default:
-        g_currentEthPathIndex[GetCurrentAccountIndex()] = index;
-        break;
-    }
-
     SetConnectWalletPathIndex(GetWalletNameByIndex(g_connectWalletTileView.walletIndex), index);
 }
 
