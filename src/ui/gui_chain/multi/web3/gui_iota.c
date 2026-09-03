@@ -99,11 +99,14 @@ bool GetIotaIsTransaction(void *indata, void *param)
 
 bool GetIotaIsTransfer(void *indata, void *param)
 {
-    DisplayIotaIntentData *iota = (DisplayIotaIntentData *)param;
-    if (iota->method != NULL) {
-        return false;
+    // Gates the Overview tab. `method` is only ever set for the two shapes
+    // extract_transaction_params() can fully decode (Transfer, Stake); an
+    // unrecognised transaction leaves it NULL so only Raw Data is shown.
+    if (GetIotaIsMessage(indata, param)) {
+        return true;
     }
-    return true;
+    DisplayIotaIntentData *iota = (DisplayIotaIntentData *)param;
+    return iota->method != NULL;
 }
 
 bool GetIotaIsMessage(void *indata, void *param)
@@ -135,19 +138,34 @@ void GuiIotaTxOverview(lv_obj_t *parent, void *totalData)
     lv_obj_add_flag(parent, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLL_ELASTIC);
 
+    bool isStake = txData->method != NULL && !strcmp(txData->method, "Stake");
+
+    // GuiAlignToPrevObj() is a no-op when its object is parent's only child,
+    // leaving it at its default (0,0) creation position -- so every block
+    // below can unconditionally chain off "the previous one", first block
+    // included, regardless of which of these are actually present.
     lv_obj_t *container = NULL;
+    if (txData->gas_sponsored) {
+        // Informational, not a warning -- so the neutral grey card, not the
+        // red CreateNoticeView that the "max amount" / unknown-transaction
+        // warnings use. It also sizes its own height to the wrapped text.
+        container = CreateTitledNoticeCard(parent, "Gas Sponsored", _("iota_gas_sponsor_notice"), 408);
+        GuiAlignToPrevObj(container, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 12);
+    }
+
+    bool maxGasFeeShown = false;
     if (txData->amount != NULL) {
         if (strcmp(txData->amount, "max") == 0) {
             container = CreateNoticeView(parent, 408, 212, _("iota_max_amount_notice"));
-            lv_obj_align(container, LV_ALIGN_TOP_LEFT, 0, 0);
         } else {
-            container = CreateValueOverviewValue(parent, "amount", txData->amount, NULL, NULL);
-            lv_obj_align(container, LV_ALIGN_TOP_LEFT, 0, 0);
+            container = CreateValueOverviewValue(parent, "amount", txData->amount, "Maximum Gas Fee", txData->max_gas_fee);
+            maxGasFeeShown = true;
         }
+        GuiAlignToPrevObj(container, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 12);
     }
 
-    if (txData->network != NULL) {
-        container = CreateSingleInfoView(parent, "network", txData->network);
+    if (txData->max_gas_fee != NULL && !maxGasFeeShown) {
+        container = CreateSingleInfoView(parent, "Maximum Gas Fee", txData->max_gas_fee);
         GuiAlignToPrevObj(container, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 12);
     }
 
@@ -160,12 +178,7 @@ void GuiIotaTxOverview(lv_obj_t *parent, void *totalData)
     GuiAlignToPrevObj(container, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 12);
 
     if (txData->recipient != NULL) {
-        container = CreateSingleInfoTwoLineView(parent, "recipient", txData->recipient);
-        GuiAlignToPrevObj(container, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 12);
-    }
-
-    if (txData->to != NULL) {
-        container = CreateSingleInfoTwoLineView(parent, "to", txData->to);
+        container = CreateSingleInfoTwoLineView(parent, isStake ? "Validator" : "To", txData->recipient);
         GuiAlignToPrevObj(container, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 12);
     }
 }
@@ -176,8 +189,20 @@ void GuiIotaTxRawData(lv_obj_t *parent, void *totalData)
     lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLL_ELASTIC);
     lv_obj_set_size(parent, 408, 444);
 
+    lv_obj_add_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+
+    // GetIotaIsTransfer() already hides the Overview tab for anything that
+    // isn't a decoded Transfer/Stake; here we just flag it so the user isn't
+    // left staring at raw JSON with no idea why there's no summary. It's a
+    // sibling of the raw-data card, not a child of it.
+    if (txData->method == NULL) {
+        lv_obj_t *notice = CreateTitledNoticeCard(parent, _("iota_unknown_transaction_title"), _("iota_unknown_transaction_desc"), 408);
+        lv_obj_set_style_bg_color(notice, RED_COLOR, LV_PART_MAIN);
+        lv_obj_align(notice, LV_ALIGN_TOP_LEFT, 0, 0);
+    }
+
     lv_obj_t *container = CreateContentContainer(parent, 408, 444);
-    lv_obj_align(container, LV_ALIGN_TOP_LEFT, 0, 0);
+    GuiAlignToPrevObj(container, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 12);
     lv_obj_add_flag(container, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(container, LV_OBJ_FLAG_CLICKABLE);
 
