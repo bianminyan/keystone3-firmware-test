@@ -43,7 +43,9 @@ applyTo: "src/ui/**"
 - Multi-coin, `btc_only`, and `cypherpunk` views live under `multi/`, `btc_only/`, and
   `multi/cypherpunk/` directories and behind `#ifdef BTC_ONLY` / `#ifdef CYPHERPUNK`. A new
   chain screen must not appear in the two restricted variants, and a changed shared widget must
-  compile in all three.
+  compile in all three. Report a specific `#ifdef`, symbol, or call that breaks one variant,
+  anchored to the line. Do not ask for build proof or a verification statement; see "Out of
+  scope: do not report" in `.github/copilot-instructions.md`.
 
 ## i18n and fonts
 

@@ -18,6 +18,23 @@ holds the rules that apply to every pull request.
 - Technical terms with an established English form (TRNG, nonce, PSBT, sighash, MPU, OTP,
   SE, UR, FFI, zeroize) may stay in English inside the Chinese sentence.
 
+## Out of scope: do not report
+
+- Build verification. CI runs only Rust crate tests and `rustfmt`; it does not build the
+  firmware image. That gap is known and accepted, and the maintainers verify builds before
+  merge, outside the review. Do not comment that a change "has not been verified by a
+  firmware build" or "cannot be confirmed to compile in all variants", do not ask the author
+  to run the multi-coin, `btc_only`, or `cypherpunk` builds or the simulator, and do not ask
+  for build or test results in the pull request description. The pre-merge checklist in
+  `.github/PULL_REQUEST_TEMPLATE.MD` is for the author to fill in, not for the reviewer to
+  enforce. If you can point to a concrete compile or link problem in the diff (an undefined
+  symbol, a missing include, a mismatched prototype, an `#ifdef` that leaves a call
+  unresolved in one variant), report that specific problem at that line instead.
+- Changelog and release notes. `CHANGELOG.md`, `CHANGELOG-ZH.md`, `CHANGELOG-BTC.md`, and
+  `CHANGELOG-ZH-BTC.md` are written by the maintainers in one pass at release time, not per
+  pull request. Do not comment that a user-visible change, a new flow, or a changed
+  confirmation screen is missing a changelog entry, and do not ask for one.
+
 ## Blocking findings
 
 - Start the inline comment with the exact tag `[BLOCKER]` (the first characters of the
@@ -140,14 +157,9 @@ holds the rules that apply to every pull request.
   `multi-coins`, `btc-only`, and `cypherpunk`, and cbindgen maps features to C defines in
   `rust/rust_c/cbindgen.toml`. New chain or wallet code must be gated consistently on both
   sides so nothing leaks into `btc_only` or `cypherpunk`.
-- CI runs only Rust crate tests and `rustfmt`; it does not build the firmware image. That is
-  a known, accepted gap and is not a review finding. Do not comment that a change "has not
-  been verified by a firmware build", do not ask the author to run the three variants or the
-  simulator, and do not ask for a build-or-test statement in the pull request description.
-  Whether and how a change was built is verified by the maintainers before merge, outside
-  the review. Review what the diff does instead: if you can point to a concrete compile or
-  link problem (an undefined symbol, a missing include, a mismatched prototype, a gate that
-  leaves a call unresolved in one variant), report that specific problem.
+- CI does not build the firmware image, and that is not a review finding; see "Out of
+  scope: do not report" above. Report only a concrete compile or link problem you can point
+  to in the diff, never a request for build proof.
 
 ### Tests and documentation
 
@@ -155,7 +167,6 @@ holds the rules that apply to every pull request.
   official specification or reference implementation, plus at least one negative case (wrong
   network, wrong master fingerprint, truncated or oversized input).
 - Rust must pass `cargo fmt --check`; C follows the AStyle command in `README.md`.
-- User-visible changes update `CHANGELOG.md` (and the BTC and ZH variants when applicable).
 - Strings added to or changed in `src/ui/lv_i18n/data.csv` require the generated font files
   under `src/ui/gui_assets/font/` to be regenerated in the same pull request; otherwise
   non-Latin characters render as empty boxes.
