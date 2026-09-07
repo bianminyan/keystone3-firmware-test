@@ -13,6 +13,7 @@ def read_defined_symbols(objdump: str, elf: Path) -> set[str]:
 
     symbols = set()
     for line in output.splitlines():
+        parts = line.split()
         if len(parts) < 2 or "*UND*" in parts:
             continue
         try:
