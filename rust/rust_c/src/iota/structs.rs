@@ -75,7 +75,7 @@ impl DisplayIotaIntentData {
         // representations such as Base64 without an explicit protocol marker.
         let display_message = core::str::from_utf8(message)
             .ok()
-            .filter(|text| !app_utils::is_cjk(text));
+            .filter(|text| !message.contains(&0) && !app_utils::is_cjk(text));
 
         // SAFETY: `self.message` is null or was allocated by `convert_c_char` in `From<Intent>`.
         unsafe {
