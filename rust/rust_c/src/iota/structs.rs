@@ -71,11 +71,9 @@ impl DisplayIotaIntentData {
     }
 
     pub fn with_personal_message_bytes(mut self, message: &[u8]) -> Self {
-        let decoded = core::str::from_utf8(message)
-            .ok()
-            .and_then(|encoded| base64::decode(encoded).ok());
-        let display_bytes = decoded.as_deref().unwrap_or(message);
-        let display_message = core::str::from_utf8(display_bytes).ok().filter(|text| {
+        // These are the exact bytes passed to iota_sign_intent. Do not decode
+        // representations such as Base64 without an explicit protocol marker.
+        let display_message = core::str::from_utf8(message).ok().filter(|text| {
             text.bytes()
                 .all(|byte| byte == b'\n' || (0x20..=0x7e).contains(&byte))
         });
@@ -87,7 +85,7 @@ impl DisplayIotaIntentData {
             self.message = convert_c_char(message.to_string());
         } else {
             self.message = null_mut();
-            self.details = convert_c_char(display_bytes.chunks(8).map(hex::encode).join(" "));
+            self.details = convert_c_char(message.chunks(8).map(hex::encode).join(" "));
         }
         self
     }
@@ -447,7 +445,7 @@ mod tests {
     }
 
     #[test]
-    fn decodes_base64_text_message() {
+    fn preserves_base64_looking_text_message() {
         let message = Intent::PersonalMessage(IntentMessage {
             intent: SuiIntent::sui_app(IntentScope::PersonalMessage),
             value: PersonalMessageUtf8 {
@@ -457,24 +455,24 @@ mod tests {
 
         let display = DisplayIotaIntentData::from(message).with_personal_message_bytes(b"YWJj");
         unsafe {
-            assert_eq!(recover_opt(display.message), Some("abc".to_string()));
+            assert_eq!(recover_opt(display.message), Some("YWJj".to_string()));
             assert!(display.details.is_null());
             display.free();
         }
     }
 
     #[test]
-    fn formats_base64_message_with_emoji_as_raw_hex() {
-        let encoded = "SSBsb3ZlIE5pZ2h0bHkg8J+mig==";
+    fn formats_message_with_emoji_as_raw_hex() {
+        let text = "I love Nightly 🦊";
         let message = Intent::PersonalMessage(IntentMessage {
             intent: SuiIntent::sui_app(IntentScope::PersonalMessage),
             value: PersonalMessageUtf8 {
-                message: encoded.to_string(),
+                message: text.to_string(),
             },
         });
 
         let display =
-            DisplayIotaIntentData::from(message).with_personal_message_bytes(encoded.as_bytes());
+            DisplayIotaIntentData::from(message).with_personal_message_bytes(text.as_bytes());
         unsafe {
             assert!(display.message.is_null());
             assert_eq!(
