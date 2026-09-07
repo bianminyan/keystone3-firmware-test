@@ -36,7 +36,14 @@ def main() -> None:
     defined_symbols = read_defined_symbols(args.objdump, args.elf)
     if not defined_symbols:
         raise RuntimeError("production ELF has no defined symbols; cannot verify forbidden symbols")
-    forbidden_symbols = sorted(set(args.forbid) & defined_symbols)
+    forbidden_symbols = sorted(
+        symbol
+        for symbol in defined_symbols
+        if any(
+            symbol == forbidden or symbol.startswith(f"{forbidden}.")
+            for forbidden in args.forbid
+        )
+    )
     if forbidden_symbols:
         raise RuntimeError(
             "production ELF contains forbidden symbols:\n  "
