@@ -14,7 +14,7 @@ use crate::common::ffi::VecFFI;
 use crate::common::free::{free_ptr_string, Free};
 use crate::common::structs::TransactionParseResult;
 use crate::common::types::{Ptr, PtrString, PtrT};
-use crate::common::utils::convert_c_char;
+use crate::common::utils::{convert_c_char, validate_c_char};
 use crate::{free_str_ptr, free_vec, impl_c_ptr, impl_c_ptrs, make_free_method};
 use app_sui::Intent;
 use sui_transaction_types_core::{
@@ -75,7 +75,8 @@ impl DisplayIotaIntentData {
         // representations such as Base64 without an explicit protocol marker.
         let display_message = core::str::from_utf8(message)
             .ok()
-            .filter(|text| !message.contains(&0) && !app_utils::is_cjk(text));
+            .filter(|text| validate_c_char(text).is_ok())
+            .filter(|text| !app_utils::is_cjk(text));
 
         // SAFETY: `self.message` is null or was allocated by `convert_c_char` in `From<Intent>`.
         unsafe {
