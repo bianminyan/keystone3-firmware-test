@@ -84,8 +84,6 @@ ur = { package = "keystone-ur", version = "0.1.1", default-features = false }
 sui-transaction-types-core = { git = "https://github.com/KeystoneHQ/sui.git", tag = "mainnet-nostd-v1.69.2.1", default-features = false, features = ["alloc"] }
 ed25519-bip32-core = { version = "0.1.1", default-features = false }
 cryptoxide = "0.4"
-cml-chain = { git = "https://github.com/dcSpark/cardano-multiplatform-lib.git", rev = "69b8664c84931cd6632e0d951c2795019597527f", default-features = false }
-cml-multi-era = { git = "https://github.com/dcSpark/cardano-multiplatform-lib.git", rev = "69b8664c84931cd6632e0d951c2795019597527f", default-features = false }
 arrayref = "0.3.6"
 num-bigint-dig = { version = "0.8.2", default-features = false }
 base64 = { version = "0.11.0", default-features = false, features = ["alloc"] }
