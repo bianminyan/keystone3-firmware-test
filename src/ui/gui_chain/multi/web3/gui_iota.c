@@ -133,9 +133,7 @@ static lv_obj_t *CreateIotaRawMessageView(lv_obj_t *parent, const char *rawData)
     lv_obj_update_layout(label);
 
     uint16_t noticeY = rawDataY + lv_obj_get_self_height(label) + 24;
-    label = GuiCreateIllustrateLabel(
-        container,
-        "Message cannot be displayed as text. Review the raw data carefully before signing.");
+    label = GuiCreateIllustrateLabel(container, _("iota_message_raw_data_notice"));
     lv_obj_set_width(label, contentWidth);
     lv_obj_set_style_text_color(label, YELLOW_COLOR, LV_PART_MAIN);
     lv_obj_align(label, LV_ALIGN_TOP_LEFT, 24, noticeY);
