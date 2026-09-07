@@ -434,9 +434,8 @@ mod tests {
             },
         });
 
-        let display = DisplayIotaIntentData::from(message).with_personal_message_bytes(&[
-            0xff, 0xfe, 0x00, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46,
-        ]);
+        let display = DisplayIotaIntentData::from(message)
+            .with_personal_message_bytes(&[0xff, 0xfe, 0x00, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46]);
         unsafe {
             assert!(display.message.is_null());
             assert_eq!(
