@@ -230,7 +230,7 @@ void GuiTransactionDetailParseSuccess(void *param)
         PtrT_TransactionParseResult_DisplayIotaIntentData result =
             (PtrT_TransactionParseResult_DisplayIotaIntentData)param;
         if (result != NULL && result->data != NULL && GetIotaIsMessage(NULL, result->data)) {
-            SetCoinWallet(g_pageWidget->navBarWidget, g_chainType, "Sign Message");
+            SetCoinWallet(g_pageWidget->navBarWidget, g_chainType, _("transaction_parse_confirm_message"));
         }
     }
 #endif

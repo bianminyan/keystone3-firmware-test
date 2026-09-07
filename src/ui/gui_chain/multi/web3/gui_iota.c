@@ -115,14 +115,52 @@ bool GetIotaIsMessage(void *indata, void *param)
     return !strcmp(iota->transaction_type, "Message");
 }
 
+static lv_obj_t *CreateIotaRawMessageView(lv_obj_t *parent, const char *rawData)
+{
+    const uint16_t width = 408;
+    const uint16_t contentWidth = width - 48;
+    const uint16_t rawDataY = 54;
+
+    lv_obj_t *container = CreateContentContainer(parent, width, 1);
+
+    lv_obj_t *label = GuiCreateIllustrateLabel(container, "Raw Data");
+    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 24, 16);
+    lv_obj_set_style_text_opa(label, LV_OPA_64, LV_PART_MAIN);
+
+    label = GuiCreateIllustrateLabel(container, rawData);
+    lv_obj_set_width(label, contentWidth);
+    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 24, rawDataY);
+    lv_obj_update_layout(label);
+
+    uint16_t noticeY = rawDataY + lv_obj_get_self_height(label) + 24;
+    label = GuiCreateIllustrateLabel(
+        container,
+        "Message cannot be displayed as text. Review the raw data carefully before signing.");
+    lv_obj_set_width(label, contentWidth);
+    lv_obj_set_style_text_color(label, YELLOW_COLOR, LV_PART_MAIN);
+    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 24, noticeY);
+    lv_obj_update_layout(label);
+    lv_obj_set_height(container, noticeY + lv_obj_get_self_height(label) + 24);
+
+    return container;
+}
+
 void GuiIotaTxOverviewMessage(lv_obj_t *parent, void *totalData)
 {
     DisplayIotaIntentData *txData = (DisplayIotaIntentData *)totalData;
     lv_obj_set_size(parent, 408, 444);
-    lv_obj_t *container = CreateSingleInfoTwoLineView(parent, "address", txData->sender);
+    lv_obj_add_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(parent, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLL_ELASTIC);
+
+    lv_obj_t *container = CreateSingleInfoTwoLineView(parent, "Address", txData->sender);
     lv_obj_align(container, LV_ALIGN_TOP_LEFT, 0, 0);
 
-    container = CreateSingleInfoTwoLineView(parent, "Message", txData->message);
+    if (txData->details != NULL) {
+        container = CreateIotaRawMessageView(parent, txData->details);
+    } else {
+        container = CreateSingleInfoTwoLineView(parent, "Message", txData->message);
+    }
     GuiAlignToPrevObj(container, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 12);
 }
 

@@ -69,6 +69,28 @@ impl DisplayIotaIntentData {
         self.sender = convert_c_char(address);
         self
     }
+
+    pub fn with_personal_message_bytes(mut self, message: &[u8]) -> Self {
+        let decoded = core::str::from_utf8(message)
+            .ok()
+            .and_then(|encoded| base64::decode(encoded).ok());
+        let display_bytes = decoded.as_deref().unwrap_or(message);
+        let display_message = core::str::from_utf8(display_bytes).ok().filter(|text| {
+            text.bytes()
+                .all(|byte| byte == b'\n' || (0x20..=0x7e).contains(&byte))
+        });
+
+        unsafe {
+            free_ptr_string(self.message);
+        }
+        if let Some(message) = display_message {
+            self.message = convert_c_char(message.to_string());
+        } else {
+            self.message = null_mut();
+            self.details = convert_c_char(display_bytes.chunks(8).map(hex::encode).join(" "));
+        }
+        self
+    }
 }
 
 impl From<Intent> for DisplayIotaIntentData {
@@ -111,12 +133,7 @@ impl From<Intent> for DisplayIotaIntentData {
                 details: null_mut(),
                 transaction_type: convert_c_char("Message".to_string()),
                 method: null_mut(),
-                message: convert_c_char(
-                    base64::decode(&personal_message.value.message)
-                        .ok()
-                        .and_then(|bytes| String::from_utf8(bytes).ok())
-                        .unwrap_or_else(|| personal_message.value.message.clone()),
-                ),
+                message: convert_c_char(personal_message.value.message),
             },
             _ => todo!("Other Intent types not implemented"),
         }
@@ -322,6 +339,10 @@ mod tests {
     use super::*;
     use crate::common::utils::recover_c_char;
     use alloc::vec;
+    use app_sui::types::{
+        intent::{Intent as SuiIntent, IntentMessage, IntentScope},
+        msg::PersonalMessageUtf8,
+    };
     use sui_transaction_types_core::{
         ObjectArg, ObjectDigest, SequenceNumber, SharedObjectMutability, SuiAddress,
     };
@@ -401,6 +422,67 @@ mod tests {
             None
         } else {
             Some(recover_c_char(ptr))
+        }
+    }
+
+    #[test]
+    fn formats_non_text_message_as_grouped_hex() {
+        let message = Intent::PersonalMessage(IntentMessage {
+            intent: SuiIntent::sui_app(IntentScope::PersonalMessage),
+            value: PersonalMessageUtf8 {
+                message: "[255,254,0,65,66,67,68,69,70]".to_string(),
+            },
+        });
+
+        let display = DisplayIotaIntentData::from(message).with_personal_message_bytes(&[
+            0xff, 0xfe, 0x00, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46,
+        ]);
+        unsafe {
+            assert!(display.message.is_null());
+            assert_eq!(
+                recover_opt(display.details),
+                Some("fffe004142434445 46".to_string())
+            );
+            display.free();
+        }
+    }
+
+    #[test]
+    fn decodes_base64_text_message() {
+        let message = Intent::PersonalMessage(IntentMessage {
+            intent: SuiIntent::sui_app(IntentScope::PersonalMessage),
+            value: PersonalMessageUtf8 {
+                message: "YWJj".to_string(),
+            },
+        });
+
+        let display = DisplayIotaIntentData::from(message).with_personal_message_bytes(b"YWJj");
+        unsafe {
+            assert_eq!(recover_opt(display.message), Some("abc".to_string()));
+            assert!(display.details.is_null());
+            display.free();
+        }
+    }
+
+    #[test]
+    fn formats_base64_message_with_emoji_as_raw_hex() {
+        let encoded = "SSBsb3ZlIE5pZ2h0bHkg8J+mig==";
+        let message = Intent::PersonalMessage(IntentMessage {
+            intent: SuiIntent::sui_app(IntentScope::PersonalMessage),
+            value: PersonalMessageUtf8 {
+                message: encoded.to_string(),
+            },
+        });
+
+        let display =
+            DisplayIotaIntentData::from(message).with_personal_message_bytes(encoded.as_bytes());
+        unsafe {
+            assert!(display.message.is_null());
+            assert_eq!(
+                recover_opt(display.details),
+                Some("49206c6f7665204e 696768746c7920f0 9fa69a".to_string())
+            );
+            display.free();
         }
     }
 

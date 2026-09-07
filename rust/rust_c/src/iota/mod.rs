@@ -14,6 +14,7 @@ use alloc::{
     vec,
 };
 use app_sui::errors::SuiError;
+use app_sui::types::intent::{IntentMessage, PersonalMessage};
 use app_sui::Intent;
 use cty::c_char;
 use structs::DisplayIotaIntentData;
@@ -26,6 +27,12 @@ use ur_registry::traits::RegistryItem;
 use zeroize::Zeroize;
 
 pub mod structs;
+
+fn extract_personal_message_bytes(intent: &[u8]) -> Vec<u8> {
+    bcs::from_bytes::<IntentMessage<PersonalMessage>>(intent)
+        .map(|message| message.value.message)
+        .unwrap_or_else(|_| intent.get(3..).unwrap_or_default().to_vec())
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn iota_get_address_from_pubkey(
@@ -57,12 +64,16 @@ pub unsafe extern "C" fn iota_parse_intent(
             Intent::TransactionData(ref transaction_data) => {
                 TransactionParseResult::success(DisplayIotaIntentData::from(data).c_ptr()).c_ptr()
             }
-            Intent::PersonalMessage(ref personal_message) => TransactionParseResult::success(
-                DisplayIotaIntentData::from(data)
-                    .with_address(address)
-                    .c_ptr(),
-            )
-            .c_ptr(),
+            Intent::PersonalMessage(_) => {
+                let message = extract_personal_message_bytes(&sign_data);
+                TransactionParseResult::success(
+                    DisplayIotaIntentData::from(data)
+                        .with_address(address)
+                        .with_personal_message_bytes(&message)
+                        .c_ptr(),
+                )
+                .c_ptr()
+            }
             _ => TransactionParseResult::from(SuiError::InvalidData("Invalid intent".to_string()))
                 .c_ptr(),
         },

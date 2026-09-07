@@ -3865,6 +3865,7 @@ dependencies = [
  "app_xrp",
  "app_zcash",
  "base64 0.11.0",
+ "bcs",
  "bitcoin",
  "bitcoin_hashes 0.14.0",
  "cbc",
