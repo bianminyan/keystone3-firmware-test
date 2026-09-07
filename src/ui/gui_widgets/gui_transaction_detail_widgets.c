@@ -225,6 +225,15 @@ static void ThrowError(int32_t errorCode)
 void GuiTransactionDetailParseSuccess(void *param)
 {
     SetParseTransactionResult(param);
+#ifdef WEB3_VERSION
+    if (g_viewType == IotaTx) {
+        PtrT_TransactionParseResult_DisplayIotaIntentData result =
+            (PtrT_TransactionParseResult_DisplayIotaIntentData)param;
+        if (result != NULL && result->data != NULL && GetIotaIsMessage(NULL, result->data)) {
+            SetCoinWallet(g_pageWidget->navBarWidget, g_chainType, "Sign Message");
+        }
+    }
+#endif
     GuiTemplateReload(g_pageWidget->contentZone, g_viewType);
     if (!g_needSign) {
         GuiCreateErrorCodeWindow(ERR_MULTISIG_TRANSACTION_ALREADY_SIGNED, NULL, (ErrorWindowCallback)GuiCloseCurrentWorkingView);

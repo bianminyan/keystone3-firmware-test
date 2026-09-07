@@ -103,7 +103,7 @@ bool GetIotaIsTransfer(void *indata, void *param)
     // extract_transaction_params() can fully decode (Transfer, Stake); an
     // unrecognised transaction leaves it NULL so only Raw Data is shown.
     if (GetIotaIsMessage(indata, param)) {
-        return true;
+        return false;
     }
     DisplayIotaIntentData *iota = (DisplayIotaIntentData *)param;
     return iota->method != NULL;
