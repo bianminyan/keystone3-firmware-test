@@ -97,7 +97,7 @@ bool GetIotaIsTransaction(void *indata, void *param)
     return !GetIotaIsMessage(indata, param);
 }
 
-bool GetIotaIsTransfer(void *indata, void *param)
+bool GetIotaShowOverview(void *indata, void *param)
 {
     // Gates the Overview tab. `method` is only ever set for the two shapes
     // extract_transaction_params() can fully decode (Transfer, Stake); an
@@ -229,7 +229,7 @@ void GuiIotaTxRawData(lv_obj_t *parent, void *totalData)
 
     lv_obj_add_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
-    // GetIotaIsTransfer() already hides the Overview tab for anything that
+    // GetIotaShowOverview() already hides the Overview tab for anything that
     // isn't a decoded Transfer/Stake; here we just flag it so the user isn't
     // left staring at raw JSON with no idea why there's no summary. It's a
     // sibling of the raw-data card, not a child of it.
