@@ -34,6 +34,8 @@ def main() -> None:
     args = parser.parse_args()
 
     defined_symbols = read_defined_symbols(args.objdump, args.elf)
+    if not defined_symbols:
+        raise RuntimeError("production ELF has no defined symbols; cannot verify forbidden symbols")
     forbidden_symbols = sorted(set(args.forbid) & defined_symbols)
     if forbidden_symbols:
         raise RuntimeError(
