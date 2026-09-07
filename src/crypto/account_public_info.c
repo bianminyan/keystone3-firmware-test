@@ -669,6 +669,11 @@ char *GetXPubPath(uint8_t chain)
     return g_chainTable[index].path;
 }
 
+static uint32_t GetDefaultReceivePath(const char *chainName)
+{
+    return (!strcmp(chainName, "SOL") || !strcmp(chainName, "HNT")) ? 2 : 0;
+}
+
 void AccountPublicHomeCoinGet(WalletState_t *walletList, uint8_t count)
 {
     int32_t ret = SUCCESS_CODE;
@@ -696,10 +701,7 @@ void AccountPublicHomeCoinGet(WalletState_t *walletList, uint8_t count)
         for (int i = 0; i < count; i++) {
             jsonItem = cJSON_CreateObject();
             cJSON_AddItemToObject(jsonItem, "recvIndex", cJSON_CreateNumber(0));
-            // new accounts default SOL to the change/single-address path (SOLBip44Change); existing accounts already have this key and are unaffected.
-            int solCmpResult = -1;
-            uint32_t defaultRecvPath = (strcmp_s(walletList[i].name, strlen(walletList[i].name) + 1, "SOL", &solCmpResult) == EOK && solCmpResult == 0) ? 2 : 0;
-            cJSON_AddItemToObject(jsonItem, "recvPath", cJSON_CreateNumber(defaultRecvPath));
+            cJSON_AddItemToObject(jsonItem, "recvPath", cJSON_CreateNumber(GetDefaultReceivePath(walletList[i].name)));
             cJSON_AddItemToObject(jsonItem, "firstRecv", cJSON_CreateBool(false));
             if ((!strcmp(walletList[i].name, "BTC") || !strcmp(walletList[i].name, "ETH"))) {
                 cJSON_AddItemToObject(jsonItem, "manage", cJSON_CreateBool(true));
@@ -776,7 +778,7 @@ void AccountPublicHomeCoinSet(WalletState_t *walletList, uint8_t count)
         if (item == NULL) {
             item = cJSON_CreateObject();
             cJSON_AddItemToObject(item, "recvIndex", cJSON_CreateNumber(0));
-            cJSON_AddItemToObject(item, "recvPath", cJSON_CreateNumber(0));
+            cJSON_AddItemToObject(item, "recvPath", cJSON_CreateNumber(GetDefaultReceivePath(walletList[i].name)));
             cJSON_AddItemToObject(item, "firstRecv", cJSON_CreateBool(false));
             cJSON_AddItemToObject(item, "manage", cJSON_CreateBool(walletList[i].state));
 #ifdef BTC_ONLY
@@ -1842,7 +1844,7 @@ void SetFirstReceive(const char* chainName, bool isFirst)
         printf("SetFirstReceive cannot get %s\r\n", chainName);
         cJSON *jsonItem = cJSON_CreateObject();
         cJSON_AddItemToObject(jsonItem, "recvIndex", cJSON_CreateNumber(0));
-        cJSON_AddItemToObject(jsonItem, "recvPath", cJSON_CreateNumber(0));
+        cJSON_AddItemToObject(jsonItem, "recvPath", cJSON_CreateNumber(GetDefaultReceivePath(chainName)));
         cJSON_AddItemToObject(jsonItem, "firstRecv", cJSON_CreateBool(isFirst));
         cJSON_AddItemToObject(jsonItem, "manage", cJSON_CreateBool(true));
         cJSON_AddItemToObject(rootJson, chainName, jsonItem);
@@ -2041,7 +2043,7 @@ uint32_t GetAccountReceiveIndex(const char* chainName)
         printf("receive index cannot get %s\r\n", chainName);
         cJSON *jsonItem = cJSON_CreateObject();
         cJSON_AddItemToObject(jsonItem, "recvIndex", cJSON_CreateNumber(0)); // recvIndex is the address index
-        cJSON_AddItemToObject(jsonItem, "recvPath", cJSON_CreateNumber(0)); // recvPath is the derivation path type
+        cJSON_AddItemToObject(jsonItem, "recvPath", cJSON_CreateNumber(GetDefaultReceivePath(chainName))); // recvPath is the derivation path type
         cJSON_AddItemToObject(jsonItem, "firstRecv", cJSON_CreateBool(true)); // firstRecv is the first receive address
         if ((!strcmp(chainName, "BTC") || !strcmp(chainName, "ETH"))) {
             cJSON_AddItemToObject(jsonItem, "manage", cJSON_CreateBool(true));
@@ -2090,9 +2092,7 @@ uint32_t GetAccountReceivePath(const char* chainName)
 
     cJSON *item = cJSON_GetObjectItem(rootJson, chainName);
     if (item == NULL) {
-        // new accounts default SOL to the change/single-address path (SOLBip44Change); existing accounts already have this key and are unaffected.
-        int solCmpResult = -1;
-        index = (strcmp_s(chainName, strlen(chainName) + 1, "SOL", &solCmpResult) == EOK && solCmpResult == 0) ? 2 : 0;
+        index = GetDefaultReceivePath(chainName);
         cJSON *jsonItem = cJSON_CreateObject();
         cJSON_AddItemToObject(jsonItem, "recvIndex", cJSON_CreateNumber(0)); // recvIndex is the address index
         cJSON_AddItemToObject(jsonItem, "recvPath", cJSON_CreateNumber(index)); // recvPath is the derivation path type
