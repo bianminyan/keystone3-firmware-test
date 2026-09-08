@@ -30,6 +30,7 @@ static uint32_t BinarySearchBootHead(void)
 
     for (int i = startIndex + 1; i < endIndex; i++) {
         memcpy_s(buffer, SECTOR_SIZE, (uint32_t *)(APP_ADDR + i * SECTOR_SIZE), SECTOR_SIZE);
+        WDT_ReloadCounter();
         if (memcmp(buffer, MAGIC_NUMBER, MAGIC_NUMBER_SIZE) == 0) {
             printf("find magic number\n");
             SRAM_FREE(buffer);
@@ -56,6 +57,8 @@ static void Delay(uint32_t ms)
 int32_t UpdateBootFromFlash(void)
 {
     osKernelLock();
+    // Scheduling is locked: service the watchdog here only as upgrade work advances.
+    WDT_ReloadCounter();
     int num = BinarySearchBootHead();
     printf("num = %d\n", num);
     if (num <= 0) {
@@ -92,6 +95,7 @@ int32_t UpdateBootFromFlash(void)
     memset(g_fileUnit, 0xFF, sizeof(g_fileUnit));
     memcpy(g_fileUnit, (uint32_t *)(baseAddr + 4 + 32 + 0x30 + MAGIC_NUMBER_SIZE), BOOT_HEAD_SIZE);
     QspiFlashEraseAndWrite(0x01000000, g_fileUnit, SECTOR_SIZE);
+    WDT_ReloadCounter();
 
     sha256_update(&ctx, (uint32_t *)(baseAddr + 4 + 32 + MAGIC_NUMBER_SIZE), 0x134);
     crcCalc = crc32_ieee(0, (uint32_t *)(baseAddr + 4 + 32 + MAGIC_NUMBER_SIZE), 0x134);
@@ -115,6 +119,7 @@ int32_t UpdateBootFromFlash(void)
         crcCalc = crc32_ieee(crcCalc, (uint32_t *)(APP_ADDR + i * SECTOR_SIZE), len);
         printf("writeAddr = %#x\n", (unsigned int)writeAddr);
         QspiFlashEraseAndWrite(writeAddr, g_fileUnit, SECTOR_SIZE);
+        WDT_ReloadCounter();
     }
 
     sha256_done(&ctx, (struct sha256 *)calHash);
