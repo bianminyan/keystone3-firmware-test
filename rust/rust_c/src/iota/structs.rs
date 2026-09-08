@@ -75,13 +75,11 @@ impl DisplayIotaIntentData {
         // representations such as Base64 without an explicit protocol marker.
         // Only printable ASCII is guaranteed to render unambiguously with the
         // confirmation UI fonts; everything else is shown as raw hex.
-        let display_message = core::str::from_utf8(message)
-            .ok()
-            .filter(|_| {
-                message
-                    .iter()
-                    .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-            });
+        let display_message = core::str::from_utf8(message).ok().filter(|_| {
+            message
+                .iter()
+                .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+        });
 
         // SAFETY: `self.message` is null or was allocated by `convert_c_char` in `From<Intent>`.
         unsafe {
@@ -498,8 +496,7 @@ mod tests {
             },
         });
 
-        let display =
-            DisplayIotaIntentData::from(message).with_personal_message_bytes(b"A\x01B");
+        let display = DisplayIotaIntentData::from(message).with_personal_message_bytes(b"A\x01B");
         unsafe {
             assert!(display.message.is_null());
             assert_eq!(recover_opt(display.details), Some("410142".to_string()));
