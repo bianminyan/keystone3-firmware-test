@@ -14,7 +14,7 @@ use crate::common::ffi::VecFFI;
 use crate::common::free::{free_ptr_string, Free};
 use crate::common::structs::TransactionParseResult;
 use crate::common::types::{Ptr, PtrString, PtrT};
-use crate::common::utils::{convert_c_char, validate_c_char};
+use crate::common::utils::convert_c_char;
 use crate::{free_str_ptr, free_vec, impl_c_ptr, impl_c_ptrs, make_free_method};
 use app_sui::Intent;
 use sui_transaction_types_core::{
@@ -73,10 +73,15 @@ impl DisplayIotaIntentData {
     pub fn with_personal_message_bytes(mut self, message: &[u8]) -> Self {
         // These are the exact bytes passed to iota_sign_intent. Do not decode
         // representations such as Base64 without an explicit protocol marker.
+        // Only printable ASCII is guaranteed to render unambiguously with the
+        // confirmation UI fonts; everything else is shown as raw hex.
         let display_message = core::str::from_utf8(message)
             .ok()
-            .filter(|text| validate_c_char(text).is_ok())
-            .filter(|text| !app_utils::is_cjk(text));
+            .filter(|_| {
+                message
+                    .iter()
+                    .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+            });
 
         // SAFETY: `self.message` is null or was allocated by `convert_c_char` in `From<Intent>`.
         unsafe {
@@ -463,7 +468,7 @@ mod tests {
     }
 
     #[test]
-    fn displays_utf8_message_with_emoji() {
+    fn formats_emoji_message_as_raw_hex() {
         let text = "I love Nightly 🦊";
         let message = Intent::PersonalMessage(IntentMessage {
             intent: SuiIntent::sui_app(IntentScope::PersonalMessage),
@@ -475,8 +480,29 @@ mod tests {
         let display =
             DisplayIotaIntentData::from(message).with_personal_message_bytes(text.as_bytes());
         unsafe {
-            assert_eq!(recover_opt(display.message), Some(text.to_string()));
-            assert!(display.details.is_null());
+            assert!(display.message.is_null());
+            assert_eq!(
+                recover_opt(display.details),
+                Some("49206c6f7665204e 696768746c7920f0 9fa68a".to_string())
+            );
+            display.free();
+        }
+    }
+
+    #[test]
+    fn formats_control_character_message_as_raw_hex() {
+        let message = Intent::PersonalMessage(IntentMessage {
+            intent: SuiIntent::sui_app(IntentScope::PersonalMessage),
+            value: PersonalMessageUtf8 {
+                message: "[65,1,66]".to_string(),
+            },
+        });
+
+        let display =
+            DisplayIotaIntentData::from(message).with_personal_message_bytes(b"A\x01B");
+        unsafe {
+            assert!(display.message.is_null());
+            assert_eq!(recover_opt(display.details), Some("410142".to_string()));
             display.free();
         }
     }
