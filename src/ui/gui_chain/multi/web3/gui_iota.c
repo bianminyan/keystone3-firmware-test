@@ -5,6 +5,7 @@
 #include "screen_manager.h"
 #include "keystore.h"
 #include "account_manager.h"
+#include "account_public_info.h"
 #include "secret_cache.h"
 #include "user_memory.h"
 #include "gui_chain_components.h"
@@ -41,8 +42,14 @@ void *GuiGetIotaData(void)
 {
     CHECK_FREE_PARSE_RESULT(g_parseResult);
     void *data = g_isMulti ? g_urMultiResult->data : g_urResult->data;
+    ExtendedPublicKey keys[XPUB_TYPE_IOTA_9 - XPUB_TYPE_IOTA_0 + 1];
+    for (uint32_t i = 0; i < NUMBER_OF_ARRAYS(keys); i++) {
+        ChainType chain = XPUB_TYPE_IOTA_0 + i;
+        keys[i].path = GetCurrentAccountPath(chain);
+        keys[i].xpub = GetCurrentAccountPublicKey(chain);
+    }
     do {
-        PtrT_TransactionParseResult_DisplayIotaIntentData parseResult = iota_parse_intent(data);
+        PtrT_TransactionParseResult_DisplayIotaIntentData parseResult = iota_parse_intent(data, keys, NUMBER_OF_ARRAYS(keys));
         CHECK_CHAIN_BREAK(parseResult);
         g_parseResult = (void *)parseResult;
     } while (0);

@@ -65,13 +65,28 @@ pub struct DisplayIotaIntentData {
 impl_c_ptr!(DisplayIotaIntentData);
 
 impl DisplayIotaIntentData {
+    pub fn personal_message(message: &[u8], address: String) -> Self {
+        Self {
+            amount: null_mut(),
+            max_gas_fee: null_mut(),
+            gas_sponsored: false,
+            sender: convert_c_char(address),
+            recipient: null_mut(),
+            details: null_mut(),
+            transaction_type: convert_c_char("Message".to_string()),
+            method: null_mut(),
+            message: null_mut(),
+        }
+        .with_personal_message_bytes(message)
+    }
+
     pub fn with_address(mut self, address: String) -> Self {
         self.sender = convert_c_char(address);
         self
     }
 
     pub fn with_personal_message_bytes(mut self, message: &[u8]) -> Self {
-        // These are the exact bytes passed to iota_sign_intent. Do not decode
+        // These are the decoded BCS message bytes. Do not decode
         // representations such as Base64 without an explicit protocol marker.
         // Only printable ASCII is guaranteed to render unambiguously with the
         // confirmation UI fonts; everything else is shown as raw hex.
@@ -84,7 +99,9 @@ impl DisplayIotaIntentData {
         // SAFETY: `self.message` is null or was allocated by `convert_c_char` in `From<Intent>`.
         unsafe {
             free_ptr_string(self.message);
+            free_ptr_string(self.details);
         }
+        self.details = null_mut();
         if let Some(message) = display_message {
             self.message = convert_c_char(message.to_string());
         } else {
@@ -348,6 +365,351 @@ mod tests {
     use sui_transaction_types_core::{
         ObjectArg, ObjectDigest, SequenceNumber, SharedObjectMutability, SuiAddress,
     };
+
+    struct RequestFixture {
+        request: ur_registry::iota::iota_sign_request::IotaSignRequest,
+        keys: Vec<crate::common::structs::ExtendedPublicKey>,
+        address: String,
+    }
+
+    impl RequestFixture {
+        fn new(bytes: Vec<u8>) -> Self {
+            use ur_registry::crypto_key_path::CryptoKeyPath;
+            let path = "m/44'/4218'/0'/0'/0'".to_string();
+            let pubkey = hex::encode(crate::sui::get_public_key(&[1; 32], &path).unwrap());
+            let address = app_iota::address::get_address_from_pubkey(pubkey.clone()).unwrap();
+            Self {
+                request: ur_registry::iota::iota_sign_request::IotaSignRequest::new(
+                    None,
+                    bytes,
+                    vec![CryptoKeyPath::from_path(path.clone(), Some([1, 2, 3, 4])).unwrap()],
+                    Some(vec![hex::decode(&address[2..]).unwrap()]),
+                    None,
+                ),
+                keys: vec![crate::common::structs::ExtendedPublicKey {
+                    path: convert_c_char(path),
+                    xpub: convert_c_char(pubkey),
+                }],
+                address,
+            }
+        }
+
+        unsafe fn parse(&self) -> Result<DisplayIotaIntentData, app_sui::errors::SuiError> {
+            super::super::parse_iota_request(&self.request, &self.keys)
+        }
+    }
+
+    impl Drop for RequestFixture {
+        fn drop(&mut self) {
+            for key in &self.keys {
+                unsafe { key.free() };
+            }
+        }
+    }
+
+    fn bcs_message(bytes: &[u8]) -> Vec<u8> {
+        bcs::to_bytes(&IntentMessage {
+            intent: SuiIntent::sui_app(IntentScope::PersonalMessage),
+            value: app_sui::types::intent::PersonalMessage {
+                message: bytes.to_vec(),
+            },
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn request_parser_rejects_raw_message_fallback() {
+        let fixture = RequestFixture::new(hex::decode("030000616263").unwrap());
+        unsafe {
+            let result = fixture.parse();
+            if let Ok(display) = &result {
+                display.free();
+            }
+            assert!(
+                result.is_err(),
+                "raw input must not be reinterpreted after BCS failure"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_entry_passes_device_keys_and_returns_display_or_error() {
+        // Inspect the public repr(C) response layout just as the GUI caller does.
+        #[repr(C)]
+        struct ParseResponse {
+            data: *mut DisplayIotaIntentData,
+            error_code: u32,
+            error_message: PtrString,
+        }
+        let mut fixture = RequestFixture::new(bcs_message(b"abc\0def"));
+        unsafe {
+            for with_keys in [true, false] {
+                let (keys, len) = if with_keys {
+                    (fixture.keys.as_mut_ptr(), fixture.keys.len() as u32)
+                } else {
+                    (null_mut(), 0)
+                };
+                let ptr =
+                    super::super::iota_parse_intent(&mut fixture.request as *mut _ as _, keys, len);
+                let response = &*(ptr as *const ParseResponse);
+                if with_keys {
+                    assert_eq!(response.error_code, 0);
+                    let display = &*response.data;
+                    assert!(display.message.is_null());
+                    assert_eq!(recover_opt(display.details).unwrap(), "61626300646566");
+                    assert_eq!(recover_opt(display.sender).unwrap(), fixture.address);
+                } else {
+                    assert_ne!(response.error_code, 0);
+                    assert!(response.data.is_null());
+                }
+                Box::from_raw(ptr).free();
+            }
+        }
+    }
+
+    #[test]
+    fn request_parser_rejects_spoofed_address() {
+        let mut fixture = RequestFixture::new(bcs_message(b"abc"));
+        fixture.request.set_addresses(Some(vec![vec![0x42; 32]]));
+        unsafe {
+            let result = fixture.parse();
+            if let Ok(display) = &result {
+                display.free();
+            }
+            assert!(
+                result.is_err(),
+                "request address must match the signing key"
+            );
+        }
+    }
+
+    #[test]
+    fn request_parser_preserves_standard_bcs_text() {
+        for message in [
+            b"abc".to_vec(),
+            Vec::new(),
+            vec![b'A'; 128],
+            b"YWJj".to_vec(),
+        ] {
+            let fixture = RequestFixture::new(bcs_message(&message));
+            unsafe {
+                let display = fixture.parse().unwrap();
+                assert_eq!(recover_opt(display.message).unwrap().as_bytes(), message);
+                assert!(display.details.is_null());
+                assert_eq!(recover_opt(display.sender).unwrap(), fixture.address);
+                display.free();
+            }
+        }
+        assert_eq!(bcs_message(b"abc"), hex::decode("03000003616263").unwrap());
+    }
+
+    #[test]
+    fn request_parser_preserves_non_renderable_bytes_as_hex() {
+        for message in [
+            b"abc\0def".to_vec(),
+            b"A\x01B".to_vec(),
+            vec![0xff, 0xfe],
+            hex::decode("e4bda0e5a5bd").unwrap(),
+            hex::decode("f09f9880").unwrap(),
+        ] {
+            let fixture = RequestFixture::new(bcs_message(&message));
+            unsafe {
+                let display = fixture.parse().unwrap();
+                assert!(display.message.is_null());
+                assert_eq!(
+                    recover_opt(display.details).unwrap().replace(' ', ""),
+                    hex::encode(&message)
+                );
+                display.free();
+            }
+        }
+    }
+
+    #[test]
+    fn request_parser_rejects_malformed_bcs_and_intents() {
+        for bytes in [
+            "",
+            "03",
+            "0300",
+            "030000",
+            "0301000161",
+            "0300010161",
+            "030000036162",
+            "030000016162",
+            "030000810061",
+            "03000080",
+            "030000610062", // A raw-format NUL message must not reach the display.
+        ] {
+            let fixture = RequestFixture::new(hex::decode(bytes).unwrap());
+            unsafe {
+                assert!(fixture.parse().is_err(), "accepted {bytes}");
+            }
+        }
+    }
+
+    #[test]
+    fn request_parser_uses_device_address_when_optional_address_is_absent() {
+        let mut fixture = RequestFixture::new(bcs_message(b"abc"));
+        fixture.request.set_addresses(None);
+        unsafe {
+            let display = fixture.parse().unwrap();
+            assert_eq!(recover_opt(display.sender).unwrap(), fixture.address);
+            display.free();
+        }
+    }
+
+    #[test]
+    fn request_parser_rejects_malformed_addresses_and_missing_keys() {
+        let mut fixture = RequestFixture::new(bcs_message(b"abc"));
+        for addresses in [vec![], vec![vec![]], vec![vec![0; 31]], vec![vec![0; 33]]] {
+            fixture.request.set_addresses(Some(addresses));
+            unsafe {
+                assert!(fixture.parse().is_err());
+            }
+        }
+        fixture.request.set_addresses(None);
+        unsafe {
+            assert!(super::super::parse_iota_request(&fixture.request, &[]).is_err());
+            free_ptr_string(fixture.keys[0].xpub);
+            fixture.keys[0].xpub = null_mut();
+            assert!(fixture.parse().is_err());
+        }
+    }
+
+    #[test]
+    fn request_parser_selects_exact_device_path_not_first_key() {
+        use ur_registry::crypto_key_path::CryptoKeyPath;
+        let mut fixture = RequestFixture::new(bcs_message(b"abc"));
+        let path = "M/44'/4218'/1'/0'/0'".to_string();
+        let pubkey = hex::encode(crate::sui::get_public_key(&[1; 32], &path).unwrap());
+        let address = app_iota::address::get_address_from_pubkey(pubkey.clone()).unwrap();
+        fixture
+            .keys
+            .push(crate::common::structs::ExtendedPublicKey {
+                path: convert_c_char(path.clone()),
+                xpub: convert_c_char(pubkey),
+            });
+        fixture
+            .request
+            .set_derivation_paths(vec![
+                CryptoKeyPath::from_path(path, Some([1, 2, 3, 4])).unwrap()
+            ]);
+        unsafe {
+            assert!(fixture.parse().is_err()); // The supplied address still belongs to account 0.
+            fixture
+                .request
+                .set_addresses(Some(vec![hex::decode(&address[2..]).unwrap()]));
+            let display = fixture.parse().unwrap();
+            assert_eq!(recover_opt(display.sender).unwrap(), address);
+            display.free();
+        }
+    }
+
+    #[test]
+    fn request_parser_rejects_missing_or_unmatched_paths() {
+        use ur_registry::crypto_key_path::{CryptoKeyPath, PathComponent};
+        let mut fixture = RequestFixture::new(bcs_message(b"abc"));
+        fixture.request.set_addresses(None);
+        for path in [
+            "m/44'/4218'/10'/0'/0'",
+            "m/44'/4218'/0'/0'/1'",
+            "m/44'/4218'/0'/0/0'",
+            "m/44'/784'/0'/0'/0'",
+        ] {
+            fixture
+                .request
+                .set_derivation_paths(vec![CryptoKeyPath::from_path(
+                    path.to_string(),
+                    Some([1, 2, 3, 4]),
+                )
+                .unwrap()]);
+            unsafe {
+                assert!(fixture.parse().is_err(), "accepted {path}");
+            }
+        }
+        fixture
+            .request
+            .set_derivation_paths(vec![CryptoKeyPath::new(
+                vec![PathComponent::new(None, true).unwrap()],
+                None,
+                None,
+            )]);
+        unsafe {
+            assert!(fixture.parse().is_err());
+        }
+        fixture
+            .request
+            .set_derivation_paths(vec![CryptoKeyPath::default()]);
+        unsafe {
+            assert!(fixture.parse().is_err());
+        }
+        fixture.request.set_derivation_paths(vec![]);
+        unsafe {
+            assert!(fixture.parse().is_err());
+        }
+    }
+
+    #[test]
+    fn signing_entry_rejects_invalid_messages_and_clears_seed() {
+        for bytes in ["030000616263", "030000036162", "0301000161"] {
+            let mut fixture = RequestFixture::new(hex::decode(bytes).unwrap());
+            let mut seed = [1u8; 32];
+            unsafe {
+                let result = Box::from_raw(super::super::iota_sign_intent(
+                    &mut fixture.request as *mut _ as _,
+                    seed.as_mut_ptr(),
+                    seed.len() as u32,
+                ));
+                assert!(result.data.is_null(), "signed invalid request {bytes}");
+                assert_eq!(seed, [0; 32]);
+                result.free();
+            }
+        }
+    }
+
+    #[test]
+    fn signing_entry_binds_address_and_preserves_valid_signatures() {
+        let mut fixture = RequestFixture::new(bcs_message(b"abc\0def"));
+        let path = "m/44'/4218'/0'/0'/0'".to_string();
+        let expected_signature =
+            app_sui::sign_intent(&[1; 32], &path, &fixture.request.get_intent_message()).unwrap();
+        let pubkey = crate::sui::get_public_key(&[1; 32], &path).unwrap();
+        let signature = ur_registry::iota::iota_signature::IotaSignature::new(
+            None,
+            expected_signature.to_vec(),
+            Some(pubkey),
+        );
+        let bytes: Vec<u8> = signature.try_into().unwrap();
+        let expected = crate::common::ur::UREncodeResult::encode(
+            bytes,
+            "iota-signature".to_string(),
+            crate::common::ur::FRAGMENT_MAX_LENGTH_DEFAULT,
+        );
+        unsafe {
+            let mut seed = [1u8; 32];
+            let result = Box::from_raw(super::super::iota_sign_intent(
+                &mut fixture.request as *mut _ as _,
+                seed.as_mut_ptr(),
+                seed.len() as u32,
+            ));
+            assert_eq!(recover_opt(result.data), recover_opt(expected.data));
+            assert!(!result.data.is_null());
+            assert_eq!(seed, [0; 32]);
+            result.free();
+            expected.free();
+
+            fixture.request.set_addresses(Some(vec![vec![0x42; 32]]));
+            let mut seed = [1u8; 32];
+            let result = Box::from_raw(super::super::iota_sign_intent(
+                &mut fixture.request as *mut _ as _,
+                seed.as_mut_ptr(),
+                seed.len() as u32,
+            ));
+            assert!(result.data.is_null());
+            assert_eq!(seed, [0; 32]);
+            result.free();
+        }
+    }
 
     // `crate::bindings::GenerateTRNGRandomness` is only implemented in the
     // firmware/simulator C sources, which `cargo test` never links against;
