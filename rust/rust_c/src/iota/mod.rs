@@ -1,6 +1,6 @@
 use crate::common::errors::RustCError;
-use crate::common::structs::{ExtendedPublicKey, SimpleResponse};
 use crate::common::structs::TransactionParseResult;
+use crate::common::structs::{ExtendedPublicKey, SimpleResponse};
 use crate::common::types::{PtrBytes, PtrString, PtrT, PtrUR};
 use crate::common::ur::{UREncodeResult, FRAGMENT_MAX_LENGTH_DEFAULT};
 use crate::common::utils::{convert_c_char, recover_c_char};
