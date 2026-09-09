@@ -122,6 +122,16 @@ bool GetIotaIsMessage(void *indata, void *param)
     return !strcmp(iota->transaction_type, "Message");
 }
 
+bool IsIotaMsg(ViewType viewType)
+{
+    if (viewType != IotaTx || g_isSignMessageHash || g_parseResult == NULL) {
+        return false;
+    }
+    PtrT_TransactionParseResult_DisplayIotaIntentData result = (PtrT_TransactionParseResult_DisplayIotaIntentData)g_parseResult;
+    return result->data != NULL && result->data->transaction_type != NULL &&
+           GetIotaIsMessage(NULL, result->data);
+}
+
 static lv_obj_t *CreateIotaRawMessageView(lv_obj_t *parent, const char *rawData)
 {
     const uint16_t width = 408;

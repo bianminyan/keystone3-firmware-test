@@ -1,5 +1,6 @@
-#include "define.h"
 #include "gui_chain.h"
+
+#include "define.h"
 #include "keystore.h"
 #include "user_memory.h"
 #ifdef COMPILE_SIMULATOR
@@ -148,7 +149,9 @@ GuiChainCoinType ViewTypeToChainTypeSwitch(uint8_t viewType)
 #ifdef WEB3_VERSION
 bool IsMessageType(uint8_t type)
 {
-    return type == EthPersonalMessage || type == EthTypedData || type == TronPersonalMessage || IsCosmosMsg(type) || type == SolanaMessage || IsAptosMsg(type) || type == BtcMsg || type == ArweaveMessage || type == CardanoSignData || type == CardanoSignCip8Data;
+    return type == EthPersonalMessage || type == EthTypedData || type == TronPersonalMessage ||
+           IsCosmosMsg(type) || type == SolanaMessage || IsAptosMsg(type) ||
+           IsIotaMsg(type) || type == BtcMsg || type == ArweaveMessage || type == CardanoSignData || type == CardanoSignCip8Data;
 }
 
 bool isCatalystVotingRegistration(uint8_t type)

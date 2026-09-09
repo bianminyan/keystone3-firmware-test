@@ -760,11 +760,13 @@ static void CreateChangeEntropyView(void)
     lv_label_set_recolor(label, true);
     GuiAlignToPrevObj(label, LV_ALIGN_OUT_RIGHT_TOP, 10, 0);
     lv_obj_set_width(label, 344);
-    height = lv_obj_get_self_height(label) + 12;
+    lv_obj_update_layout(label);
+    lv_obj_t *firstDetailLabel = label;
 
     label = GuiCreateIllustrateLabel(descCont, "·");
     lv_obj_set_style_text_color(label, ORANGE_COLOR, LV_PART_MAIN);
-    lv_obj_align_to(label, dot, LV_ALIGN_OUT_BOTTOM_LEFT, 0, height);
+    lv_obj_align_to(label, firstDetailLabel, LV_ALIGN_OUT_BOTTOM_LEFT,
+                    -lv_obj_get_width(dot) - 10, 12);
 
     label = GuiCreateIllustrateLabel(descCont, _("change_entropy_dice_detail_desc_2"));
     GuiAlignToPrevObj(label, LV_ALIGN_OUT_RIGHT_TOP, 10, 0);
