@@ -2127,33 +2127,48 @@ UREncodeResult *GuiGetAdaSignUrDataUnlimited(void)
     return encodeResult;
 }
 
-ChainType GetAdaXPubTypeByIndexAndDerivationType(AdaXPubType type, uint16_t index)
+ChainType GetAdaXPubTypeByIndexAndDerivationType(AdaXPubType type, uint32_t index)
 {
-    if (index > 23) {
-        index = 0;
+    bool valid = index <= XPUB_TYPE_ADA_23 - XPUB_TYPE_ADA_0 &&
+                 (type == STANDARD_ADA || type == LEDGER_ADA);
+    if (!valid) {
+        ClearSecretCache();
     }
+    ASSERT(valid);
     ChainType base = (type == STANDARD_ADA) ? XPUB_TYPE_ADA_0 : XPUB_TYPE_LEDGER_ADA_0;
     return (ChainType)(base + index);
 }
 
-ChainType GetAdaXPubTypeByIndex(uint16_t index)
+ChainType GetAdaXPubTypeByIndex(uint32_t index)
 {
     return GetAdaXPubTypeByIndexAndDerivationType(GetAdaXPubType(), index);
 }
 
-ChainType GetReceivePageAdaXPubTypeByIndex(uint16_t index)
+ChainType GetReceivePageAdaXPubTypeByIndex(uint32_t index)
 {
     return GetAdaXPubTypeByIndexAndDerivationType(GetReceivePageAdaXPubType(), index);
 }
 
 char *GuiGetADABaseAddressByXPub(char *xPub)
 {
+    memset_s(g_adaBaseAddr, sizeof(g_adaBaseAddr), 0, sizeof(g_adaBaseAddr));
     SimpleResponse_c_char *result = NULL;
-    result = cardano_get_base_address(xPub, 0, 1);
-    if (result->error_code == 0) {
-        strcpy(g_adaBaseAddr, result->data);
+    if (xPub != NULL && xPub[0] != '\0') {
+        result = cardano_get_base_address(xPub, 0, 1);
     }
-    free_simple_response_c_char(result);
+    bool valid = result != NULL && result->error_code == 0 && result->data != NULL && result->data[0] != '\0' &&
+                 strnlen_s(result->data, sizeof(g_adaBaseAddr)) < sizeof(g_adaBaseAddr);
+    if (valid) {
+        valid = strcpy_s(g_adaBaseAddr, sizeof(g_adaBaseAddr), result->data) == 0;
+    }
+    if (result != NULL) {
+        free_simple_response_c_char(result);
+    }
+    if (!valid) {
+        memset_s(g_adaBaseAddr, sizeof(g_adaBaseAddr), 0, sizeof(g_adaBaseAddr));
+        ClearSecretCache();
+    }
+    ASSERT(valid);
     return g_adaBaseAddr;
 }
 

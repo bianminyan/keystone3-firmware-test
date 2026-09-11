@@ -30,18 +30,27 @@ char *GuiGetXrpPath(uint16_t index)
 
 char *GuiGetXrpAddressByIndex(uint16_t index)
 {
-    char *xPub;
+    memset_s(g_xrpAddr, sizeof(g_xrpAddr), 0, sizeof(g_xrpAddr));
     char *hdPath = GuiGetXrpPath(index);
-    SimpleResponse_c_char *result;
-
-    xPub = GetCurrentAccountPublicKey(XPUB_TYPE_XRP);
-    result = xrp_get_address(hdPath, xPub, XRP_ROOT_PATH);
-
-    if (result->error_code == 0) {
-        strcpy_s(g_xrpAddr, XRP_ADD_MAX_LEN, result->data);
+    char *xPub = GetCurrentAccountPublicKey(XPUB_TYPE_XRP);
+    SimpleResponse_c_char *result = NULL;
+    if (xPub != NULL && xPub[0] != '\0') {
+        result = xrp_get_address(hdPath, xPub, XRP_ROOT_PATH);
     }
-
-    free_simple_response_c_char(result);
+    bool valid = result != NULL && result->error_code == 0 && result->data != NULL && result->data[0] != '\0' &&
+                 strnlen_s(result->data, sizeof(g_xrpAddr)) < sizeof(g_xrpAddr);
+    if (valid) {
+        valid = strcpy_s(g_xrpAddr, sizeof(g_xrpAddr), result->data) == 0;
+    }
+    if (result != NULL) {
+        free_simple_response_c_char(result);
+    }
+    if (!valid) {
+        memset_s(g_xrpAddr, sizeof(g_xrpAddr), 0, sizeof(g_xrpAddr));
+        memset_s(g_hdPath, sizeof(g_hdPath), 0, sizeof(g_hdPath));
+        ClearSecretCache();
+    }
+    ASSERT(valid);
     return g_xrpAddr;
 }
 

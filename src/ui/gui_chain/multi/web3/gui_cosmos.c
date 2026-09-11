@@ -96,9 +96,15 @@ char *GetCosmosChainAddressByCoinTypeAndIndex(uint8_t chainType,  uint32_t addre
     char rootPath[BUFFER_SIZE_32];
     char hdPath[BUFFER_SIZE_32];
     const CosmosChain_t *chain = GuiGetCosmosChain(chainType);
+    if (chain == NULL) {
+        return NULL;
+    }
     snprintf_s(rootPath, BUFFER_SIZE_32, "M/44'/%u'/0'", chain->coinType);
     snprintf_s(hdPath, BUFFER_SIZE_32, "%s/0/%u", rootPath, (unsigned int)address_index);
     xPub = GetCurrentAccountPublicKey(chain->xpubType);
+    if (xPub == NULL || xPub[0] == '\0') {
+        return NULL;
+    }
     return (char *) cosmos_get_address(hdPath, xPub, rootPath, (char*)chain->prefix);
 }
 

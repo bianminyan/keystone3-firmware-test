@@ -1,3 +1,4 @@
+#include "secret_cache.h"
 #include "gui_style.h"
 #include "gui_obj.h"
 #include "gui_button.h"
@@ -1233,13 +1234,20 @@ static void GuiCreateSwitchAccountWidget()
 
 static void ModelGetAddress(uint32_t index, AddressDataItem_t *item, uint8_t type)
 {
-    char *xPub = NULL, *pvk = NULL, hdPath[BUFFER_SIZE_128];
+    memset_s(item, sizeof(*item), 0, sizeof(*item));
+    char *xPub = NULL, *pvk = NULL, hdPath[BUFFER_SIZE_128] = {0};
     SimpleResponse_c_char *result = NULL;
     switch (g_chainCard) {
 #ifdef WEB3_VERSION
     case HOME_WALLET_CARD_ADA: {
         uint32_t currentAccount = GetAccountIndex(GetCoinCardByIndex(g_chainCard)->coin);
+        if (currentAccount > XPUB_TYPE_ADA_23 - XPUB_TYPE_ADA_0 || type > 2) {
+            break;
+        }
         xPub = GetCurrentAccountPublicKey(GetReceivePageAdaXPubTypeByIndex(currentAccount));
+        if (xPub == NULL || xPub[0] == '\0') {
+            break;
+        }
         snprintf_s(hdPath, BUFFER_SIZE_128, "m/1852'/1815'/%u'/0/%u", (unsigned int)currentAccount, (unsigned int)index);
         // cardano mainnet;
         switch (type) {
@@ -1263,6 +1271,9 @@ static void ModelGetAddress(uint32_t index, AddressDataItem_t *item, uint8_t typ
         case 1:
             xPub = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_0);
             pvk = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_PVK_0);
+            if (xPub == NULL || xPub[0] == '\0' || pvk == NULL || pvk[0] == '\0') {
+                break;
+            }
             hdPath[0] = '\0';
             bool isPrimaryAccount = index == 0;
             result = monero_get_address(xPub, pvk, index, 0, !isPrimaryAccount);
@@ -1270,6 +1281,9 @@ static void ModelGetAddress(uint32_t index, AddressDataItem_t *item, uint8_t typ
         default:
             xPub = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_0);
             pvk = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_PVK_0);
+            if (xPub == NULL || xPub[0] == '\0' || pvk == NULL || pvk[0] == '\0') {
+                break;
+            }
             uint32_t accountIndex = g_selectedAccount[GetCurrentAccountIndex()];
             bool isSubAddress = index != 0 || accountIndex != 0;
             snprintf_s(hdPath, BUFFER_SIZE_128, "m/44'/128'/0'/0/%u", (unsigned int)index);
@@ -1281,14 +1295,22 @@ static void ModelGetAddress(uint32_t index, AddressDataItem_t *item, uint8_t typ
     default:
         break;
     }
-    ASSERT(xPub);
-
-    if (result->error_code == 0) {
-        item->index = index;
-        strcpy_s(item->address, ADDRESS_MAX_LEN, result->data);
-        strcpy_s(item->path, PATH_ITEM_MAX_LEN, hdPath);
+    bool valid = result != NULL && result->error_code == 0 && result->data != NULL && result->data[0] != '\0' &&
+                 strnlen_s(result->data, sizeof(item->address)) < sizeof(item->address);
+    if (valid) {
+        valid = strcpy_s(item->address, sizeof(item->address), result->data) == 0;
+        valid = valid && strnlen_s(hdPath, sizeof(item->path)) < sizeof(item->path) &&
+                strcpy_s(item->path, sizeof(item->path), hdPath) == 0;
     }
-    free_simple_response_c_char(result);
+    if (result != NULL) {
+        free_simple_response_c_char(result);
+    }
+    if (!valid) {
+        memset_s(item, sizeof(*item), 0, sizeof(*item));
+        ClearSecretCache();
+    }
+    ASSERT(valid);
+    item->index = index;
 }
 
 void GuiResetCurrentMultiAccountsCache(uint8_t index)

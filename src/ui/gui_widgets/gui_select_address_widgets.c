@@ -1,3 +1,5 @@
+#include "secret_cache.h"
+#include "assert.h"
 #include "gui_select_address_widgets.h"
 #include "gui_home_widgets.h"
 #include "account_public_info.h"
@@ -84,29 +86,41 @@ static void SelectAddressHandler(lv_event_t *e)
 
 static void ModelGetAddress(uint32_t index, AddressDataItem_t *item)
 {
+    memset_s(item, sizeof(*item), 0, sizeof(*item));
+    bool valid = false;
+    const char *address = NULL;
     switch (g_chainCoinType) {
 #ifdef WEB3_VERSION
     case CHAIN_XRP:
-        item->index = index;
-        strcpy_s(item->address, sizeof(item->address), GuiGetXrpAddressByIndex(index));
+        // The XRP getter takes a uint16_t; validate before conversion.
+        if (index <= 200) {
+            address = GuiGetXrpAddressByIndex(index);
+        }
         break;
     case CHAIN_ADA:
-        item->index = index;
-        char *xpub = GetCurrentAccountPublicKey(GetAdaXPubTypeByIndexAndDerivationType(
-                GetConnectWalletPathIndex(GetWalletNameByIndex(GuiConnectWalletGetWalletIndex())),
-                index));
-        strcpy_s(item->address, sizeof(item->address), GuiGetADABaseAddressByXPub(xpub));
+        if (index <= XPUB_TYPE_ADA_23 - XPUB_TYPE_ADA_0) {
+            char *xpub = GetCurrentAccountPublicKey(GetAdaXPubTypeByIndexAndDerivationType(
+                    GetConnectWalletPathIndex(GetWalletNameByIndex(GuiConnectWalletGetWalletIndex())), index));
+            address = GuiGetADABaseAddressByXPub(xpub);
+        }
         break;
     case CHAIN_ATOM:
-        item->index = index;
-        // we dont need to show the address,only show the account index. thus the address is empty.
-        strcpy_s(item->address, sizeof(item->address), "");
+        // Only the account index is displayed for Cosmos.
+        valid = index <= GENERAL_ADDRESS_INDEX_MAX;
         break;
 #endif
     default:
-        printf("ModelGetAddress cannot match %d\r\n", (int)index);
-        return;
+        break;
     }
+    if (address != NULL && address[0] != '\0' && strnlen_s(address, sizeof(item->address)) < sizeof(item->address)) {
+        valid = strcpy_s(item->address, sizeof(item->address), address) == 0;
+    }
+    if (!valid) {
+        memset_s(item, sizeof(*item), 0, sizeof(*item));
+        ClearSecretCache();
+    }
+    ASSERT(valid);
+    item->index = index;
 }
 
 static void SetCurrentSelectIndex(uint32_t selectIndex)
@@ -145,10 +159,6 @@ static void RefreshSwitchAccount(void)
     uint32_t index = g_showIndex;
     bool end = false;
     for (uint32_t i = 0; i < 5; i++) {
-        ModelGetAddress(index, &addressDataItem);
-        lv_label_set_text_fmt(g_selectAddressWidgets[i].addressCountLabel, "%s-%u", _("account_head"), (unsigned int)addressDataItem.index);
-        CutAndFormatString(string, sizeof(string), addressDataItem.address, 28);
-        lv_label_set_text(g_selectAddressWidgets[i].addressLabel, string);
         if (end) {
             lv_obj_add_flag(g_selectAddressWidgets[i].addressCountLabel, LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(g_selectAddressWidgets[i].addressLabel, LV_OBJ_FLAG_HIDDEN);
@@ -157,6 +167,10 @@ static void RefreshSwitchAccount(void)
             lv_obj_add_flag(g_selectAddressWidgets[i].uncheckedImg, LV_OBJ_FLAG_HIDDEN);
             continue;
         }
+        ModelGetAddress(index, &addressDataItem);
+        lv_label_set_text_fmt(g_selectAddressWidgets[i].addressCountLabel, "%s-%u", _("account_head"), (unsigned int)addressDataItem.index);
+        CutAndFormatString(string, sizeof(string), addressDataItem.address, 28);
+        lv_label_set_text(g_selectAddressWidgets[i].addressLabel, string);
         lv_obj_clear_flag(g_selectAddressWidgets[i].addressCountLabel, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(g_selectAddressWidgets[i].addressLabel, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(g_selectAddressWidgets[i].checkBox, LV_OBJ_FLAG_HIDDEN);

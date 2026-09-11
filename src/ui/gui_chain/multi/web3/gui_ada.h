@@ -82,12 +82,12 @@ bool GetAdaVotingProposalsExist(void *indata, void *param);
 void GetAdaVotingProposalsLabel(void *indata, void *param, uint32_t maxLen);
 
 AdaXPubType GetAdaXPubType(void);
-ChainType GetAdaXPubTypeByIndex(uint16_t index);
-ChainType GetAdaXPubTypeByIndexAndDerivationType(AdaXPubType type, uint16_t index);
+ChainType GetAdaXPubTypeByIndex(uint32_t index);
+ChainType GetAdaXPubTypeByIndexAndDerivationType(AdaXPubType type, uint32_t index);
 
 void SetReceivePageAdaXPubType(AdaXPubType type);
 AdaXPubType GetReceivePageAdaXPubType(void);
-ChainType GetReceivePageAdaXPubTypeByIndex(uint16_t index);
+ChainType GetReceivePageAdaXPubTypeByIndex(uint32_t index);
 
 AdaXPubType GetKeyDerivationAdaXPubType(void);
 

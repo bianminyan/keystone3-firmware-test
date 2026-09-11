@@ -22,6 +22,7 @@
 #include "multi_sig_wallet_manager.h"
 #include "log_print.h"
 #include "rsa.h"
+#include "secret_cache.h"
 #include "gui_model.h"
 
 #define PUB_KEY_MAX_LENGTH                  1024 + 1
@@ -2033,12 +2034,33 @@ int32_t MultiSigWalletGet(uint8_t accountIndex, const char *password, MultiSigWa
     return ret;
 }
 
+// recvIndex is an address index, not necessarily a cached account index (e.g. ADA).
+static bool IsReceiveIndexValid(const char *chainName, uint32_t index)
+{
+#ifdef WEB3_VERSION
+    if (!strcmp(chainName, "SUI") || !strcmp(chainName, "APT") || !strcmp(chainName, "IOTA")) {
+        return index < 10;
+    }
+    if (!strcmp(chainName, "XLM")) {
+        return index < 5;
+    }
+#endif
+    return index <= 0x7FFFFFFF;
+}
+
 uint32_t GetAccountReceiveIndex(const char* chainName)
 {
     uint32_t index = 0;
+    bool valid = true;
     cJSON *rootJson = ReadAndParseAccountJson(NULL, NULL);
 
     cJSON *item = cJSON_GetObjectItem(rootJson, chainName);
+    valid = cJSON_IsObject(rootJson) && (item == NULL || cJSON_IsObject(item));
+    if (!valid) {
+        CleanupJson(rootJson);
+        ClearSecretCache();
+    }
+    ASSERT(valid);
     if (item == NULL) {
         printf("receive index cannot get %s\r\n", chainName);
         cJSON *jsonItem = cJSON_CreateObject();
@@ -2053,17 +2075,33 @@ uint32_t GetAccountReceiveIndex(const char* chainName)
         cJSON_AddItemToObject(rootJson, chainName, jsonItem);
     } else {
         cJSON *recvIndex = cJSON_GetObjectItem(item, "recvIndex");
-        index = recvIndex ? recvIndex->valueint : 0;
+        if (recvIndex != NULL) {
+            valid = cJSON_IsNumber(recvIndex) && recvIndex->valuedouble >= 0 &&
+                    recvIndex->valuedouble <= 0x7FFFFFFF && recvIndex->valuedouble == recvIndex->valueint;
+            if (valid) {
+                index = recvIndex->valueint;
+            }
+        }
     }
 
     if (!PassphraseExist(GetCurrentAccountIndex())) {
         cJSON_Delete(rootJson);
     }
+    valid = valid && IsReceiveIndexValid(chainName, index);
+    if (!valid) {
+        ClearSecretCache();
+    }
+    ASSERT(valid);
     return index;
 }
 
 void SetAccountReceiveIndex(const char* chainName, uint32_t index)
 {
+    bool valid = IsReceiveIndexValid(chainName, index);
+    if (!valid) {
+        ClearSecretCache();
+    }
+    ASSERT(valid);
     uint32_t addr;
     cJSON *rootJson = ReadAndParseAccountJson(&addr, NULL);
 
@@ -2088,9 +2126,16 @@ void SetAccountReceiveIndex(const char* chainName, uint32_t index)
 uint32_t GetAccountReceivePath(const char* chainName)
 {
     uint32_t index = 0;
+    bool valid = true;
     cJSON *rootJson = ReadAndParseAccountJson(NULL, NULL);
 
     cJSON *item = cJSON_GetObjectItem(rootJson, chainName);
+    valid = cJSON_IsObject(rootJson) && (item == NULL || cJSON_IsObject(item));
+    if (!valid) {
+        CleanupJson(rootJson);
+        ClearSecretCache();
+    }
+    ASSERT(valid);
     if (item == NULL) {
         index = GetDefaultReceivePath(chainName);
         cJSON *jsonItem = cJSON_CreateObject();
@@ -2105,11 +2150,28 @@ uint32_t GetAccountReceivePath(const char* chainName)
         cJSON_AddItemToObject(rootJson, chainName, jsonItem);
     } else {
         cJSON *recvPath = cJSON_GetObjectItem(item, "recvPath");
-        index = recvPath ? recvPath->valueint : 0;
+        if (recvPath != NULL) {
+            valid = cJSON_IsNumber(recvPath) && recvPath->valuedouble >= 0 &&
+                    recvPath->valuedouble <= 0x7FFFFFFF && recvPath->valuedouble == recvPath->valueint;
+            if (valid) {
+                index = recvPath->valueint;
+            }
+        }
     }
     if (!PassphraseExist(GetCurrentAccountIndex())) {
         cJSON_Delete(rootJson);
     }
+#ifdef WEB3_VERSION
+    if (!strcmp(chainName, "ETH") || !strcmp(chainName, "SOL") || !strcmp(chainName, "HNT")) {
+        valid = valid && index < 3;
+    } else if (!strcmp(chainName, "AVAX") || !strcmp(chainName, "ADA")) {
+        valid = valid && index < 2;
+    }
+#endif
+    if (!valid) {
+        ClearSecretCache();
+    }
+    ASSERT(valid);
     return index;
 }
 
