@@ -2,6 +2,7 @@
 #include "gui_xrp.h"
 #include "gui_chain.h"
 #include "account_manager.h"
+#include "assert.h"
 #include "user_memory.h"
 #include "keystore.h"
 #include "secret_cache.h"
@@ -139,16 +140,24 @@ UREncodeResult *GuiGetXrpSignQrCodeData(void)
     bool enable = IsPreviousLockScreenEnable();
     SetLockScreen(false);
     UREncodeResult *encodeResult = NULL;
+    uint8_t seed[64] = {0};
     void *data = g_isMulti ? g_urMultiResult->data : g_urResult->data;
+    int ret = SUCCESS_CODE;
     do {
-        uint8_t seed[64];
-        GetAccountSeed(GetCurrentAccountIndex(), seed, SecretCacheGetPassword());
+        ret = GetAccountSeed(GetCurrentAccountIndex(), seed, SecretCacheGetPassword());
+        if (ret != SUCCESS_CODE) {
+            break;
+        }
         int len = GetMnemonicType() == MNEMONIC_TYPE_BIP39 ? sizeof(seed) : GetCurrentAccountEntropyLen();
         encodeResult = xrp_sign_tx(data, g_hdPath, seed, len);
-        memset_s(seed, sizeof(seed), 0, sizeof(seed));
-        ClearSecretCache();
+        if (encodeResult == NULL) {
+            break;
+        }
         CHECK_CHAIN_BREAK(encodeResult);
     } while (0);
+    memset_s(seed, sizeof(seed), 0, sizeof(seed));
+    ClearSecretCache();
     SetLockScreen(enable);
+    ASSERT(ret == SUCCESS_CODE);
     return encodeResult;
 }
