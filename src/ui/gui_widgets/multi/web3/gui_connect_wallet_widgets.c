@@ -126,11 +126,6 @@ static const lv_img_dsc_t *g_wanderCoinArray[1] = {
     &coinAr,
 };
 
-static const lv_img_dsc_t *g_beaconCoinArray[2] = {
-    &coinAr,
-    &coinAo,
-};
-
 static const lv_img_dsc_t *g_xbullCoinArray[1] = {
     &coinXlm,
 };
@@ -234,7 +229,6 @@ WalletListItem_t g_walletListArray[] = {
     {WALLET_LIST_KEPLR, &walletKeplr, "Keplr", g_keplrCoinArray, 8, true, WALLET_FILTER_OTHER},
     {WALLET_LIST_MINT_SCAN, &walletMintScan, "Mintscan", g_keplrCoinArray, 8, true, WALLET_FILTER_OTHER},
     {WALLET_LIST_WANDER, &walletWander, "Wander", g_wanderCoinArray, 1, true, WALLET_FILTER_OTHER},
-    {WALLET_LIST_BEACON, &walletBeacon, "Beacon", g_beaconCoinArray, 2, true, WALLET_FILTER_OTHER},
     {WALLET_LIST_XBULL, &walletXBull, "xBull", g_xbullCoinArray, 1, true, WALLET_FILTER_OTHER},
     {WALLET_LIST_IMTOKEN, &walletImToken, "imToken", g_ethWalletCoinArray, 4, true, WALLET_FILTER_ETH},
     {WALLET_LIST_FEWCHA, &walletFewcha, "Fewcha", g_fewchaCoinArray, 2, true, WALLET_FILTER_OTHER},
@@ -341,7 +335,6 @@ static void GuiInitWalletListArray()
 
         switch (index) {
         case WALLET_LIST_WANDER:
-        case WALLET_LIST_BEACON:
             enable = !isTempAccount;
             break;
         default:
@@ -469,9 +462,7 @@ static void OpenQRCodeHandler(lv_event_t *e)
         return;
     }
     bool skipGenerateArweaveKey = IsArweaveSetupComplete();
-    if ((g_connectWalletTileView.walletIndex == WALLET_LIST_WANDER ||
-            g_connectWalletTileView.walletIndex == WALLET_LIST_BEACON) &&
-            !skipGenerateArweaveKey) {
+    if (g_connectWalletTileView.walletIndex == WALLET_LIST_WANDER && !skipGenerateArweaveKey) {
         GuiOpenARAddressNoticeWindow();
         return;
     }
@@ -1203,10 +1194,6 @@ void GuiConnectWalletSetQrdata(WALLET_LIST_INDEX_ENUM index)
         func = GuiGetWanderData;
         AddCoinsFromArray(g_wanderCoinArray, NUMBER_OF_ARRAYS(g_wanderCoinArray), false, 0);
         break;
-    case WALLET_LIST_BEACON:
-        func = GuiGetWanderData;
-        AddCoinsFromArray(g_beaconCoinArray, NUMBER_OF_ARRAYS(g_beaconCoinArray), false, 0);
-        break;
     case WALLET_LIST_XBULL:
         func = GuiGetXBullData;
         AddCoinsFromArray(g_xbullCoinArray, NUMBER_OF_ARRAYS(g_xbullCoinArray), false, 0);
@@ -1270,10 +1257,6 @@ void GuiConnectWalletSetQrdata(WALLET_LIST_INDEX_ENUM index)
     if (func) {
         bool skipGenerateArweaveKey = IsArweaveSetupComplete();
         if (index == WALLET_LIST_WANDER && !skipGenerateArweaveKey) {
-            GuiAnimatingQRCodeInitWithLoadingParams(g_connectWalletTileView.qrCode, func, true, _("InitializingRsaTitle"), _("FindingRsaPrimes"));
-            return;
-        }
-        if (index == WALLET_LIST_BEACON && !skipGenerateArweaveKey) {
             GuiAnimatingQRCodeInitWithLoadingParams(g_connectWalletTileView.qrCode, func, true, _("InitializingRsaTitle"), _("FindingRsaPrimes"));
             return;
         }
