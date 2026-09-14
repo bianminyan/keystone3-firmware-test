@@ -11,6 +11,7 @@ use crate::parser::detail::{
 
 #[derive(Clone, Debug)]
 pub struct TransactionConfig {
+    pub mask: u32,
     pub priority_fee_lamports: u64,
     pub compute_unit_limit: u32,
     pub loaded_accounts_data_size_limit: u32,
@@ -114,6 +115,7 @@ impl Message {
         // transaction budget remains 0, whether omitted or explicitly encoded.
         // https://github.com/solana-foundation/solana-improvement-documents/blob/main/proposals/0385-transaction-v1.md#transactionconfigmask-1
         let config = TransactionConfig {
+            mask,
             priority_fee_lamports,
             compute_unit_limit: if mask & 4 != 0 { cursor.u32()? } else { 0 },
             loaded_accounts_data_size_limit: if mask & 8 != 0 { cursor.u32()? } else { 0 },
@@ -216,7 +218,8 @@ mod tests {
         assert_eq!(classify_payload(&raw), SolanaPayloadType::Transaction);
         let parsed = parse_for_signer(&raw, &[1; 32]).unwrap();
         assert_eq!(parsed.display_type.to_string(), "Transfer");
-        assert!(parsed.detail.contains("0.123456789 SOL"));
+        assert!(!parsed.detail.contains("0.123456789 SOL"));
+        crate::message_json::tests::assert_json_roundtrip(&raw, &parsed.detail);
         let config = &parsed.additional_overviews[0];
         assert_eq!(config.instruction_index, 0);
         assert!(config.memo.contains("Priority Fee: 0 lamports"));
@@ -274,7 +277,9 @@ mod tests {
                 values.extend(65536u32.to_le_bytes());
             }
             let mut raw = encode(mask, &values, &[[1; 32], [2; 32], [0; 32]], &[transfer()]);
+            let original = raw.clone();
             let message = Message::read_exact(&mut raw).unwrap();
+            crate::message_json::tests::assert_json_roundtrip(&original, &message.to_message_json().unwrap());
             let config = message.transaction_config.unwrap();
             assert_eq!(
                 config.priority_fee_lamports,
@@ -322,10 +327,11 @@ mod tests {
                 ],
             );
             let parsed = parse(&raw).unwrap();
-            assert!(parsed.detail.contains("IgnoredInV1"));
+            assert!(!parsed.detail.contains("IgnoredInV1"));
+            crate::message_json::tests::assert_json_roundtrip(&raw, &parsed.detail);
             assert!(!parsed.detail.contains("compute_unit_price_micro_lamports"));
             let detail: serde_json::Value = serde_json::from_str(&parsed.detail).unwrap();
-            assert!(detail.to_string().contains("\"priority_fee_lamports\":\"42\""));
+            assert_eq!(detail["config_values"], serde_json::json!([42, 0]));
             let message = Message::read_exact(&mut raw.clone()).unwrap();
             assert_eq!(message.instructions[0].data, message.instructions[2].data);
         }
@@ -399,6 +405,9 @@ mod tests {
             assert_eq!(Message::read_exact(&mut raw.clone()).is_ok(), valid);
             if !valid {
                 rejected(&raw);
+            } else {
+                let parsed = parse(&raw).unwrap();
+                crate::message_json::tests::assert_json_roundtrip(&raw, &parsed.detail);
             }
         }
     }

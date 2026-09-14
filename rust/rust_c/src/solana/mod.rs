@@ -111,16 +111,16 @@ mod fixture_tests {
             assert!(parsed.detail.starts_with("{\n") || parsed.detail.starts_with("[\n"));
             assert_ne!(parsed.detail, serde_json::to_string(&detail).unwrap());
             if id == "22" {
-                let raw = app_solana::message::Message::read_exact(&mut data.clone()).unwrap();
-                assert_eq!(detail, serde_json::to_value(raw.to_program_details().unwrap()).unwrap());
-                assert!(parsed.detail.contains("\"transaction_message\": [1, 0, 1, 3,"));
-                assert!(parsed.detail.contains("SQUADS-DETAILS-END"));
+                let instructions = detail["instructions"].as_array().unwrap();
+                assert!(instructions.iter().any(|instruction| {
+                    let bytes = bitcoin::base58::decode(instruction["data"].as_str().unwrap()).unwrap();
+                    bytes.windows(b"SQUADS-DETAILS-END".len()).any(|w| w == b"SQUADS-DETAILS-END")
+                }));
                 continue;
             }
             if id == "11" {
-                assert_eq!(detail[0]["to"]["Table"], "7tj9biW3KRJ7EEWmVUGigHiouCTXhV2dzcyvwma7Cyu7");
-                assert_eq!(detail[0]["to"]["Index"], 7);
-                assert_eq!(detail[0]["to"]["Status"], "Unresolved offline");
+                assert_eq!(detail["address_table_lookups"][0]["account_key"], "7tj9biW3KRJ7EEWmVUGigHiouCTXhV2dzcyvwma7Cyu7");
+                assert!(detail["address_table_lookups"][0]["writable_indexes"].as_array().unwrap().contains(&serde_json::json!(7)));
                 let SolanaOverview::Transfer(transfer) = &parsed.overview else {
                     panic!("ALT transfer should retain its recognized layout")
                 };

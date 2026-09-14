@@ -23,6 +23,7 @@ mod compact;
 pub mod errors;
 mod instruction;
 pub mod message;
+mod message_json;
 mod message_v1;
 pub mod parser;
 pub mod read;

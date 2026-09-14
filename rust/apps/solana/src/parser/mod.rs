@@ -2,15 +2,19 @@ use alloc::borrow::ToOwned;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+#[cfg(test)]
 use bitcoin::base58;
 
+#[cfg(test)]
 use serde_json::json;
 
 use crate::errors::{Result, SolanaError};
 use crate::message::Message;
 use crate::parser::detail::{
-    CommonDetail, ProgramDetail, ProgramDetailGeneralUnknown, SolanaDetail,
+    CommonDetail, ProgramDetail, SolanaDetail,
 };
+#[cfg(test)]
+use crate::parser::detail::ProgramDetailGeneralUnknown;
 use crate::parser::overview::{
     JupiterV6SwapOverview, JupiterV6SwapTokenInfoOverview, ProgramOverviewGeneral,
     ProgramOverviewInstruction, ProgramOverviewInstructions, ProgramOverviewMultisigCreate,
@@ -80,7 +84,7 @@ impl ParsedSolanaTx {
         }
         let additional_overviews = Self::build_additional_overviews(&display_type, &raw_details)?;
         let unknown_programs = Self::collect_additional_unknown_programs(&raw_details);
-        let parsed_detail = Self::compact_byte_arrays(&Self::build_detail(&display_type, &raw_details, &message)?);
+        let parsed_detail = Self::compact_byte_arrays(&message.to_message_json()?);
         let overview_order = Self::build_overview_order(&display_type, &raw_details);
         Ok(Self {
             display_type,
@@ -254,6 +258,7 @@ impl ParsedSolanaTx {
     fn is_jupiter_v6_detail(common: &CommonDetail) -> bool {
         common.program.eq("JupiterV6")
     }
+    #[cfg(test)]
     fn build_genera_detail(details: &[SolanaDetail]) -> Result<String> {
         let parsed_detail = details
             .iter()
@@ -274,6 +279,7 @@ impl ParsedSolanaTx {
         Ok(serde_json::to_string_pretty(&parsed_detail)?)
     }
 
+    #[cfg(test)]
     fn build_unknown_detail(details: &[SolanaDetail], message: &Message) -> Result<String> {
         let value = json!({
                     "header": {
@@ -288,6 +294,7 @@ impl ParsedSolanaTx {
         Ok(serde_json::to_string_pretty(&value)?)
     }
 
+    #[cfg(test)]
     fn build_detail(
         display_type: &SolanaTxDisplayType,
         details: &[SolanaDetail],
@@ -1182,6 +1189,13 @@ mod tests {
 
     use super::*;
 
+    // These golden assertions cover business resolvers used by Overview.
+    // Details now has a separate lossless message JSON contract, checked below.
+    fn semantic_detail_json(transaction: &[u8], display_type: &SolanaTxDisplayType) -> String {
+        let message = Message::read_exact(&mut transaction.to_vec()).unwrap();
+        ParsedSolanaTx::build_detail(display_type, &message.to_program_details().unwrap(), &message).unwrap()
+    }
+
     fn detail(program: &str, method: &str) -> SolanaDetail {
         SolanaDetail {
             common: CommonDetail {
@@ -1519,6 +1533,7 @@ mod tests {
         let data = "01000103876c762c4c83532f82966935ba1810659a96237028a2af6688dadecb0155ae071c7d0930a08193e702b0f24ebba96f179e9c186ef1208f98652ee775001744490000000000000000000000000000000000000000000000000000000000000000a7516fe1d3af3457fdc54e60856c0c3c87f4e5be3d10ffbc7a5cce8bf96792a101020200010c020000008813000000000000";
         let transaction = Vec::from_hex(data).unwrap();
         let parsed = ParsedSolanaTx::build(&transaction).unwrap();
+        crate::message_json::tests::assert_json_roundtrip(&transaction, &parsed.detail);
         match parsed.overview {
             SolanaOverview::Transfer(overview) => {
                 assert_eq!("0.000005 SOL".to_string(), overview.value);
@@ -1534,7 +1549,7 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(parsed.detail.as_str()).unwrap();
+        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
         let expected_detail = json!([
             {
                 "program": "System",
@@ -1554,6 +1569,7 @@ mod tests {
         let data = "0301070a2877bcb8e7acfa950840ace015aee0f7c34f8da98cb47a0379a0848d1d146732295c04a089afe0f89e2eb1068d40b6dabc909d1c8fbd42a33d38388a9028952a0bfed77df018f67f348da938e5e96b9f66d05a542123fa3f9bebf7332df339cf000000000000000000000000000000000000000000000000000000000000000006a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000006a1d817a502050b680791e6ce6db88e1e5b7150f61fc6790a4eb4d10000000006a7d51718c774c928566398691d5eb68b5eb8a39b4b6d5c73555b210000000006a7d517192c5c51218cc94c3d4af17f58daee089ba1fd44e3dbd98a0000000006a7d517193584d0feed9bb3431d13206be544281b57b8566cc5375ff40000006dcf56df0c05417d5642726a2159a63bec115672bf8c57a694cf097e91a21c6f5cd38793d98807ac0a75e5553f78d37654a08385ecb7280ce9c7c905843164d305030200010c02000000af613239da0000000301010c08000000c800000000000000030101240100000006a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc0000000000402010774000000000bfed77df018f67f348da938e5e96b9f66d05a542123fa3f9bebf7332df339cfc384e275e260429599cc2093f115fa55564dee44af077765b86417bd6967b37d00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004060109060805020402000000";
         let transaction = Vec::from_hex(data).unwrap();
         let parsed = ParsedSolanaTx::build(&transaction).unwrap();
+        crate::message_json::tests::assert_json_roundtrip(&transaction, &parsed.detail);
         match parsed.overview {
             SolanaOverview::Transfer(overview) => {
                 assert_eq!("937.262473647 SOL".to_string(), overview.value);
@@ -1569,7 +1585,7 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(parsed.detail.as_str()).unwrap();
+        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
         let expected_detail = json!([
             {
                 "program": "System",
@@ -1640,6 +1656,7 @@ mod tests {
         let data = "01000305b446cb8fd7c225bf416df87c286710d75711af95222e41216da2177289cbbfa6b68edcd94d93de68614892bd165a94a6647aa040d87b9a042b41a009bdb469cf06a7d51718c774c928566398691d5eb68b5eb8a39b4b6d5c73555b210000000006a7d517192f0aafc6f265e3fb77cc7ada82c529d0be3b136e2d0055200000000761481d357474bb7c4d7624ebd3bdb3d8355e73d11043fc0da35380000000009254bd5e695fabf43f0ead6da730e88cf39bec6991c2c4374bcade97d0a73be7010404010302003d02000000010000000000000060f2790800000000856a887d33af1cd1723388576a7be8fa6d9c9c80c548495a24bf680c908812cf01da7dd66200000000";
         let transaction = Vec::from_hex(data).unwrap();
         let parsed = ParsedSolanaTx::build(&transaction).unwrap();
+        crate::message_json::tests::assert_json_roundtrip(&transaction, &parsed.detail);
         match parsed.overview {
             SolanaOverview::Vote(overview) => {
                 assert_eq!("Vote".to_string(), overview.main_action);
@@ -1651,7 +1668,7 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(parsed.detail.as_str()).unwrap();
+        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
         let expected_detail = json!([
             {
                 "program": "Vote",
@@ -1677,6 +1694,7 @@ mod tests {
         let data = "0200050a06852df21778a462ea79aae81500eae98a935dcca05f8b899ca8b41021a79980acc933a10d87058ad3131361cd345fe95eb7598ad52d972ee559f1ea3f8deb452bb2df65fdf1ad0514f549457e4338bb71e6885354aa5ed87969ef14f5fc736772295dfa0330919867f6f90f2e334d1a56a2203ec3d4086151aab0171ca13c74b626da01ca1cb62be1bbbf9927dd0de251964d351736fd36100bb0e06f728b4100000000000000000000000000000000000000000000000000000000000000008c97258f4e2489f1bb3d1029148e0d830b5a1399daff1084048e7bd8dbe9f8590b7065b1e3d17c45389d527f6b04c3cd58b86c731aa0fdb549b6d1bc03f8294606a7d517192c5c51218cc94c3d4af17f58daee089ba1fd44e3dbd98a0000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a92865a919afcfd4d57cf8f69e11990c98a55e4cc4389ba43c7d32184ca652adb406050200013400000000604d160000000000520000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a90902010843000006852df21778a462ea79aae81500eae98a935dcca05f8b899ca8b41021a799800106852df21778a462ea79aae81500eae98a935dcca05f8b899ca8b41021a799800707030100000005087b0012000000536e65616b65722023313830333539303435000000003200000068747470733a2f2f6170692e737465706e2e636f6d2f72756e2f6e66746a736f6e2f3130332f3130363036313531353732319001010100000006852df21778a462ea79aae81500eae98a935dcca05f8b899ca8b41021a799800164010607000400010509080009030104000907010000000000000007090201000000030905080a0a010000000000000000";
         let transaction = Vec::from_hex(data).unwrap();
         let parsed = ParsedSolanaTx::build(&transaction).unwrap();
+        crate::message_json::tests::assert_json_roundtrip(&transaction, &parsed.detail);
         assert_eq!(3, parsed.unknown_programs.len());
         match parsed.overview {
             SolanaOverview::General(overview) => {
@@ -1693,7 +1711,7 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(parsed.detail.as_str()).unwrap();
+        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
 
         let expected_detail = json!(
                     [
@@ -1779,6 +1797,7 @@ mod tests {
         let data = "02000407e9940f6435ae992ddbb4ac739ada475fde93bd54c6a9f36a8b60b37fe23ec3fdd8ffff8ad461ca3138f356758b148f2dffa7d055a79356b52727298026189ae82e6df8bd210e5f167971908e8746aa6790aa3bc74ee48a4bbf23236f9effaa65069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f0000000000106a7d517192c5c51218cc94c3d4af17f58daee089ba1fd44e3dbd98a00000000000000000000000000000000000000000000000000000000000000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9bff514b7cba346fe333553de5579d50a7da74cf950dd7bdd27327ce9a17c876f04050200013400000000f01d1f0000000000a50000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9060401030004010106030201000903242d84be0000000006030100000109";
         let transaction = Vec::from_hex(data).unwrap();
         let parsed = ParsedSolanaTx::build(&transaction).unwrap();
+        crate::message_json::tests::assert_json_roundtrip(&transaction, &parsed.detail);
         match parsed.overview {
             SolanaOverview::General(mut overview) => {
                 let overview_1 = overview.pop().unwrap();
@@ -1830,7 +1849,7 @@ mod tests {
                 "owner": "GinwSnwbsjkWXkancBr5E6EPrQtKdwnE5vPdriv1tK3i"
             }
         ]);
-        let parsed_detail: Value = serde_json::from_str(parsed.detail.as_str()).unwrap();
+        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
         assert_eq!(expected_detail, parsed_detail);
     }
 
@@ -1841,6 +1860,7 @@ mod tests {
         let data = "0201060908a13fb5c9e7bc18aef6d4ec2e5bca9fb0b8c329c32bdf2baae9125aa3191cd36eeb5c79927943eef87a2828925665d2b3612a070fe5eee74680d8ac0b779ca136a3ae0cda1d97779bcd08c24409fe1c76f84f218aeed3296d8efe2dade261a606a7d517192c5c51218cc94c3d4af17f58daee089ba1fd44e3dbd98a0000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a90b3338a0ab2cc841d5b014bc6a3cf756291874b319c9517d9bbfa9e4e9661ef90000000000000000000000000000000000000000000000000000000000000000054a5350f85dc882d614a55672788a296ddf1eababd0a60678884932f4eef6a08c97258f4e2489f1bb3d1029148e0d830b5a1399daff1084048e7bd8dbe9f859704b00127cf4d5d2ca44446993ee3bab439ce957bde518d1767b108b87a4a7d00307002c416141414141414141414141414141414141414141414141414141414141414141414141414141414141413d08070002010506040300040202012306030108a13fb5c9e7bc18aef6d4ec2e5bca9fb0b8c329c32bdf2baae9125aa3191cd3";
         let transaction = Vec::from_hex(data).unwrap();
         let parsed = ParsedSolanaTx::build(&transaction).unwrap();
+        crate::message_json::tests::assert_json_roundtrip(&transaction, &parsed.detail);
         match parsed.overview {
             SolanaOverview::General(mut overview) => {
                 let overview_1 = overview.pop().unwrap();
@@ -1849,7 +1869,7 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(parsed.detail.as_str()).unwrap();
+        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
 
         let expected_detail = json!([
           {
@@ -1891,6 +1911,7 @@ mod tests {
         let data = "0301070faa30697d8ea2d14ce506c401ad5f1bd33476ebcb8a8b5cea89fa0aafb7c04f3925070f12913aa23553bfaf08f0a6f293aadb24dd66711db239c9b0ccca751b05dcc3a6c16cb67f59d67085e174cd7469f3e00b99a63d6c8d95337096f9e8437d8c17a1e64eba64bb7238d33b21461db8824508c879f91199d9eff9309ff63952baf04e4356057aaea057a6d744e1a0dbb99091448d6c2807114f0a016c9f2c39df8b1e991b87277d51b2ee23b63496ff1a54ab30e61eb4c4572e52fb99af9421e636e5095d76cede0e72ff2a024a07652d423fb7f3978a4663a278d13e1c1ba10deb821d34b39060c73598d3dd86ecf853df3b2f38b02991ad2ccfa51306e01600000000000000000000000000000000000000000000000000000000000000003f5877e18f96dea58c638a21d2be860ba96f0e21d1d84c6a94dba44e2be81f0e494500f4fdcbc9ad22814e250c0d6763266f6ca9169e12662f477601991e1a36be49a1eeb81bf889c158fd8b7496ff9141d4aa433eae3948d0d8488f78951b78069b8857feab8184fb687f634618c035dac439dc1aeb3b5598a0f0000000000106a7d517192c5c51218cc94c3d4af17f58daee089ba1fd44e3dbd98a0000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a954c495b382bac905bb70f97bc252b2ee3b796b2836a3287ed5787c70eb2484120608020001340000000030266d0500000000a50000000000000006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a90e04010c000d01010e03010200090440084e05000000000b0a090a020106030504070e110140084e05000000005d4d3700000000000e02010001050e030100000109";
         let transaction = Vec::from_hex(data).unwrap();
         let parsed = ParsedSolanaTx::build(&transaction).unwrap();
+        crate::message_json::tests::assert_json_roundtrip(&transaction, &parsed.detail);
         assert_eq!(1, parsed.unknown_programs.len());
         match parsed.overview {
             SolanaOverview::General(overview) => {
@@ -1909,7 +1930,7 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(parsed.detail.as_str()).unwrap();
+        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
 
         let expected_detail = json!(
                     [
@@ -1978,8 +1999,9 @@ mod tests {
         let raw_message = "800100020305919998ccad85d7254856bde658b1926b77276f9c9f93d4713eec50c6f0cd4e0306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000008239266ec3629985acb2ec387b47c3c3ca057181773835b4f0e99ab4f065e7dc3e93416d06d11ad5352987624986db3240b02ea5cc42ba3c2e9f3a6e9bfe1c203010005028c45080001000903208601000000000002271d1f1e00040508070906191c19141b11120c0f1a0b0a0e13101020070d00180315000d04171619295bbffbf792f60aa2084d230100000000ad88c11900000000030201070000000000000101000000000004fdd750c4799429e7e17c0c7cf0a55a82d70846d1bc97665714af810651e8bb04010e060d010c0f0709209be863b24cb2303c7162670000dfaf3176a1ada32a0305df593d8a935c7dcd06038b8d118a8c0287868cb7d386ca1b4cb4125557bf989073c37d63ae73104247ee1280afa86a8ac75b0b9695938f97949a9192988d019bfddf37b259d3ceada480a9a43ba12f21bfd3d7afd64d35b9f0330f6645d3016f03969a9900";
         let transaction = Vec::from_hex(raw_message).unwrap();
         let parsed = ParsedSolanaTx::build(&transaction).unwrap();
+        crate::message_json::tests::assert_json_roundtrip(&transaction, &parsed.detail);
         assert!(matches!(parsed.display_type, SolanaTxDisplayType::Unknown));
-        let detail_tx = parsed.detail;
+        let detail_tx = semantic_detail_json(&transaction, &parsed.display_type);
         let parsed_detail: Value = serde_json::from_str(detail_tx.as_str()).unwrap();
         let expect_data = json!([
             {
@@ -2061,7 +2083,8 @@ mod tests {
         let raw_message = "0100091b08904ad8e08db0a43a396c4d58b75befb2d0bb52a884fe2356f7a5d4f79c18456369e2b9dd2eed26b91e56b642d118df0ff7d4a0f3c6c2e722face2365fd87ce889403562623feb51a656493fb3964e89c2ed1be748c2692c410cdb7e69122365a3f4fc6e059cbef43a31884da9144fb99ea03b253c5bf15e8b703cd0d6cb4a48b335f799935aa3f8ccd9384f456fe6222a26f7d31b04143246b927066cbab9d6184d194fcd38b5fd4826bcfce778ada40a4ee6e864f74daf824cfaf0354431c8b69cf47f17b6ab36eb9dcac947bbaf6666e8c2b597b8a25861babfd6216ce2a6c9010bb7b7cc2bfc144a74aa59f3b28a1368c87c352012c8d37eb4045d20e0a3d6e472e67a46ea6b4bd0bab9dfd35e2b4c72f1d6d59c2eab95c942573ad22f1f411b5d45e8c66bb2cf71b6f45f5ac00ca5737f1a76205c77b0afef885eae5c7b870e12dd379891561d2e9fa8f26431834eb736f2f24fc2a2a4dff1fd5dca4dff2cbb9b760eddb185706303063ad33d7b57296ea02d4e0335e31ceafa4cc42dd84c2fb18aed619f546632653ef06029f02a864bf3829867181bb20df1d715c3000f426e16eb8cf03119175f980514344955ce370e765940f3c29439545fb45a9a6dfd15c507705f9339b953c1a4dfdbc9cc186dd2f62df48a958045e2a7652594020894653cfddfa7b7e60c966682736a2db0f838564925b11077a21e036d7971f26f5f0461c4010bd5cc8ca7066dda584a6ee717934c677adf4c25fbd156a2d6ae3ed327a0f8849a772941d97050f3a6e8cb8dd3abcdb1470887c82b54d3f367e54771a57a6f14ca9e402d54aee45f7378aca365c7b169a7ec83f5182b298f006ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a9c523f583f96ed4fdbd8ade165f8dfe5533c10fa021a22a3f31e54adc0203166104798dce15306e485502448ae418831ba6a76b92956377a6eb7e058e5e011e544bd949c43602c33f207790ed16a3524ca1b9975cf121a2a90cffec7df8b68acd4157b0580f31c5fce44a62582dbcf9d78ee75943a084a393b350368d22899308850f2d6e02a47af824d09ab69dc42d70cb28cbfa249fb7ee57b9d256c12762efd1ef734f68204eb2e2c04629794a8c02107ad09bf3b219597a14effb8a04d9860479d50ca68497da9571369968ee1347fda9c3ba32e438dad6225250695de886032145aed8034a56f7cea8a915bcff6b59933a8fed2fd11f034073391917ae75031a02010508e455b9704e4f4d021a0b12131415000203040506071abbc076d43e6d1cd501a484c302000000000000000000000000001a1316130817090a0b180c0d0e0f101119050200011245e3625dedcadf8c005300c5020000000000";
         let transaction = Vec::from_hex(raw_message).unwrap();
         let parsed = ParsedSolanaTx::build(&transaction).unwrap();
-        let detail_tx = parsed.detail;
+        crate::message_json::tests::assert_json_roundtrip(&transaction, &parsed.detail);
+        let detail_tx = semantic_detail_json(&transaction, &parsed.display_type);
         let parsed_detail: Value = serde_json::from_str(detail_tx.as_str()).unwrap();
         let expect_json = json!({
           "accounts": [
@@ -2169,8 +2192,9 @@ mod tests {
         let raw_message = "800100020305919998ccad85d7254856bde658b1926b77276f9c9f93d4713eec50c6f0cd4e0306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000008239266ec3629985acb2ec387b47c3c3ca057181773835b4f0e99ab4f065e7dc3e93416d06d11ad5352987624986db3240b02ea5cc42ba3c2e9f3a6e9bfe1c203010005028c45080001000903208601000000000002271d1f1e00040508070906191c19141b11120c0f1a0b0a0e13101020070d00180315000d04171619295bbffbf792f60aa2084d230100000000ad88c11900000000030201070000000000000101000000000004fdd750c4799429e7e17c0c7cf0a55a82d70846d1bc97665714af810651e8bb04010e060d010c0f0709209be863b24cb2303c7162670000dfaf3176a1ada32a0305df593d8a935c7dcd06038b8d118a8c0287868cb7d386ca1b4cb4125557bf989073c37d63ae73104247ee1280afa86a8ac75b0b9695938f97949a9192988d019bfddf37b259d3ceada480a9a43ba12f21bfd3d7afd64d35b9f0330f6645d3016f03969a9900";
         let transaction = Vec::from_hex(raw_message).unwrap();
         let parsed = ParsedSolanaTx::build(&transaction).unwrap();
+        crate::message_json::tests::assert_json_roundtrip(&transaction, &parsed.detail);
 
-        let detail_tx = parsed.detail;
+        let detail_tx = semantic_detail_json(&transaction, &parsed.display_type);
         let parsed_detail: Value = serde_json::from_str(detail_tx.as_str()).unwrap();
 
         println!("parsed_detail: {:?}", parsed_detail);
@@ -2187,6 +2211,7 @@ mod tests {
         let data = "010007096aefb992fa0cd54aea185bf65a7da92aad6bd46da5a67c7675a04e6540d86f7a3d2ce2421048aa748a6cc22b5696032f902cfc0b3dd6bce0d379f76c383bceda0000000000000000000000000000000000000000000000000000000000000000e23a2b23b625e7513991be370a2c20d5c5e276491d36777ef2e5b1227ffe732906a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000006a1d817a502050b680791e6ce6db88e1e5b7150f61fc6790a4eb4d10000000006a7d51718c774c928566398691d5eb68b5eb8a39b4b6d5c73555b210000000006a7d517192c5c51218cc94c3d4af17f58daee089ba1fd44e3dbd98a0000000006a7d517193584d0feed9bb3431d13206be544281b57b8566cc5375ff4000000aada712c5d14f4e64d913b330ff3e519bc7f2aac580997f0c549620601866915030202000174030000006aefb992fa0cd54aea185bf65a7da92aad6bd46da5a67c7675a04e6540d86f7a18000000000000007374616b653a302e3231363239323431373439393638393500de2a9200000000c80000000000000006a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc0000000000402010774000000006aefb992fa0cd54aea185bf65a7da92aad6bd46da5a67c7675a04e6540d86f7a6aefb992fa0cd54aea185bf65a7da92aad6bd46da5a67c7675a04e6540d86f7a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004060103060805000402000000";
         let transaction = Vec::from_hex(data).unwrap();
         let parsed = ParsedSolanaTx::build(&transaction).unwrap();
+        crate::message_json::tests::assert_json_roundtrip(&transaction, &parsed.detail);
         match parsed.overview {
             SolanaOverview::General(overview) => {
                 let overview_1 = overview.get(0).unwrap();
@@ -2201,7 +2226,7 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(parsed.detail.as_str()).unwrap();
+        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
         let expected_detail = json!([
             {
                 "program": "System",
@@ -2247,6 +2272,7 @@ mod tests {
         let data = "01000305575949043cea1e1713d06b6b2eba6bb22d303884908e683fcaaa7b0ba6209be859d521dc428449106dabb34dadd3b44cc7795f58be0d4a81aaeaada967b21bd206a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000006a7d51718c774c928566398691d5eb68b5eb8a39b4b6d5c73555b210000000006a7d517193584d0feed9bb3431d13206be544281b57b8566cc5375ff400000067415e51677a2d98e9f86da5c65fe4c72bdee5cb2755af7a27d13dda710aa26001020501000304000c04000000ed77410300000000";
         let transaction = Vec::from_hex(data).unwrap();
         let parsed = ParsedSolanaTx::build(&transaction).unwrap();
+        crate::message_json::tests::assert_json_roundtrip(&transaction, &parsed.detail);
         match parsed.overview {
             SolanaOverview::General(overview) => {
                 let overview_1 = overview.get(0).unwrap();
@@ -2255,7 +2281,7 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(parsed.detail.as_str()).unwrap();
+        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
         let expected_detail = json!([
             {
                 "program": "Stake",
@@ -2279,6 +2305,7 @@ mod tests {
         let data = "010002044dd6a13d7b9ca64c690638eb9679f4a264a5a93022212ec608b24964dbc5701aff979426efda42a314f5b5477ea3264fddfb5ee1b9f939bff1e90cbea09cde3306a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000006a7d51718c774c928566398691d5eb68b5eb8a39b4b6d5c73555b2100000000a4eb4d5967097a0ec98783003eba3fde67341ba6d6d55f7d6987494a952466520102030103000405000000";
         let transaction = Vec::from_hex(data).unwrap();
         let parsed = ParsedSolanaTx::build(&transaction).unwrap();
+        crate::message_json::tests::assert_json_roundtrip(&transaction, &parsed.detail);
         match parsed.overview {
             SolanaOverview::General(overview) => {
                 let overview_1 = overview.get(0).unwrap();
@@ -2287,7 +2314,7 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(parsed.detail.as_str()).unwrap();
+        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
         let expected_detail = json!([
             {
                 "program": "Stake",
@@ -2319,13 +2346,14 @@ mod tests {
         let data = "0100060e1a93fffb26ce645adeae58f0f414c320bcec30ce12a66bd263a91ec9b3958ff45d2a5ee5685c17e07cede5bef98300d4170ebbe2d99f064c4bb05ee97b35de7d75119b3175807586e3f4a7e5cd0f890e96a753b10fccc7681e9473a0083270f1bfa153f6e9dc8b683a60c22c944131adc8abfb93befad36efcc572c783e27055f7f1afd0d58a5a0dcfa04274a0c6aaa6e8c38380af1cd2b1c3f881cc9e24ac330b62ba074f722c9d4114f2d8f70a00c66002337b9bf90c873657a6d201db4c80067d7c615ffb9455750b6b889211bcf4c76f687cbb6ba93adc37ecaefbfb41b207154414aa83b02488ade068d5effab202658060008643843ceacd8dc5e1b89f0000000000000000000000000000000000000000000000000000000000000000222829e89767b2043c86d1b51f31364e5adaeb861fd62e7a7f46be4dbbc55ca4cfa6452d2d0f594a1ddd1bead98a7a52fd63925ae3266435dde44a5ab3fdb8f10545e365bef271ad75350367565da40da336dc1c879bb1548a7afcc55aa9391e0b616d4895472c6a02e9ecd3e87951f18401d675dedcbe33e8673e00221522d306ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a91b421195ecaa4f6b65834080c6ac091cd06449b7cb33a5cbe42a86b27d36a469010c0d020507010a03000409080d0b0610f223c68952e1f2b68096980000000000";
         let transaction = Vec::from_hex(data).unwrap();
         let parsed = ParsedSolanaTx::build(&transaction).unwrap();
+        crate::message_json::tests::assert_json_roundtrip(&transaction, &parsed.detail);
         match parsed.overview {
             SolanaOverview::Unknown(overview) => {
                 assert_eq!("This transaction can not be decoded", overview.description);
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(parsed.detail.as_str()).unwrap();
+        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
         let expected_detail = json!({
           "accounts": [
             "2nkVYBJQg5UavBjvBT4jcahJamnFyr8wzPhzabDaRnBD",
@@ -2381,6 +2409,7 @@ mod tests {
         let data = "01000306507e6e0eedc8bad07d8e1907faf5cd44364b75503f4b2f9a2efd196fabcdbc0d8a35bc824e0b6a9970622a2d84513cb3d0d8d9274d026c09b189a3c991b04e679afd0fdcc13de092bc32eaef523c79183e3c923924634e64b9808b67ce00316f06a7d51718c774c928566398691d5eb68b5eb8a39b4b6d5c73555b210000000006a7d517193584d0feed9bb3431d13206be544281b57b8566cc5375ff400000006a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc000000000453461b52d93efbb8f738fe6df0fb3d12c5a014432f41011d426e3b01eb4f66b01050501020304000407000000";
         let transaction = Vec::from_hex(data).unwrap();
         let parsed = ParsedSolanaTx::build(&transaction).unwrap();
+        crate::message_json::tests::assert_json_roundtrip(&transaction, &parsed.detail);
         match parsed.overview {
             SolanaOverview::General(overview) => {
                 let overview_1 = overview.get(0).unwrap();
@@ -2389,7 +2418,7 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(parsed.detail.as_str()).unwrap();
+        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
         let expected_detail = json!([{"program":"Stake","method":"Merge","destination_stake_account":"AJWneUm7QuQENJXkn7rDMp1Bvfab3R5vY7LcGuMmTtQv","source_stake_account":"BS1bVhRD2iJrGbiHV61J3SRg8TsGjR2a9TSBeoJBY6Ce","sysvar_clock":"SysvarC1ock11111111111111111111111111111111","sysvar_stake_history":"SysvarStakeHistory1111111111111111111111111","stake_authority_pubkey":"6RDS19fkTJ3BtTx78NswVm2VSPRmwM9tEa6kGuadAPKS"}]);
         assert_eq!(expected_detail, parsed_detail);
     }
