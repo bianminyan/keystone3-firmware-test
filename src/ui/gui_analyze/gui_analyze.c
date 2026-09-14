@@ -29,7 +29,7 @@ typedef struct {
     FreeChainDataFunc freeFunc;
 } GuiAnalyze_t;
 
-#define GUI_ANALYZE_TABVIEW_CNT 2
+#define GUI_ANALYZE_TABVIEW_CNT 3
 typedef struct {
     lv_obj_t *obj[GUI_ANALYZE_TABVIEW_CNT];
     uint8_t tabviewIndex;
@@ -916,7 +916,8 @@ lv_obj_t *GuiWidgetTabViewChild(lv_obj_t *parent, cJSON *json)
     lv_obj_set_style_text_color(tab_btns, WHITE_COLOR, LV_PART_ITEMS | LV_STATE_CHECKED);
     lv_obj_set_style_text_color(tab_btns, WHITE_COLOR, LV_PART_MAIN);
     lv_obj_set_style_border_side(tab_btns, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_width(tab_btns, 200);
+    // The direct-render path also needs room for the third review tab.
+    lv_obj_set_width(tab_btns, g_analyzeTabview.tabviewIndex >= 2 ? 408 : 200);
 
     item = cJSON_GetObjectItem(json, "font");
     if (item != NULL) {
@@ -1104,6 +1105,10 @@ void GuiAnalyzeViewInit(lv_obj_t *parent)
             break;
         }
         tabWidth += tabItemWidth;
+    }
+    // Three review tabs must fit within the transaction content width.
+    if (tabWidth > 408) {
+        tabWidth = 408;
     }
 
     for (int i = 0; i < GUI_ANALYZE_TABVIEW_CNT; i++) {

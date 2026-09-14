@@ -93,6 +93,7 @@ impl ParsedSolanaTx {
             unknown_programs,
             overview_order,
             detail: parsed_detail,
+            advanced: message.advanced_review(signer),
             network: "Solana / Cluster not encoded".to_string(),
         })
     }

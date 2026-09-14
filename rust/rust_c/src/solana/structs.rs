@@ -16,10 +16,24 @@ use crate::common::utils::convert_c_char;
 use crate::{check_and_free_ptr, free_str_ptr, impl_c_ptr, impl_c_ptrs, make_free_method};
 
 #[repr(C)]
+pub struct DisplaySolanaAdvancedItem {
+    pub title: PtrString,
+    pub value: PtrString,
+}
+
+impl Free for DisplaySolanaAdvancedItem {
+    unsafe fn free(&self) {
+        free_str_ptr!(self.title);
+        free_str_ptr!(self.value);
+    }
+}
+
+#[repr(C)]
 pub struct DisplaySolanaTx {
     pub network: PtrString,
     pub overview: PtrT<DisplaySolanaTxOverview>,
     pub detail: PtrString,
+    pub advanced: PtrT<VecFFI<DisplaySolanaAdvancedItem>>,
 }
 
 #[repr(C)]
@@ -354,6 +368,7 @@ impl Free for DisplaySolanaTx {
         check_and_free_ptr!(self.overview);
         free_str_ptr!(self.network);
         free_str_ptr!(self.detail);
+        check_and_free_ptr!(self.advanced);
     }
 }
 
@@ -463,6 +478,10 @@ impl From<ParsedSolanaTx> for DisplaySolanaTx {
             network: convert_c_char(value.network.to_string()),
             overview: overview.c_ptr(),
             detail: convert_c_char(value.detail),
+            advanced: VecFFI::from(value.advanced.into_iter().map(|item| DisplaySolanaAdvancedItem {
+                title: convert_c_char(item.title),
+                value: convert_c_char(item.value),
+            }).collect::<Vec<_>>()).c_ptr(),
         }
     }
 }

@@ -2,6 +2,8 @@
 #![allow(dead_code)] // add for solana use a lot of external code
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
+pub mod advanced;
+
 extern crate alloc;
 extern crate core;
 #[cfg(test)]

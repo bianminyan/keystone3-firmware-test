@@ -15,6 +15,7 @@ pub struct ParsedSolanaTx {
     /// Original instruction ordinal paired with its corresponding overview.
     pub overview_order: Vec<(usize, OverviewAction)>,
     pub detail: String,
+    pub advanced: Vec<crate::advanced::AdvancedItem>,
     pub network: String,
 }
 

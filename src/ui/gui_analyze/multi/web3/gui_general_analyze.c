@@ -71,6 +71,8 @@ GetCustomContainerFunc GetOtherChainCustomFunc(char *funcName)
 {
     if (!strcmp(funcName, "GuiShowSolTxOverview")) {
         return GuiShowSolTxOverview;
+    } else if (!strcmp(funcName, "GuiShowSolTxAdvanced")) {
+        return GuiShowSolTxAdvanced;
     } else if (!strcmp(funcName, "GuiShowSolTxDetail")) {
         return GuiShowSolTxDetail;
     } else if (!strcmp(funcName, "GuiArTxOverview")) {

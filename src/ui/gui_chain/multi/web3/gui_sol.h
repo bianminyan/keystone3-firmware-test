@@ -20,5 +20,6 @@ void GetSolMessagePos(uint16_t *x, uint16_t *y, void *param);
 void FreeSolMemory(void);
 
 void GuiShowSolTxOverview(lv_obj_t *parent, void *g_totalData);
+void GuiShowSolTxAdvanced(lv_obj_t *parent, void *totalData);
 void GuiShowSolTxDetail(lv_obj_t *parent, void *g_totalData);
 #endif

@@ -1702,3 +1702,114 @@ void GuiShowSolTxDetail(lv_obj_t *parent, void *totalData)
     }
     GuiShowSolTxRawDetailCard(parent, txData->detail, NULL);
 }
+
+#define SOL_ADVANCED_ITEMS_PER_PAGE 4
+
+typedef struct {
+    const VecFFI_DisplaySolanaAdvancedItem *items;
+    size_t page;
+    lv_obj_t *content;
+    lv_obj_t *previous;
+    lv_obj_t *next;
+    lv_obj_t *counter;
+} SolAdvancedPager;
+
+static void GuiSolAdvancedRefresh(SolAdvancedPager *state)
+{
+    lv_obj_clean(state->content);
+    lv_obj_scroll_to_y(state->content, 0, LV_ANIM_OFF);
+    size_t start = state->page * SOL_ADVANCED_ITEMS_PER_PAGE;
+    size_t end = start + SOL_ADVANCED_ITEMS_PER_PAGE;
+    if (end > state->items->size) {
+        end = state->items->size;
+    }
+    lv_obj_t *last = NULL;
+    for (size_t i = start; i < end; i++) {
+        const DisplaySolanaAdvancedItem *item = &state->items->data[i];
+        last = CreateTransactionItemViewWithWidth(
+            state->content, item->title, item->value, last, SOL_COMPONENT_WIDTH);
+    }
+    size_t pages = (state->items->size + SOL_ADVANCED_ITEMS_PER_PAGE - 1) / SOL_ADVANCED_ITEMS_PER_PAGE;
+    if (pages == 0) {
+        pages = 1;
+    }
+    lv_label_set_text_fmt(state->counter, "%u / %u", (unsigned)(state->page + 1), (unsigned)pages);
+    if (state->page == 0) {
+        lv_obj_add_state(state->previous, LV_STATE_DISABLED);
+    } else {
+        lv_obj_clear_state(state->previous, LV_STATE_DISABLED);
+    }
+    if (state->page + 1 >= pages) {
+        lv_obj_add_state(state->next, LV_STATE_DISABLED);
+    } else {
+        lv_obj_clear_state(state->next, LV_STATE_DISABLED);
+    }
+}
+
+static void GuiSolAdvancedEvent(lv_event_t *event)
+{
+    SolAdvancedPager *state = lv_event_get_user_data(event);
+    if (lv_event_get_code(event) == LV_EVENT_DELETE) {
+        lv_mem_free(state);
+        return;
+    }
+    if (lv_event_get_target(event) == state->previous && state->page > 0) {
+        state->page--;
+    } else if (lv_event_get_target(event) == state->next &&
+               (state->page + 1) * SOL_ADVANCED_ITEMS_PER_PAGE < state->items->size) {
+        state->page++;
+    } else {
+        return;
+    }
+    GuiSolAdvancedRefresh(state);
+}
+
+static lv_obj_t *GuiSolAdvancedButton(lv_obj_t *parent, const char *text)
+{
+    lv_obj_t *button = lv_btn_create(parent);
+    lv_obj_set_size(button, 72, 48);
+    lv_obj_set_style_radius(button, 12, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(button, WHITE_COLOR, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(button, 30, LV_PART_MAIN);
+    lv_obj_t *label = lv_label_create(button);
+    lv_obj_set_style_text_font(label, g_defIllustrateFont, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, WHITE_COLOR, LV_PART_MAIN);
+    lv_label_set_text(label, text);
+    lv_obj_center(label);
+    return button;
+}
+
+void GuiShowSolTxAdvanced(lv_obj_t *parent, void *totalData)
+{
+    DisplaySolanaTx *txData = (DisplaySolanaTx*)totalData;
+    if (txData->advanced == NULL) {
+        return;
+    }
+    lv_obj_set_size(parent, SOL_COMPONENT_WIDTH, 420);
+    lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(parent, LV_OBJ_FLAG_CLICKABLE);
+    SolAdvancedPager *state = lv_mem_alloc(sizeof(SolAdvancedPager));
+    if (state == NULL) {
+        return;
+    }
+    memset(state, 0, sizeof(*state));
+    state->items = txData->advanced;
+    state->content = lv_obj_create(parent);
+    lv_obj_remove_style_all(state->content);
+    lv_obj_set_size(state->content, SOL_COMPONENT_WIDTH, 356);
+    lv_obj_set_scroll_dir(state->content, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(state->content, LV_SCROLLBAR_MODE_OFF);
+
+    state->previous = GuiSolAdvancedButton(parent, "<");
+    lv_obj_align(state->previous, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    state->next = GuiSolAdvancedButton(parent, ">");
+    lv_obj_align(state->next, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    state->counter = lv_label_create(parent);
+    lv_obj_set_style_text_font(state->counter, g_defIllustrateFont, LV_PART_MAIN);
+    lv_obj_set_style_text_color(state->counter, WHITE_COLOR, LV_PART_MAIN);
+    lv_obj_align(state->counter, LV_ALIGN_BOTTOM_MID, 0, -9);
+    lv_obj_add_event_cb(state->previous, GuiSolAdvancedEvent, LV_EVENT_CLICKED, state);
+    lv_obj_add_event_cb(state->next, GuiSolAdvancedEvent, LV_EVENT_CLICKED, state);
+    lv_obj_add_event_cb(parent, GuiSolAdvancedEvent, LV_EVENT_DELETE, state);
+    GuiSolAdvancedRefresh(state);
+}
