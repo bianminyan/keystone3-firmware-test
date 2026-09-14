@@ -127,10 +127,11 @@ void *GuiGetSolMessageData(void)
     do {
         char *path = sol_get_path(data);
         ChainType pubkeyIndex = CheckSolPathSupport(path);
-        char *pubKey = "";
-        if (pubkeyIndex != XPUB_TYPE_NUM) {
-            pubKey = GetCurrentAccountPublicKey(pubkeyIndex);
+        if (pubkeyIndex == XPUB_TYPE_NUM) {
+            free_ptr_string(path);
+            break;
         }
+        char *pubKey = GetCurrentAccountPublicKey(pubkeyIndex);
         PtrT_TransactionParseResult_DisplaySolanaMessage parseResult = solana_parse_message(data, pubKey);
         free_ptr_string(path);
         CHECK_CHAIN_BREAK(parseResult);
@@ -214,8 +215,19 @@ void GuiShowSolMessagePaged(lv_obj_t *parent, void *param, bool raw)
 {
     DisplaySolanaMessage *message = (DisplaySolanaMessage *)param;
     const char *text = raw ? message->raw_message : message->utf8_message;
+    lv_obj_update_layout(parent);
+    lv_obj_t *lengthLabel = GuiCreateIllustrateLabel(parent, "");
+    lv_label_set_text_fmt(lengthLabel, "Message Length: %u bytes", (unsigned)message->message_length);
+    lv_obj_set_width(lengthLabel, lv_obj_get_width(parent));
+    lv_obj_update_layout(lengthLabel);
+    lv_coord_t offset = lv_obj_get_height(lengthLabel) + 12;
+    lv_obj_t *pager = lv_obj_create(parent);
+    lv_obj_remove_style_all(pager);
+    lv_obj_set_pos(pager, 0, offset);
+    lv_obj_set_size(pager, lv_obj_get_width(parent), lv_obj_get_height(parent) - offset);
+    lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
     GuiShowPagedMessageText(
-        parent,
+        pager,
         text,
         !raw,
         raw ? _("solana_blind_sign_title") : NULL,
@@ -410,6 +422,9 @@ lv_obj_t *CreateSquadsSolanaTransferOverviewCard(lv_obj_t *parent, PtrString fro
 }
 static void GuiShowSolTxTransferOverview(lv_obj_t *parent, PtrT_DisplaySolanaTxOverview overviewData)
 {
+    lv_obj_t *warningCard = overviewData->transfer_to_in_lookup_table
+        ? GuiCreateAltWarningCard(parent, overviewData->transfer_to_lookup_table_reference)
+        : NULL;
     lv_obj_t *lastView = CreateTransactionOverviewCardWithWidth(
         parent,
         _("Value"),
@@ -417,18 +432,15 @@ static void GuiShowSolTxTransferOverview(lv_obj_t *parent, PtrT_DisplaySolanaTxO
         _("Main Action"),
         overviewData->main_action,
         SOL_COMPONENT_WIDTH);
+    if (warningCard != NULL) {
+        lv_obj_align_to(lastView, warningCard, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 16);
+    }
     lastView = CreateTransactionItemViewWithWidth(
         parent,
         _("From"),
         overviewData->transfer_from,
         lastView,
         SOL_COMPONENT_WIDTH);
-    if (overviewData->transfer_to_in_lookup_table) {
-        lv_obj_t *warningCard = GuiCreateAltWarningCard(
-            parent, overviewData->transfer_to_lookup_table_reference);
-        lv_obj_align_to(warningCard, lastView, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 16);
-        lastView = warningCard;
-    }
     CreateTransactionItemViewWithWidth(
         parent,
         overviewData->transfer_to_in_lookup_table ? "Unresolved Destination" : _("To"),
@@ -1368,12 +1380,35 @@ static bool CheckIsAddressLookupTableAccount(const char* account)
     return strchr(account, '#') != NULL;
 }
 
+static bool GuiSolInstructionsUseAddressLookupTable(PtrT_VecFFI_Instruction instructions)
+{
+    if (instructions == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < instructions->size; i++) {
+        if (instructions->data[i].program_address != NULL &&
+            CheckIsAddressLookupTableAccount(instructions->data[i].program_address)) {
+            return true;
+        }
+        PtrT_VecFFI_PtrString accounts = instructions->data[i].accounts;
+        if (accounts == NULL) {
+            continue;
+        }
+        for (size_t j = 0; j < accounts->size; j++) {
+            if (accounts->data[j] != NULL && CheckIsAddressLookupTableAccount(accounts->data[j])) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 static void GuiShowSolTxInstructionsOverview(lv_obj_t *parent, PtrT_DisplaySolanaTxOverview overviewData)
 {
     PtrT_DisplaySolanaTxOverviewUnknownInstructions unknown_instructions = overviewData->unknown_instructions;
     PtrT_VecFFI_Instruction overview_instructions = unknown_instructions->overview_instructions;
     // notice container
-    lv_obj_t *noticeContainer = GuiCreateContainerWithParent(parent, 408, LV_SIZE_CONTENT);
+    lv_obj_t *noticeContainer = GuiCreateContainerWithParent(parent, SOL_COMPONENT_WIDTH, LV_SIZE_CONTENT);
     lv_obj_align(noticeContainer, LV_ALIGN_DEFAULT, 0, 0);
     SetContainerDefaultStyle(noticeContainer);
     // Create a flex container for icon and notice label
@@ -1392,15 +1427,20 @@ static void GuiShowSolTxInstructionsOverview(lv_obj_t *parent, PtrT_DisplaySolan
     lv_obj_t *noticeLabel = lv_label_create(iconNoticeContainer);
     lv_obj_set_style_text_font(noticeLabel, g_defIllustrateFont, LV_PART_MAIN);
     lv_obj_set_style_text_color(noticeLabel, lv_color_hex(0xF5870A), LV_PART_MAIN);
-    lv_label_set_text(noticeLabel, "Notice");
+    lv_label_set_text(noticeLabel, GuiSolInstructionsUseAddressLookupTable(overview_instructions) ? "Warning" : "Notice");
 
     lv_obj_t *noticeContent = lv_label_create(noticeContainer);
     lv_obj_set_width(noticeContent, lv_pct(90));
     lv_label_set_long_mode(noticeContent, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_font(noticeContent, g_defIllustrateFont, LV_PART_MAIN);
     lv_obj_set_style_text_color(noticeContent, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    // multi language support
-    lv_label_set_text(noticeContent, _("solana_parse_tx_notice"));
+    // Transactions with unresolved lookup-table accounts are deliberately
+    // reviewed as generic instructions rather than a trusted transfer/swap.
+    lv_label_set_text(
+        noticeContent,
+        GuiSolInstructionsUseAddressLookupTable(overview_instructions)
+            ? "Address Lookup Table accounts cannot be resolved offline. Review every table and index in Details."
+            : _("solana_parse_tx_notice"));
     lv_obj_set_style_text_opa(noticeContent, 144, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_align_to(noticeContent, iconNoticeContainer, LV_ALIGN_OUT_BOTTOM_LEFT, 24, 10);
 
@@ -1409,7 +1449,7 @@ static void GuiShowSolTxInstructionsOverview(lv_obj_t *parent, PtrT_DisplaySolan
     int containerYOffset = lv_obj_get_height(noticeContainer) + 16; // set padding between containers
     for (int i = 0; i < overview_instructions->size; i++) {
         // container will auto adjust height
-        lv_obj_t *container = GuiCreateContainerWithParent(parent, 408, LV_SIZE_CONTENT);
+        lv_obj_t *container = GuiCreateContainerWithParent(parent, SOL_COMPONENT_WIDTH, LV_SIZE_CONTENT);
         lv_obj_align(container, LV_ALIGN_DEFAULT, 0, containerYOffset);
         SetContainerDefaultStyle(container);
 
@@ -1443,14 +1483,15 @@ static void GuiShowSolTxInstructionsOverview(lv_obj_t *parent, PtrT_DisplaySolan
                 lv_obj_set_style_bg_opa(accounts_cont, LV_OPA_TRANSP, LV_PART_MAIN);
                 lv_obj_set_style_pad_left(accounts_cont, 0, LV_PART_MAIN);  // remove left padding
                 lv_obj_set_style_pad_right(accounts_cont, 0, LV_PART_MAIN);  // remove right padding
-                lv_obj_add_flag(accounts_cont, LV_OBJ_FLAG_SCROLLABLE);
+                lv_obj_clear_flag(accounts_cont, LV_OBJ_FLAG_SCROLLABLE);
                 lv_obj_set_style_border_width(accounts_cont, 0, LV_PART_MAIN);
-                lv_obj_set_height(accounts_cont, accounts->size == 2 ? 150 : 200);
+                lv_obj_set_height(accounts_cont, LV_SIZE_CONTENT);
             }
             char order[BUFFER_SIZE_16] = {0};
             snprintf_s(order, BUFFER_SIZE_16, "%d", j + 1);
             lv_obj_t *orderLabel = GuiCreateNoticeLabel(accounts_cont, order);
             lv_obj_t *account_label = GuiCreateIllustrateLabel(accounts_cont, accounts->data[j]);
+            lv_obj_set_width(account_label, lv_pct(100));
             if (CheckIsAddressLookupTableAccount(accounts->data[j])) {
                 const char *separator = strchr(accounts->data[j], '#');
                 char altReference[96] = {0};
@@ -1476,23 +1517,91 @@ static void GuiShowSolTxInstructionsOverview(lv_obj_t *parent, PtrT_DisplaySolan
             lv_label_set_long_mode(account_label, LV_LABEL_LONG_WRAP);
             lv_obj_set_style_border_width(account_label, 0, LV_PART_MAIN);
         }
-        char buff[BUFFER_SIZE_128] = {0};
-        snprintf_s(buff, BUFFER_SIZE_128, "#4b4b4b data# %s", overview_instructions->data[i].data);
-        lv_obj_t *data_label = GuiCreateIllustrateLabel(container, buff);
-        lv_label_set_recolor(data_label, true);
-        // lv_obj_align_to(data_label, orderLabel, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 10);
-        lv_obj_align_to(data_label, lv_obj_get_child(lv_obj_get_parent(data_label),
-                        lv_obj_get_child_cnt(lv_obj_get_parent(data_label)) - 2), LV_ALIGN_OUT_BOTTOM_LEFT, 0, 10);
+        lv_obj_t *dataTitle = GuiCreateIllustrateLabel(container, "Data");
+        lv_obj_set_style_text_opa(dataTitle, LV_OPA_64, LV_PART_MAIN);
+        lv_obj_align_to(
+            dataTitle,
+            accounts_cont == NULL ? orderLabel : accounts_cont,
+            LV_ALIGN_OUT_BOTTOM_LEFT,
+            0,
+            10);
 
-        // program address label
-        snprintf_s(buff, BUFFER_SIZE_128, "#4b4b4b programAddress# %s", overview_instructions->data[i].program_address);
-        lv_obj_t *programAddress_label = GuiCreateIllustrateLabel(container, buff);
-        lv_label_set_recolor(programAddress_label, true);
-        GuiAlignToPrevObj(programAddress_label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 10);
+        lv_obj_t *data_label = GuiCreateIllustrateLabel(container, overview_instructions->data[i].data);
+        lv_obj_set_width(data_label, 328);
+        lv_label_set_long_mode(data_label, LV_LABEL_LONG_WRAP);
+        lv_obj_align_to(data_label, dataTitle, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 8);
+
+        lv_obj_t *programTitle = GuiCreateIllustrateLabel(container, "Program Address");
+        lv_obj_set_style_text_opa(programTitle, LV_OPA_64, LV_PART_MAIN);
+        lv_obj_align_to(programTitle, data_label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 10);
+
+        lv_obj_t *programAddress_label = GuiCreateIllustrateLabel(
+            container, overview_instructions->data[i].program_address);
+        lv_obj_set_width(programAddress_label, 328);
+        lv_label_set_long_mode(programAddress_label, LV_LABEL_LONG_WRAP);
+        lv_obj_align_to(programAddress_label, programTitle, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 8);
 
         // calculate the height of the container
         lv_obj_update_layout(container);
         containerYOffset += lv_obj_get_height(container) + 16; // set padding between containers
+    }
+}
+
+static void GuiShowSolTxOrderedOverview(lv_obj_t *parent, PtrT_DisplaySolanaTxOverview overviewData)
+{
+    lv_obj_t *lastView = NULL;
+    if (GuiHasSolTxAdditionalUnknownPrograms(overviewData)) {
+        lastView = GuiCreateWarningCard(parent);
+        lv_obj_align(lastView, LV_ALIGN_TOP_LEFT, 0, 0);
+    }
+    for (size_t i = 0; i < overviewData->overview_order->size; i++) {
+        DisplaySolanaOverviewAction *action = &overviewData->overview_order->data[i];
+        lv_obj_t *group = lv_obj_create(parent);
+        lv_obj_remove_style_all(group);
+        lv_obj_set_size(group, SOL_COMPONENT_WIDTH, LV_SIZE_CONTENT);
+        lv_obj_clear_flag(group, LV_OBJ_FLAG_SCROLLABLE);
+        if (action->kind == 0) {
+            lv_obj_t *order = GuiCreateNoticeLabel(group, "");
+            lv_label_set_text_fmt(order, "Instruction #%u", (unsigned)action->instruction_index);
+            lv_obj_update_layout(order);
+            lv_obj_t *content = lv_obj_create(group);
+            lv_obj_remove_style_all(content);
+            lv_obj_set_size(content, SOL_COMPONENT_WIDTH, LV_SIZE_CONTENT);
+            lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_set_y(content, lv_obj_get_height(order) + 12);
+            if (strcmp(overviewData->display_type, "Transfer") == 0) {
+                GuiShowSolTxTransferOverview(content, overviewData);
+            } else if (strcmp(overviewData->display_type, "TokenTransfer") == 0) {
+                GuiShowSplTokenTransferOverview(content, overviewData);
+            } else if (strcmp(overviewData->display_type, "Vote") == 0) {
+                GuiShowSolTxVoteOverview(content, overviewData);
+            } else if (strcmp(overviewData->display_type, "jupiterv6_swap") == 0) {
+                GuiShowJupiterV6SwapOverview(content, overviewData);
+            } else if (strcmp(overviewData->display_type, "squads_multisig_create") == 0) {
+                GuiShowSolTxMultiSigCreateOverview(content, overviewData);
+            } else if (strcmp(overviewData->display_type, "squads_proposal") == 0) {
+                GuiShowSolTxSquadsProposalOverview(content, overviewData);
+            }
+        } else if (action->kind == 1) {
+            // This borrowed one-item slice is used only while creating labels.
+            VecFFI_DisplaySolanaTxOverviewGeneral item = {
+                .data = &overviewData->general->data[action->index], .size = 1, .cap = 1,
+            };
+            DisplaySolanaTxOverview single = *overviewData;
+            single.general = &item;
+            GuiShowSolTxGeneralOverview(group, &single, NULL);
+        } else if (action->kind == 2) {
+            char order[BUFFER_SIZE_16] = {0};
+            snprintf_s(order, sizeof(order), "#%u", (unsigned)action->instruction_index);
+            CreateTransactionOverviewCardWithWidth(
+                group, order, "Unknown Program", "Program Address",
+                overviewData->additional_unknown_programs->data[action->index], SOL_COMPONENT_WIDTH);
+        }
+        lv_obj_update_layout(group);
+        if (lastView != NULL) {
+            lv_obj_align_to(group, lastView, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 16);
+        }
+        lastView = group;
     }
 }
 
@@ -1503,6 +1612,12 @@ void GuiShowSolTxOverview(lv_obj_t *parent, void *totalData)
     lv_obj_add_flag(parent, LV_OBJ_FLAG_CLICKABLE);
     DisplaySolanaTx *txData = (DisplaySolanaTx*)totalData;
     PtrT_DisplaySolanaTxOverview overviewData = txData->overview;
+    if (overviewData->overview_order != NULL) {
+        GuiShowSolTxOrderedOverview(parent, overviewData);
+        lv_obj_update_layout(parent);
+        lv_obj_scroll_to_y(parent, 0, LV_ANIM_OFF);
+        return;
+    }
     bool unknownProgramsRendered = false;
     if (0 == strcmp(overviewData->display_type, "Transfer")) {
         GuiShowSolTxTransferOverview(parent, overviewData);

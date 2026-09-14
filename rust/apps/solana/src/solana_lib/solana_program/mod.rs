@@ -44,8 +44,11 @@ pub mod program_utils {
         let config = bincode::config::legacy()
             .with_limit::<DECODE_LIMIT>()
             .with_fixed_int_encoding(); // As per https://github.com/servo/bincode/issues/333, these two options are needed
-        let (result, _) = bincode::serde::decode_from_slice(instruction_data, config)
+        let (result, consumed) = bincode::serde::decode_from_slice(instruction_data, config)
             .map_err(|_| InstructionError::InvalidInstructionData)?;
+        if consumed != instruction_data.len() {
+            return Err(InstructionError::InvalidInstructionData);
+        }
         Ok(result)
     }
 }

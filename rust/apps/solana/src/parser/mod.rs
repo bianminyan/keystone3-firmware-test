@@ -17,8 +17,7 @@ use crate::parser::overview::{
     ProgramOverviewProposal, ProgramOverviewSplTokenTransfer, ProgramOverviewTransfer,
     ProgramOverviewVote, SolanaOverview,
 };
-use crate::parser::structs::{ParsedSolanaTx, SolanaTxDisplayType};
-use crate::read::Read;
+use crate::parser::structs::{OverviewAction, ParsedSolanaTx, SolanaTxDisplayType};
 use crate::utils;
 
 pub mod detail;
@@ -56,19 +55,116 @@ impl ParsedSolanaTx {
             message.validate_signer(signer)?;
         }
         let raw_details = message.to_program_details()?;
-        let display_type = Self::detect_display_type(&raw_details);
-        let parsed_overview = Self::build_overview(&display_type, &raw_details)?;
+        // A parsed SOL transfer can retain its amount/action UI while explicitly
+        // marking its ALT destination unresolved. Other ALT layouts still use
+        // raw review until they can label every unresolved account safely.
+        let has_unresolved_lookups = message
+            .address_table_lookups
+            .as_ref()
+            .map(|lookups| !lookups.is_empty())
+            .unwrap_or(false);
+        let alt_transfer_supported = matches!(raw_details.as_slice(), [SolanaDetail {
+            kind: ProgramDetail::SystemTransfer(transfer), ..
+        }] if !Self::is_lookup_table_reference(&transfer.from)
+            && Self::is_lookup_table_reference(&transfer.to));
+        let display_type = if has_unresolved_lookups && !alt_transfer_supported {
+            SolanaTxDisplayType::Unknown
+        } else {
+            Self::detect_display_type(&raw_details)
+        };
+        let mut parsed_overview = Self::build_overview(&display_type, &raw_details)?;
+        if matches!(parsed_overview, SolanaOverview::Instructions(_)) {
+            // Semantic validation above remains mandatory, even for raw review.
+            parsed_overview =
+                Self::build_instructions_overview(&message.to_raw_program_details()?)?;
+        }
         let additional_overviews = Self::build_additional_overviews(&display_type, &raw_details)?;
         let unknown_programs = Self::collect_additional_unknown_programs(&raw_details);
-        let parsed_detail = Self::build_detail(&display_type, &raw_details, &message)?;
+        let parsed_detail = Self::compact_byte_arrays(&Self::build_detail(&display_type, &raw_details, &message)?);
+        let overview_order = Self::build_overview_order(&display_type, &raw_details);
         Ok(Self {
             display_type,
             overview: parsed_overview,
             additional_overviews,
             unknown_programs,
+            overview_order,
             detail: parsed_detail,
-            network: "Solana Mainnet".to_string(),
+            network: "Solana / Cluster not encoded".to_string(),
         })
+    }
+    /// Keep object structure readable without spending one line per raw byte.
+    /// Work only outside JSON strings and accept only flat, valid u8 arrays.
+    fn compact_byte_arrays(json: &str) -> String {
+        let bytes = json.as_bytes();
+        let mut output = String::with_capacity(json.len());
+        let (mut cursor, mut copied, mut quoted, mut escaped) = (0, 0, false, false);
+        while cursor < bytes.len() {
+            let byte = bytes[cursor];
+            if quoted {
+                if escaped { escaped = false; }
+                else if byte == b'\\' { escaped = true; }
+                else if byte == b'"' { quoted = false; }
+            } else if byte == b'"' {
+                quoted = true;
+            } else if byte == b'[' {
+                // Stop at the first non-byte-array character; this avoids
+                // scanning entire nested objects or interpreting memo text.
+                let mut end = cursor + 1;
+                while end < bytes.len() && (bytes[end].is_ascii_whitespace() || bytes[end].is_ascii_digit() || bytes[end] == b',') {
+                    end += 1;
+                }
+                if end < bytes.len() && bytes[end] == b']' {
+                    if let Ok(values) = serde_json::from_str::<Vec<u8>>(&json[cursor..=end]) {
+                        output.push_str(&json[copied..cursor]);
+                        output.push('[');
+                        for (index, value) in values.iter().enumerate() {
+                            if index > 0 { output.push_str(", "); }
+                            output.push_str(&value.to_string());
+                        }
+                        output.push(']');
+                        cursor = end + 1;
+                        copied = cursor;
+                        continue;
+                    }
+                }
+            }
+            cursor += 1;
+        }
+        output.push_str(&json[copied..]);
+        output
+    }
+
+    fn build_overview_order(
+        display_type: &SolanaTxDisplayType,
+        details: &[SolanaDetail],
+    ) -> Vec<(usize, OverviewAction)> {
+        if matches!(display_type, SolanaTxDisplayType::Unknown) {
+            return Vec::new();
+        }
+        let mut order = Vec::new();
+        let (mut general, mut unknown, mut primary_added) = (0, 0, false);
+        for (index, detail) in details.iter().enumerate() {
+            let action = if Self::is_unknown_detail(&detail.common) {
+                let action = OverviewAction::Unknown(unknown);
+                unknown += 1;
+                action
+            } else if Self::is_represented_by_primary_overview(display_type, detail) {
+                // Some dedicated views (Squads) aggregate several instructions.
+                if primary_added {
+                    continue;
+                }
+                primary_added = true;
+                OverviewAction::Primary
+            } else {
+                let action = OverviewAction::General(general);
+                general += 1;
+                action
+            };
+            // V1 configuration is message metadata, not a signed instruction.
+            let ordinal = if detail.common.program == "TransactionConfig" { 0 } else { index + 1 };
+            order.push((ordinal, action));
+        }
+        order
     }
     // detect the display type by the details vec contains number of details
     fn detect_display_type(details: &[SolanaDetail]) -> SolanaTxDisplayType {
@@ -175,7 +271,7 @@ impl ParsedSolanaTx {
                 d.clone()
             })
             .collect::<Vec<SolanaDetail>>();
-        Ok(serde_json::to_string(&parsed_detail)?)
+        Ok(serde_json::to_string_pretty(&parsed_detail)?)
     }
 
     fn build_unknown_detail(details: &[SolanaDetail], message: &Message) -> Result<String> {
@@ -188,8 +284,8 @@ impl ParsedSolanaTx {
                     "accounts": message.accounts.iter().map(|account| {base58::encode(&account.value)}).collect::<Vec<String>>(),
                     "block_hash": base58::encode(&message.block_hash.value),
                     "instructions": details,
-                }).to_string();
-        Ok(value)
+                });
+        Ok(serde_json::to_string_pretty(&value)?)
     }
 
     fn build_detail(
@@ -201,11 +297,11 @@ impl ParsedSolanaTx {
             SolanaTxDisplayType::Unknown => Self::build_unknown_detail(details, message),
             SolanaTxDisplayType::General => Self::build_genera_detail(details),
             SolanaTxDisplayType::Transfer | SolanaTxDisplayType::Vote => {
-                Ok(serde_json::to_string(&details)?)
+                Ok(serde_json::to_string_pretty(&details)?)
             }
-            SolanaTxDisplayType::SquadsV4 => Ok(serde_json::to_string(&details)?),
-            SolanaTxDisplayType::TokenTransfer => Ok(serde_json::to_string(&details)?),
-            SolanaTxDisplayType::JupiterV6 => Ok(serde_json::to_string(&details)?),
+            SolanaTxDisplayType::SquadsV4 => Ok(serde_json::to_string_pretty(&details)?),
+            SolanaTxDisplayType::TokenTransfer => Ok(serde_json::to_string_pretty(&details)?),
+            SolanaTxDisplayType::JupiterV6 => Ok(serde_json::to_string_pretty(&details)?),
         }
     }
 
@@ -803,6 +899,18 @@ impl ParsedSolanaTx {
         account.contains("#")
     }
 
+    fn format_basis_points(basis_points: u16) -> String {
+        let whole = basis_points / 100;
+        let fractional = basis_points % 100;
+        if fractional == 0 {
+            format!("{whole}%")
+        } else if fractional % 10 == 0 {
+            format!("{whole}.{}%", fractional / 10)
+        } else {
+            format!("{whole}.{fractional:02}%")
+        }
+    }
+
     fn genreate_jupiter_swap_overview(
         instruction_name: &str,
         token_a_mint: &str,
@@ -814,12 +922,8 @@ impl ParsedSolanaTx {
     ) -> SolanaOverview {
         let program_name = "Jupiter Aggregator v6";
         let program_address = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
-        let base_percent = 10000;
-        let slippage_bps = format!("{}%", (slippage_bps as f64 / base_percent as f64) * 100.0);
-        let platform_fee_bps = format!(
-            "{}%",
-            (platform_fee_bps as f64 / base_percent as f64) * 100.0
-        );
+        let slippage_bps = Self::format_basis_points(slippage_bps);
+        let platform_fee_bps = Self::format_basis_points(platform_fee_bps);
         let token_a_mint = token_a_mint.to_string();
         let token_b_mint = token_b_mint.to_string();
         let token_a_overview = JupiterV6SwapTokenInfoOverview {
@@ -828,10 +932,11 @@ impl ParsedSolanaTx {
             token_address: token_a_mint.clone(),
             token_amount: format!(
                 "{} {}",
-                utils::token_amount_to_human_readable(
-                    in_amount,
-                    Self::find_token_info(&token_a_mint).2.into()
-                ),
+                utils::format_token_amount(
+                    &in_amount.to_string(),
+                    Self::find_token_info(&token_a_mint).2
+                )
+                .unwrap_or_else(|_| in_amount.to_string()),
                 Self::find_token_info(&token_a_mint).0
             ),
             exist_in_address_lookup_table: Self::is_account_exist_in_lookup_table(&token_a_mint),
@@ -842,10 +947,11 @@ impl ParsedSolanaTx {
             token_address: token_b_mint.clone(),
             token_amount: format!(
                 "{} {}",
-                utils::token_amount_to_human_readable(
-                    out_amount,
-                    Self::find_token_info(&token_b_mint).2.into()
-                ),
+                utils::format_token_amount(
+                    &out_amount.to_string(),
+                    Self::find_token_info(&token_b_mint).2
+                )
+                .unwrap_or_else(|_| out_amount.to_string()),
                 Self::find_token_info(&token_b_mint).0
             ),
             exist_in_address_lookup_table: Self::is_account_exist_in_lookup_table(&token_b_mint),
@@ -1084,6 +1190,26 @@ mod tests {
             },
             kind: ProgramDetail::GeneralUnknown(ProgramDetailGeneralUnknown::default()),
         }
+    }
+
+    #[test]
+    fn compact_byte_arrays_preserves_json_and_strings() {
+        let original = json!({
+            "transaction_message": [1, 0, 255, 42],
+            "nested": [{"bytes": [2, 3]}],
+            "memo": "Keep [1, 2] and escaped \"quotes\" / 中文 unchanged",
+            "not_bytes": [256, -1, 1.5],
+            "empty": []
+        });
+        let pretty = serde_json::to_string_pretty(&original).unwrap();
+        let compact = ParsedSolanaTx::compact_byte_arrays(&pretty);
+        assert!(compact.contains("[1, 0, 255, 42]"));
+        assert!(compact.contains("[2, 3]"));
+        assert!(compact.contains("\"nested\": [\n"));
+        assert!(compact.contains("\"not_bytes\": [\n"));
+        assert_eq!(serde_json::from_str::<Value>(&compact).unwrap(), original);
+        assert_eq!(ParsedSolanaTx::compact_byte_arrays(&compact), compact);
+        assert!(compact.len() < pretty.len());
     }
 
     #[test]
@@ -1368,6 +1494,10 @@ mod tests {
             "1 raw units (decimals: 19)"
         );
         assert!(ParsedSolanaTx::format_token_amount_for_display("unknown", "bad", 19).is_err());
+        assert_eq!(ParsedSolanaTx::format_basis_points(0), "0%");
+        assert_eq!(ParsedSolanaTx::format_basis_points(50), "0.5%");
+        assert_eq!(ParsedSolanaTx::format_basis_points(125), "1.25%");
+        assert_eq!(ParsedSolanaTx::format_basis_points(u16::MAX), "655.35%");
     }
 
     #[test]
@@ -1848,6 +1978,7 @@ mod tests {
         let raw_message = "800100020305919998ccad85d7254856bde658b1926b77276f9c9f93d4713eec50c6f0cd4e0306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000008239266ec3629985acb2ec387b47c3c3ca057181773835b4f0e99ab4f065e7dc3e93416d06d11ad5352987624986db3240b02ea5cc42ba3c2e9f3a6e9bfe1c203010005028c45080001000903208601000000000002271d1f1e00040508070906191c19141b11120c0f1a0b0a0e13101020070d00180315000d04171619295bbffbf792f60aa2084d230100000000ad88c11900000000030201070000000000000101000000000004fdd750c4799429e7e17c0c7cf0a55a82d70846d1bc97665714af810651e8bb04010e060d010c0f0709209be863b24cb2303c7162670000dfaf3176a1ada32a0305df593d8a935c7dcd06038b8d118a8c0287868cb7d386ca1b4cb4125557bf989073c37d63ae73104247ee1280afa86a8ac75b0b9695938f97949a9192988d019bfddf37b259d3ceada480a9a43ba12f21bfd3d7afd64d35b9f0330f6645d3016f03969a9900";
         let transaction = Vec::from_hex(raw_message).unwrap();
         let parsed = ParsedSolanaTx::build(&transaction).unwrap();
+        assert!(matches!(parsed.display_type, SolanaTxDisplayType::Unknown));
         let detail_tx = parsed.detail;
         let parsed_detail: Value = serde_json::from_str(detail_tx.as_str()).unwrap();
         let expect_data = json!([
@@ -1908,7 +2039,20 @@ mod tests {
               "program_account": "YmirFH6wUrtUMUmfRPZE7TcnszDw689YNWYrMgyB55N"
             }
         ]);
-        assert_eq!(expect_data, parsed_detail);
+        let mut expect_data = expect_data;
+        for instruction in expect_data.as_array_mut().unwrap() {
+            if let Some(accounts) = instruction.get_mut("accounts").and_then(Value::as_array_mut) {
+                for account in accounts {
+                    if let Some((table, index)) = account.as_str().and_then(|s| s.split_once('#')) {
+                        *account = json!({"Table": table, "Index": index.parse::<u8>().unwrap(), "Status": "Unresolved offline"});
+                    }
+                }
+            }
+        }
+        assert_eq!(expect_data, parsed_detail["instructions"]);
+        assert!(parsed_detail["accounts"].is_array());
+        assert!(parsed_detail["header"].is_object());
+        assert!(parsed_detail["block_hash"].is_string());
     }
 
     #[test]

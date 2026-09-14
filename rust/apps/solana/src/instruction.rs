@@ -127,6 +127,24 @@ impl Instruction {
                 resolvers::squads_v4::resolve(instruction, accounts)
             }
             SupportedProgram::JupiterProgramV6 => {
+                if self.data.len() < 8 {
+                    return Err(SolanaError::InvalidData(
+                        "Jupiter instruction discriminator is truncated".to_string(),
+                    ));
+                }
+                let discriminator = &self.data[..8];
+                let is_supported_instruction = matches!(
+                    discriminator,
+                    [0xc1, 0x20, 0x9b, 0x33, 0x41, 0xd6, 0x9c, 0x81]
+                        | [0xe5, 0x17, 0xcb, 0x97, 0x7a, 0xe3, 0xad, 0x2a]
+                        | [0xd0, 0x33, 0xef, 0x97, 0x7b, 0x2b, 0xed, 0x5c]
+                        | [0xb0, 0xd1, 0x69, 0xa8, 0x9a, 0x7d, 0x45, 0x3e]
+                );
+                if !is_supported_instruction {
+                    return Err(SolanaError::UnsupportedProgram(
+                        "unsupported Jupiter v6 instruction".to_string(),
+                    ));
+                }
                 let instruction =
                     crate::solana_lib::jupiter_v6::instructions::JupiterInstructions::dispatch(
                         self.data.as_slice(),
@@ -260,6 +278,30 @@ mod tests {
             };
             assert!(instruction.parse(program_id, vec![]).is_err());
         }
+    }
+
+    #[test]
+    fn distinguishes_malformed_and_unknown_jupiter_instructions() {
+        let jupiter_program = PROGRAM_IDS[7];
+        let instruction = |data| Instruction {
+            program_index: 0,
+            account_indexes: vec![],
+            data,
+        };
+
+        assert!(matches!(
+            instruction(vec![0x42; 7]).parse(jupiter_program, vec![]),
+            Err(SolanaError::InvalidData(_))
+        ));
+        assert!(matches!(
+            instruction(vec![0x42; 8]).parse(jupiter_program, vec![]),
+            Err(SolanaError::UnsupportedProgram(_))
+        ));
+        assert!(matches!(
+            instruction(vec![0xc1, 0x20, 0x9b, 0x33, 0x41, 0xd6, 0x9c, 0x81])
+                .parse(jupiter_program, vec![]),
+            Err(SolanaError::ProgramError(_))
+        ));
     }
 
     #[test]

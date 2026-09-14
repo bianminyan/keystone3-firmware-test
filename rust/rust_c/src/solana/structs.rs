@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use core::ptr::null_mut;
 
 use app_solana::parser::overview::{ProgramOverviewGeneral, SolanaOverview};
-use app_solana::parser::structs::{ParsedSolanaTx, SolanaTxDisplayType};
+use app_solana::parser::structs::{OverviewAction, ParsedSolanaTx, SolanaTxDisplayType};
 use app_solana::structs::SolanaMessage;
 use itertools::Itertools;
 
@@ -20,6 +20,14 @@ pub struct DisplaySolanaTx {
     pub network: PtrString,
     pub overview: PtrT<DisplaySolanaTxOverview>,
     pub detail: PtrString,
+}
+
+#[repr(C)]
+pub struct DisplaySolanaOverviewAction {
+    pub instruction_index: usize,
+    /// 0 = dedicated primary view, 1 = general item, 2 = unknown program.
+    pub kind: u32,
+    pub index: usize,
 }
 
 #[repr(C)]
@@ -217,6 +225,7 @@ impl Free for DisplaySolanaTxOverviewJupiterV6Swap {
 
 #[repr(C)]
 pub struct DisplaySolanaTxOverview {
+    pub overview_order: PtrT<VecFFI<DisplaySolanaOverviewAction>>,
     // `Transfer`, `Vote`, `General`, `Unknown`
     pub display_type: PtrString,
     // 'Transfer', 'Vote'
@@ -319,6 +328,7 @@ impl_c_ptrs!(DisplaySolanaTx, DisplaySolanaTxOverview);
 impl Default for DisplaySolanaTxOverview {
     fn default() -> Self {
         Self {
+            overview_order: null_mut(),
             display_type: null_mut(),
             transfer_value: null_mut(),
             main_action: null_mut(),
@@ -349,6 +359,10 @@ impl Free for DisplaySolanaTx {
 
 impl Free for DisplaySolanaTxOverview {
     unsafe fn free(&self) {
+        if !self.overview_order.is_null() {
+            let order = Box::from_raw(self.overview_order);
+            drop(Vec::from_raw_parts(order.data, order.size, order.cap));
+        }
         free_str_ptr!(self.display_type);
         free_str_ptr!(self.main_action);
         free_str_ptr!(self.transfer_value);
@@ -402,6 +416,29 @@ impl Free for DisplaySolanaTxOverview {
 impl From<ParsedSolanaTx> for DisplaySolanaTx {
     fn from(value: ParsedSolanaTx) -> Self {
         let mut overview = DisplaySolanaTxOverview::from(&value);
+        if value.overview_order.len() > 1
+            && !matches!(value.overview, SolanaOverview::Instructions(_))
+        {
+            overview.overview_order = VecFFI::from(
+                value
+                    .overview_order
+                    .iter()
+                    .map(|(instruction_index, action)| {
+                        let (kind, index) = match action {
+                            OverviewAction::Primary => (0, 0),
+                            OverviewAction::General(index) => (1, *index),
+                            OverviewAction::Unknown(index) => (2, *index),
+                        };
+                        DisplaySolanaOverviewAction {
+                            instruction_index: *instruction_index,
+                            kind,
+                            index,
+                        }
+                    })
+                    .collect_vec(),
+            )
+            .c_ptr();
+        }
         if !value.additional_overviews.is_empty() {
             overview.general = VecFFI::from(
                 value
@@ -675,11 +712,13 @@ pub struct DisplaySolanaMessage {
     raw_message: PtrString,
     utf8_message: PtrString,
     from: PtrString,
+    message_length: usize,
 }
 
 impl From<SolanaMessage> for DisplaySolanaMessage {
     fn from(message: SolanaMessage) -> Self {
         Self {
+            message_length: message.message_length,
             raw_message: convert_c_char(message.raw_message),
             utf8_message: if message.utf8_message.is_empty() {
                 null_mut()

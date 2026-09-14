@@ -165,7 +165,7 @@ impl Message {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{classify_payload, parse, parse_for_signer, read::Read, SolanaPayloadType};
+    use crate::{classify_payload, parse, parse_for_signer, SolanaPayloadType};
     use alloc::vec;
 
     fn encode(
@@ -223,6 +223,35 @@ mod tests {
         assert!(config.memo.contains("Heap Size: 32768 bytes"));
         assert!(parse_for_signer(&raw, &[2; 32]).is_err());
         assert!(parse_for_signer(&raw, &[9; 32]).is_err());
+    }
+
+    #[test]
+    fn security_review_preserves_v1_instruction_order_and_metadata() {
+        use crate::parser::structs::OverviewAction;
+        let unknown = Instruction { program_index: 3, account_indexes: vec![0], data: vec![42] };
+        for unknown_first in [true, false] {
+            let instructions = if unknown_first { vec![unknown.clone(), transfer()] } else { vec![transfer(), unknown.clone()] };
+            let raw = encode(3, &5000u64.to_le_bytes(), &[[1; 32], [2; 32], [0; 32], [3; 32]], &instructions);
+            let parsed = parse_for_signer(&raw, &[1; 32]).unwrap();
+            let expected = if unknown_first {
+                vec![(1, OverviewAction::Unknown(0)), (2, OverviewAction::Primary), (0, OverviewAction::General(0))]
+            } else {
+                vec![(1, OverviewAction::Primary), (2, OverviewAction::Unknown(0)), (0, OverviewAction::General(0))]
+            };
+            assert_eq!(parsed.overview_order, expected);
+            assert!(parsed.additional_overviews[0].memo.contains("5000 lamports"));
+            assert_eq!(parsed.unknown_programs.len(), 1);
+        }
+    }
+
+    #[test]
+    fn security_parser_rejects_v1_known_instruction_trailing_data() {
+        let mut malformed = transfer();
+        malformed.data.push(0);
+        let raw = encode(0, &[], &[[1; 32], [2; 32], [0; 32]], &[malformed]);
+        // Structurally valid framing must not bypass semantic validation.
+        assert!(Message::read_exact(&mut raw.clone()).is_ok());
+        assert!(parse_for_signer(&raw, &[1; 32]).is_err());
     }
 
     #[test]
@@ -295,7 +324,8 @@ mod tests {
             let parsed = parse(&raw).unwrap();
             assert!(parsed.detail.contains("IgnoredInV1"));
             assert!(!parsed.detail.contains("compute_unit_price_micro_lamports"));
-            assert!(parsed.detail.contains("\"priority_fee_lamports\":\"42\""));
+            let detail: serde_json::Value = serde_json::from_str(&parsed.detail).unwrap();
+            assert!(detail.to_string().contains("\"priority_fee_lamports\":\"42\""));
             let message = Message::read_exact(&mut raw.clone()).unwrap();
             assert_eq!(message.instructions[0].data, message.instructions[2].data);
         }

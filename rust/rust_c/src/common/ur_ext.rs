@@ -385,6 +385,9 @@ impl InferViewType for BtcSignRequest {
 #[cfg(feature = "solana")]
 impl InferViewType for SolSignRequest {
     fn infer(&self) -> Result<ViewType, URError> {
+        if self.get_sign_type() == ur_registry::solana::sol_sign_request::SignType::Transaction {
+            return Ok(ViewType::SolanaTx);
+        }
         match app_solana::classify_payload(&self.get_sign_data()) {
             app_solana::SolanaPayloadType::Transaction
             | app_solana::SolanaPayloadType::MalformedTransaction => Ok(ViewType::SolanaTx),
@@ -466,6 +469,33 @@ impl InferViewType for QRHardwareCall {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "solana")]
+    #[test]
+    fn solana_transaction_fixtures_never_fall_back_to_message_view() {
+        use super::{InferViewType, SolSignRequest, ViewType};
+        let dataset: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/solana-security.json"
+        ))
+        .unwrap();
+        for fixture in dataset["fixtures"].as_array().unwrap() {
+            let mut decoder = ur::Decoder::default();
+            for frame in fixture["ur"].as_array().unwrap() {
+                decoder
+                    .receive(&frame.as_str().unwrap().to_lowercase())
+                    .unwrap();
+            }
+            let request = SolSignRequest::try_from(decoder.message().unwrap().unwrap()).unwrap();
+            if request.get_sign_type()
+                == ur_registry::solana::sol_sign_request::SignType::Transaction
+            {
+                assert!(
+                    matches!(request.infer(), Ok(ViewType::SolanaTx)),
+                    "{}",
+                    fixture["id"]
+                );
+            }
+        }
+    }
     use alloc::vec::Vec;
 
     use hex::FromHex;

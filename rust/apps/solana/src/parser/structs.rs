@@ -8,13 +8,21 @@ use crate::parser::overview::{ProgramOverviewGeneral, SolanaOverview};
 pub struct ParsedSolanaTx {
     pub display_type: SolanaTxDisplayType,
     pub overview: SolanaOverview,
-    /// Parsed sibling instructions which must be shown after a specialized
-    /// overview such as Jupiter. This keeps the richer primary UI without
-    /// hiding any other instruction committed by the signature.
+    /// Parsed siblings of a specialized overview such as Jupiter. The UI uses
+    /// overview_order to interleave these with the primary and unknown actions.
     pub additional_overviews: Vec<ProgramOverviewGeneral>,
     pub unknown_programs: Vec<String>,
+    /// Original instruction ordinal paired with its corresponding overview.
+    pub overview_order: Vec<(usize, OverviewAction)>,
     pub detail: String,
     pub network: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum OverviewAction {
+    Primary,
+    General(usize),
+    Unknown(usize),
 }
 
 // method label on ui
