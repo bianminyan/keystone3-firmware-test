@@ -190,9 +190,9 @@ void GetSolMessageFrom(void *indata, void *param, uint32_t maxLen)
     }
     if (strlen(message->from) >= maxLen) {
         if (maxLen <= 4) {
-            snprintf((char *)indata, maxLen, "%.*s", (int)(maxLen - 1), "...");
+            snprintf_s((char *)indata, maxLen, "%.*s", (int)(maxLen - 1), "...");
         } else {
-            snprintf((char *)indata, maxLen, "%.*s...", (int)(maxLen - 4), message->from);
+            snprintf_s((char *)indata, maxLen, "%.*s...", (int)(maxLen - 4), message->from);
         }
     } else {
         strcpy_s((char *)indata, maxLen, message->from);
@@ -502,7 +502,7 @@ void SolanaSplTokenAddressLearnMore(lv_event_t *e)
     const char* address = (const char*)lv_event_get_user_data(e);
     if (address != NULL) {
         char url[512];
-        snprintf(url, sizeof(url), "https://solscan.io/token/%s", address);
+        snprintf_s(url, sizeof(url), "https://solscan.io/token/%s", address);
         GuiQRCodeHintBoxOpenBig(url, "Scan to double-check the Token account", "", url);
     }
 }
@@ -1147,7 +1147,7 @@ static void SolanaAddressLearnMore(lv_event_t *e)
             return;
         }
         char tableAddress[45] = {0};
-        memcpy(tableAddress, table, tableLen);
+        memcpy_s(tableAddress, sizeof(tableAddress), table, tableLen);
         char url[128] = {0};
         snprintf_s(
             url,
@@ -1238,7 +1238,7 @@ static void GuiShowSolTxMultiSigCreateDetail(lv_obj_t *parent, PtrT_DisplaySolan
         lv_obj_clear_flag(memberItem, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_t *memberItemLabel = lv_label_create(memberItem);
         char memberText[64];
-        snprintf(memberText, sizeof(memberText), "Member %d", i + 1);
+        snprintf_s(memberText, sizeof(memberText), "Member %u", (unsigned)(i + 1));
         if (i == 0) {
             lv_obj_set_width(memberItemLabel, lv_pct(100));
             lv_obj_t *ownerLabel = GuiCreateSolanaTextLabel(memberItemLabel, "Owner");
@@ -1262,7 +1262,7 @@ static void GuiShowSolTxMultiSigCreateDetail(lv_obj_t *parent, PtrT_DisplaySolan
 
     lv_obj_t *thresholdLabelValue = lv_label_create(thresholdContainer);
     char thresholdText[64];
-    snprintf(thresholdText, sizeof(thresholdText), "%d/%d", threshold, member_count);
+    snprintf_s(thresholdText, sizeof(thresholdText), "%u/%u", (unsigned)threshold, (unsigned)member_count);
     lv_label_set_text(thresholdLabelValue, thresholdText);
     lv_obj_set_style_text_color(thresholdLabelValue, WHITE_COLOR, LV_PART_MAIN);
     lv_obj_align_to(thresholdLabelValue, thresholdLabel, LV_ALIGN_OUT_RIGHT_MID, 15, 0);
@@ -1313,7 +1313,7 @@ static void GuiShowSolTxMultiSigCreateOverview(lv_obj_t *parent, PtrT_DisplaySol
     uintptr_t member_count = squadsMultisigCreate->member_count;
     lv_obj_t *thresholdLabelValue = lv_label_create(thresholdContainer);
     char thresholdText[64];
-    snprintf(thresholdText, sizeof(thresholdText), "%d/%d", threshold, member_count);
+    snprintf_s(thresholdText, sizeof(thresholdText), "%u/%u", (unsigned)threshold, (unsigned)member_count);
     lv_label_set_text(thresholdLabelValue, thresholdText);
     lv_obj_set_style_text_color(thresholdLabelValue, WHITE_COLOR, LV_PART_MAIN);
     lv_obj_align_to(thresholdLabelValue, thresholdLabel, LV_ALIGN_OUT_RIGHT_MID, 15, 0);
@@ -1711,7 +1711,7 @@ void GuiShowSolTxDetail(lv_obj_t *parent, void *totalData)
 
 // Only the internal Advanced strings contain these translation tokens. Raw
 // transaction data stays in Details and must never pass through this renderer.
-static size_t GuiSolAdvancedTextPass(const char *text, char *output)
+static size_t GuiSolAdvancedTextPass(const char *text, char *output, size_t outputSize)
 {
     size_t length = 0;
     while (*text != '\0') {
@@ -1721,28 +1721,32 @@ static size_t GuiSolAdvancedTextPass(const char *text, char *output)
         if (end == NULL || (size_t)(end - token - 2) >= sizeof(key)) {
             size_t remaining = strlen(text);
             if (output != NULL) {
-                memcpy(output + length, text, remaining);
+                ASSERT(length < outputSize && remaining < outputSize - length);
+                memcpy_s(output + length, outputSize - length, text, remaining);
             }
             length += remaining;
             break;
         }
         size_t prefix = token - text;
         if (output != NULL) {
-            memcpy(output + length, text, prefix);
+            ASSERT(length < outputSize && prefix < outputSize - length);
+            memcpy_s(output + length, outputSize - length, text, prefix);
         }
         length += prefix;
         size_t keyLength = end - token - 2;
-        memcpy(key, token + 2, keyLength);
+        memcpy_s(key, sizeof(key), token + 2, keyLength);
         key[keyLength] = '\0';
         const char *translated = _(key);
         size_t translatedLength = strlen(translated);
         if (output != NULL) {
-            memcpy(output + length, translated, translatedLength);
+            ASSERT(length < outputSize && translatedLength < outputSize - length);
+            memcpy_s(output + length, outputSize - length, translated, translatedLength);
         }
         length += translatedLength;
         text = end + 2;
     }
     if (output != NULL) {
+        ASSERT(length < outputSize);
         output[length] = '\0';
     }
     return length;
@@ -1750,10 +1754,10 @@ static size_t GuiSolAdvancedTextPass(const char *text, char *output)
 
 static char *GuiSolAdvancedText(const char *text)
 {
-    size_t size = GuiSolAdvancedTextPass(text, NULL) + 1;
+    size_t size = GuiSolAdvancedTextPass(text, NULL, 0) + 1;
     char *translated = lv_mem_alloc(size);
     ASSERT(translated != NULL);
-    GuiSolAdvancedTextPass(text, translated);
+    GuiSolAdvancedTextPass(text, translated, size);
     return translated;
 }
 
@@ -1860,7 +1864,7 @@ void GuiShowSolTxAdvanced(lv_obj_t *parent, void *totalData)
     if (state == NULL) {
         return;
     }
-    memset(state, 0, sizeof(*state));
+    memset_s(state, sizeof(*state), 0, sizeof(*state));
     state->items = txData->advanced;
     state->content = lv_obj_create(parent);
     lv_obj_remove_style_all(state->content);

@@ -197,6 +197,22 @@ impl ParsedSolanaTx {
             .filter(|d| Self::is_sqauds_v4_detail(&d.common))
             .collect::<Vec<&SolanaDetail>>();
         if !squads.is_empty() {
+            // A dedicated Squads card groups Squads instructions and transfers.
+            // If a different instruction splits that group, aggregating it at
+            // the first position would display later actions out of order.
+            let mut primary_seen = false;
+            let mut group_ended = false;
+            for detail in details {
+                if Self::is_represented_by_primary_overview(&SolanaTxDisplayType::SquadsV4, detail)
+                {
+                    if group_ended {
+                        return SolanaTxDisplayType::Unknown;
+                    }
+                    primary_seen = true;
+                } else if primary_seen {
+                    group_ended = true;
+                }
+            }
             return SolanaTxDisplayType::SquadsV4;
         }
 
@@ -1222,6 +1238,64 @@ mod tests {
             },
             kind: ProgramDetail::GeneralUnknown(ProgramDetailGeneralUnknown::default()),
         }
+    }
+
+    #[test]
+    fn interleaved_squads_preserves_raw_instruction_order() {
+        let squads = "SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf";
+        let unknown = bitcoin::base58::encode(&[7; 32]);
+        let activate = hex::decode("0b225cf89a1b336a").unwrap();
+        let mut raw = vec![1, 0, 2, 3];
+        raw.extend([1; 32]);
+        raw.extend(bitcoin::base58::decode(squads).unwrap());
+        raw.extend([7; 32]);
+        raw.extend([9; 32]);
+        raw.push(3);
+        for (program, data) in [(1, activate.clone()), (2, vec![42]), (1, activate.clone())] {
+            raw.extend([program, 0, data.len() as u8]);
+            raw.extend(data);
+        }
+        let parsed = ParsedSolanaTx::build(&raw).unwrap();
+        assert!(matches!(parsed.display_type, SolanaTxDisplayType::Unknown));
+        let SolanaOverview::Instructions(overview) = parsed.overview else {
+            panic!("interleaved Squads must use raw instruction review");
+        };
+        assert_eq!(overview.overview_instructions.len(), 3);
+        for (instruction, (program, data)) in overview.overview_instructions.iter().zip([
+            (squads, activate.as_slice()),
+            (unknown.as_str(), &[42][..]),
+            (squads, activate.as_slice()),
+        ]) {
+            assert_eq!(instruction.program_address, program);
+            assert_eq!(instruction.data, bitcoin::base58::encode(data));
+        }
+
+        // Both unknown and known siblings can split an aggregated group;
+        // siblings before/after a contiguous group do not reorder that group.
+        for middle in [
+            detail("Unknown", ""),
+            detail("ComputeBudget", "SetComputeUnitLimit"),
+        ] {
+            let interleaved = vec![
+                detail("SquadsV4", "ProposalActivate"),
+                middle,
+                detail("System", "Transfer"),
+            ];
+            assert!(matches!(
+                ParsedSolanaTx::detect_display_type(&interleaved),
+                SolanaTxDisplayType::Unknown
+            ));
+        }
+        let contiguous = vec![
+            detail("Unknown", ""),
+            detail("SquadsV4", "ProposalActivate"),
+            detail("System", "Transfer"),
+            detail("Unknown", ""),
+        ];
+        assert!(matches!(
+            ParsedSolanaTx::detect_display_type(&contiguous),
+            SolanaTxDisplayType::SquadsV4
+        ));
     }
 
     #[test]

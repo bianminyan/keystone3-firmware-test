@@ -180,3 +180,5 @@ cargo test -p rust_c --offline --no-default-features --features simulator-multi-
 5. 任何“允许未知指令”“允许任意消息”的兼容策略都应明确展示边界，不应被本文解释为无限制放行的理由。
 
 本轮补充验证：app_solana 87 项测试及 SOL FFI 4 项测试通过；Advanced 翻译展开的 7 个独立 C 用例通过 ASan/UBSan 检查，模拟器 JSON 与固件内嵌 JSON 相同。未执行真机或模拟器视觉验证。
+
+最新 review 修复（工作区）：Squads 聚合动作之间夹有非聚合指令时，回退到按原始顺序的通用 Instructions 展示；连续聚合组仍保留专用 UI。已补端到端解析回归，核对 program 和原始 data 顺序。PR 涉及的 C 文件中写内存及格式化操作统一使用有界安全接口，传入实际目标或剩余容量；全仓存量扫描另存本地 .agents 清单。

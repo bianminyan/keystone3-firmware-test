@@ -536,7 +536,7 @@ static void DisplayJsonRecursive(lv_obj_t *parent, cJSON *item, int indent, uint
 
     while (item != NULL) {
         if (item->string != NULL) {
-            snprintf(buf, sizeof(buf), "%s:", item->string);
+            snprintf_s(buf, sizeof(buf), "%s:", item->string);
             GuiCreateValueLabel(parent, buf, indent, yOffset);
         }
 
@@ -556,13 +556,13 @@ static void DisplayJsonRecursive(lv_obj_t *parent, cJSON *item, int indent, uint
             }
             GuiCreateValueLabel(parent, buf, indent + 1, yOffset);
         } else if (cJSON_IsNumber(item)) {
-            snprintf(buf, sizeof(buf), "%.0f", item->valuedouble);
+            snprintf_s(buf, sizeof(buf), "%.0f", item->valuedouble);
             GuiCreateValueLabel(parent, buf, indent + 1, yOffset);
         } else if (cJSON_IsBool(item)) {
-            snprintf(buf, sizeof(buf), "%*s%s", (indent + 1) * 2, "", item->valueint ? "true" : "false");
+            snprintf_s(buf, sizeof(buf), "%*s%s", (indent + 1) * 2, "", item->valueint ? "true" : "false");
             GuiCreateValueLabel(parent, buf, indent, yOffset);
         } else if (cJSON_IsNull(item)) {
-            snprintf(buf, sizeof(buf), "%*snull", (indent + 1) * 2, "");
+            snprintf_s(buf, sizeof(buf), "%*snull", (indent + 1) * 2, "");
             GuiCreateValueLabel(parent, buf, indent, yOffset);
         }
 

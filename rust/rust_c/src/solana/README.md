@@ -32,7 +32,24 @@
 |:---------|:----------------------------------------------------------|:--------------------------------------------------------------|
 | overview | [DisplaySolanaTxOverview](#display_solana_tx_overview) \* | the specific values on overview page                          |
 | detail   | char \*                                                   | the [json string](#detail_json_string_example) on detail page |
-| network  | char \*                                                   | network text, "Solana Mainnet"                                |
+| advanced | VecFFI<DisplaySolanaAdvancedItem> \* | structured Advanced review items |
+| network  | char \*                                                   | "Solana / Cluster not encoded"; the message does not identify the cluster                                |
+
+`DisplaySolanaTx` follows the `#[repr(C)]` field order in `structs.rs`:
+`network`, `overview`, `detail`, `advanced`. Generated bindings are authoritative
+for the C layout; the field table above is descriptive.
+
+`advanced` is a pointer to `VecFFI<DisplaySolanaAdvancedItem>`. Each item contains
+owned `title` and `value` strings with internal `{{solana_advanced_*}}` translation
+tokens, expanded by the C UI. They must not be displayed verbatim. Release the
+result through the existing transaction parse result cleanup; do not free these
+fields separately.
+
+`detail` now contains lossless wire-message JSON, not the old semantic instruction
+array. The historical examples below describe business resolver output only;
+they are not the current `detail` contract. See
+[PR #73 specification](../../../../specs/solana/SPEC-PR-73.md) for the current
+review behavior and format boundaries.
 
 ### <a id="display_solana_tx_overview">DisplaySolanaTxOverview</a>
 
