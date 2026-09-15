@@ -10,6 +10,7 @@
 #include "gui_keyboard.h"
 #include "draw/lv_draw_mask.h"
 #include "user_utils.h"
+#include "secret_cache.h"
 #include "gui_home_widgets.h"
 #include "gui_button.h"
 #include "gui_model.h"
@@ -1720,16 +1721,27 @@ static void GetRootHdPath(char *hdPath, uint32_t maxLen)
 
 static void ModelGetUtxoAddress(uint32_t index, AddressDataItem_t *item)
 {
-    item->index = index;
-    char *xPub, rootPath[ADDRESS_MAX_LEN], hdPath[ADDRESS_MAX_LEN];
+    // Every caller hands in an uninitialised stack struct and renders whatever comes back
+    // (QR, label, "Address-N"). Start from zero and never leave with a half-written item.
+    // The previous version broke out of the do/while on an FFI error and then copied from
+    // result->data, which is NULL on that path.
+    memset_s(item, sizeof(*item), 0, sizeof(*item));
+    char *xPub = NULL, rootPath[ADDRESS_MAX_LEN] = {0}, hdPath[ADDRESS_MAX_LEN] = {0};
     GetRootHdPath(rootPath, ADDRESS_MAX_LEN);
     snprintf_s(hdPath, ADDRESS_MAX_LEN, "%s/0/%u", rootPath, (unsigned int)index);
-    strcpy_s(item->path, PATH_ITEM_MAX_LEN, hdPath);
+    // strcpy_s is unbounded in this tree; check the length ourselves.
+    bool valid = strnlen_s(hdPath, sizeof(item->path)) < sizeof(item->path);
+    if (valid) {
+        strcpy_s(item->path, sizeof(item->path), hdPath);
+    }
 #if BTC_ONLY
     if (GetCurrentWalletIndex() != SINGLE_WALLET) {
         snprintf_s(hdPath, ADDRESS_MAX_LEN, "*/0/%u", (unsigned int)index);
-        strcpy_s(item->path, PATH_ITEM_MAX_LEN, hdPath);
+        strcpy_s(item->path, sizeof(item->path), hdPath);
+        // On failure the helper closes the view and leaves item->address untouched; thanks
+        // to the memset above that is now an empty string instead of stack garbage.
         ModelGenerateMultiSigAddress(item->address, sizeof(item->address), GetDefaultMultisigWallet()->walletConfig, index);
+        item->index = index;
         return;
     }
 #endif
@@ -1740,9 +1752,8 @@ static void ModelGetUtxoAddress(uint32_t index, AddressDataItem_t *item)
     }
     chainType = GetChainTypeByIndex(addrType);
     xPub = GetCurrentAccountPublicKey(chainType);
-    ASSERT(xPub);
-    SimpleResponse_c_char *result;
-    do {
+    SimpleResponse_c_char *result = NULL;
+    if (valid && xPub != NULL && xPub[0] != '\0') {
 #ifdef WEB3_VERSION
         if (IsBtcTestAddressEnabled()) {
             result = btcoin_get_address_with_network(hdPath, xPub, "bitcoin-testnet");
@@ -1751,10 +1762,23 @@ static void ModelGetUtxoAddress(uint32_t index, AddressDataItem_t *item)
         {
             result = utxo_get_address(hdPath, xPub);
         }
-        CHECK_CHAIN_BREAK(result);
-    } while (0);
-    strcpy_s(item->address, ADDRESS_MAX_LEN, result->data);
-    free_simple_response_c_char(result);
+    }
+    valid = valid && result != NULL && result->error_code == 0 && result->data != NULL && result->data[0] != '\0' &&
+            strnlen_s(result->data, sizeof(item->address)) < sizeof(item->address);
+    if (valid) {
+        valid = strcpy_s(item->address, sizeof(item->address), result->data) == 0;
+    }
+    if (result != NULL) {
+        free_simple_response_c_char(result);
+    }
+    if (!valid) {
+        // Same fail-closed convention as the other receive pages: nothing stale or partial
+        // may reach the screen, and no secret may outlive the failure.
+        memset_s(item, sizeof(*item), 0, sizeof(*item));
+        ClearSecretCache();
+    }
+    ASSERT(valid);
+    item->index = index;
 }
 
 void GuiResetCurrentUtxoAddressIndex(uint8_t index)
