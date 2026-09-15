@@ -41,7 +41,12 @@
 
 1. Enhanced security policies
 
+## 3.0.6 (2026-09-14)
 
+**Web3:**
+
+### What's new
+1. Added support for Solana v1 transactions
 
 ## 3.0.4 (2026-08-10)
 
