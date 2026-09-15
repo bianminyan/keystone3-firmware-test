@@ -35,7 +35,9 @@ static AccountInfo_t g_currentAccountInfo = {0};
 static PublicInfo_t g_publicInfo = {0};
 
 #ifndef BTC_ONLY
-static ZcashUFVKCache_t g_zcashUFVKcache = {0};
+// accountIndex doubles as the "cache is populated" flag. A zero-initialised struct would
+// claim to hold account 0's keys before SetupZcashCache/SetupZcashSFP ever ran.
+static ZcashUFVKCache_t g_zcashUFVKcache = {.accountIndex = ACCOUNT_INDEX_LOGOUT};
 static void ClearZcashUFVK();
 #endif
 
@@ -762,28 +764,43 @@ static void SetZcashSFP(uint8_t accountIndex, const uint8_t* seedFingerprint)
 
 static void ClearZcashUFVK()
 {
+    // Reset the owner too: clearing only the payload left accountIndex pointing at the
+    // previous account, so a later login to an account without Zcash support still
+    // "matched" and handed out an empty UFVK / zero SFP as if they were valid.
+    g_zcashUFVKcache.accountIndex = ACCOUNT_INDEX_LOGOUT;
     memset_s(g_zcashUFVKcache.ufvkCache, sizeof(g_zcashUFVKcache.ufvkCache), '\0', sizeof(g_zcashUFVKcache.ufvkCache));
     memset_s(g_zcashUFVKcache.seedFingerprint, sizeof(g_zcashUFVKcache.seedFingerprint),
              0, sizeof(g_zcashUFVKcache.seedFingerprint));
 }
 
+// Both getters fail closed: on any miss the caller's buffer is cleared, never left with
+// whatever it held before, so a caller that ignores the return value cannot export garbage.
 int32_t GetZcashUFVK(uint8_t accountIndex, char* outUFVK)
 {
     ASSERT(accountIndex <= 2);
-    if (g_zcashUFVKcache.accountIndex == accountIndex) {
+    if (outUFVK == NULL) {
+        return ERR_GENERAL_FAIL;
+    }
+    if (g_zcashUFVKcache.accountIndex == accountIndex && g_zcashUFVKcache.ufvkCache[0] != '\0') {
         strcpy_s(outUFVK, ZCASH_UFVK_BUFFER_SIZE, g_zcashUFVKcache.ufvkCache);
         return SUCCESS_CODE;
     }
+    outUFVK[0] = '\0';
     return ERR_ZCASH_INVALID_ACCOUNT_INDEX;
 }
 
 int32_t GetZcashSFP(uint8_t accountIndex, uint8_t* outSFP)
 {
     ASSERT(accountIndex <= 2);
-    if (g_zcashUFVKcache.accountIndex == accountIndex) {
+    if (outSFP == NULL) {
+        return ERR_GENERAL_FAIL;
+    }
+    if (g_zcashUFVKcache.accountIndex == accountIndex &&
+            !CheckAllZero(g_zcashUFVKcache.seedFingerprint, ZCASH_SFP_LEN)) {
         memcpy_s(outSFP, ZCASH_SFP_LEN, g_zcashUFVKcache.seedFingerprint, ZCASH_SFP_LEN);
         return SUCCESS_CODE;
     }
+    memset_s(outSFP, ZCASH_SFP_LEN, 0, ZCASH_SFP_LEN);
     return ERR_ZCASH_INVALID_ACCOUNT_INDEX;
 }
 

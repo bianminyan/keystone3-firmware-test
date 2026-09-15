@@ -516,10 +516,13 @@ UREncodeResult *GuiGetKeystoneConnectWalletDataBip39(void)
     char firmwareVersion[12];
     GetSoftWareVersionNumber(firmwareVersion);
 
-    uint8_t sfp[32];
-    GetZcashSFP(GetCurrentAccountIndex(), sfp);
+    // Zcash is optional here (SLIP39 wallets have no SFP). The Rust side accepts length 0
+    // as "no fingerprint"; never send whatever the stack held when the cache misses.
+    uint8_t sfp[ZCASH_SFP_LEN] = {0};
+    uint32_t sfpLen = GetZcashSFP(GetCurrentAccountIndex(), sfp) == SUCCESS_CODE ? sizeof(sfp) : 0;
 
-    UREncodeResult *urEncode = get_keystone_connect_wallet_ur(mfp, sizeof(mfp), serialNumber, public_keys, "Keystone 3 Pro", firmwareVersion, sfp, sizeof(sfp));
+    UREncodeResult *urEncode = get_keystone_connect_wallet_ur(mfp, sizeof(mfp), serialNumber, public_keys, "Keystone 3 Pro", firmwareVersion, sfp, sfpLen);
+    memset_s(sfp, sizeof(sfp), 0, sizeof(sfp));
     CHECK_CHAIN_PRINT(urEncode);
     SRAM_FREE(public_keys);
     return urEncode;
