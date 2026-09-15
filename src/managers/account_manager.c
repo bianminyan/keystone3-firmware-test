@@ -399,6 +399,7 @@ int32_t GetExistAccountNum(uint8_t *accountNum)
 void LogoutCurrentAccount(void)
 {
     g_currentAccountIndex = ACCOUNT_INDEX_LOGOUT;
+
 }
 
 /// @brief Get the specific account info.
@@ -629,6 +630,11 @@ int32_t DestroyAccount(uint8_t accountIndex)
     // Mark the account DELETING (external status page, survives the zero-loop below). If power dies mid-erase,
     // the boot check sees DELETING and finishes the deletion. Cleared to UNKNOWN once the data is gone.
     printf("destroy account %d\n", accountIndex);
+#ifndef BTC_ONLY
+    // The slot is about to be reused (CreateNew*Account calls DestroyAccount first). Drop the
+    // old wallet's Zcash material now so the new occupant can never inherit it by index.
+    ClearZcashUFVK();
+#endif
     ret = SE_SetAccountStatus(accountIndex, ACCOUNT_STATUS_DELETING);
     if (ret != SUCCESS_CODE) {
         printf("destroy account:set deleting status err,0x%X\n", (unsigned int)ret);
@@ -808,6 +814,10 @@ int32_t SetupZcashSFP(uint8_t accountIndex, const char* password)
 {
     ASSERT(accountIndex <= 2);
 
+    // Invalidate BEFORE the support check. Otherwise a wallet without Zcash support that
+    // is created or logged into the slot a Zcash wallet previously occupied inherits that
+    // wallet's cached fingerprint (same accountIndex, cache never touched).
+    ClearZcashUFVK();
     if (!IsZcashSupportedForCurrentMnemonic()) {
         return SUCCESS_CODE;
     }
@@ -843,11 +853,12 @@ int32_t SetupZcashCache(uint8_t accountIndex, const char* password,
 {
     ASSERT(accountIndex <= 2);
 
+    // Same ordering rule as SetupZcashSFP: drop whatever the previous occupant of this
+    // slot left behind before deciding whether the current wallet gets a cache at all.
+    ClearZcashUFVK();
     if (!IsZcashSupportedForCurrentMnemonic()) {
         return SUCCESS_CODE;
     }
-
-    ClearZcashUFVK();
 
     char *zcashEncrypted = GetCurrentAccountPublicKey(ZCASH_UFVK_ENCRYPTED_0);
     if (zcashEncrypted == NULL) {

@@ -510,18 +510,24 @@ UREncodeResult *GuiGetKeystoneConnectWalletDataBip39(void)
     ExtendedPublicKey keys[NUMBER_OF_ARRAYS(chainPaths)];
     uint8_t mfp[4] = {0};
     GetMasterFingerPrint(mfp);
+
+    // This is the BIP39 path and it always exports XPUB_TYPE_ZEC_TRANSPARENT_LEGACY, so the
+    // Zcash seed fingerprint is mandatory, not optional (SLIP39 has its own function without
+    // Zcash). A cache miss means the account's Zcash state is not set up: refuse to build a
+    // QR rather than export an xpub with no fingerprint or, as before, stack garbage as one.
+    uint8_t sfp[ZCASH_SFP_LEN] = {0};
+    if (GetZcashSFP(GetCurrentAccountIndex(), sfp) != SUCCESS_CODE) {
+        printf("keystone connect: zcash sfp not ready for account %d\r\n", GetCurrentAccountIndex());
+        return NULL;   // ModelURGenerateQRCode reports SIG_BACKGROUND_UR_GENERATE_FAIL
+    }
+
     PtrT_CSliceFFI_ExtendedPublicKey public_keys = BuildChainPaths(chainPaths, keys, NUMBER_OF_ARRAYS(chainPaths));
     char serialNumber[256];
     GetSerialNumber(serialNumber);
     char firmwareVersion[12];
     GetSoftWareVersionNumber(firmwareVersion);
 
-    // Zcash is optional here (SLIP39 wallets have no SFP). The Rust side accepts length 0
-    // as "no fingerprint"; never send whatever the stack held when the cache misses.
-    uint8_t sfp[ZCASH_SFP_LEN] = {0};
-    uint32_t sfpLen = GetZcashSFP(GetCurrentAccountIndex(), sfp) == SUCCESS_CODE ? sizeof(sfp) : 0;
-
-    UREncodeResult *urEncode = get_keystone_connect_wallet_ur(mfp, sizeof(mfp), serialNumber, public_keys, "Keystone 3 Pro", firmwareVersion, sfp, sfpLen);
+    UREncodeResult *urEncode = get_keystone_connect_wallet_ur(mfp, sizeof(mfp), serialNumber, public_keys, "Keystone 3 Pro", firmwareVersion, sfp, sizeof(sfp));
     memset_s(sfp, sizeof(sfp), 0, sizeof(sfp));
     CHECK_CHAIN_PRINT(urEncode);
     SRAM_FREE(public_keys);
