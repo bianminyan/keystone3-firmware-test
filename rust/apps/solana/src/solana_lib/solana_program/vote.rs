@@ -7,6 +7,59 @@ pub mod state {
     use alloc::vec::Vec;
     use serde_derive::{Deserialize, Serialize};
 
+    // Serde sequence visitors may preallocate from size_hint before bincode
+    // decodes any elements. Bound that hint before allocating a collection.
+    fn bounded_sequence<'de, D, T, const MAX: usize>(deserializer: D) -> Result<Vec<T>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+        T: serde::Deserialize<'de>,
+    {
+        struct Visitor<T, const MAX: usize>(core::marker::PhantomData<T>);
+        impl<'de, T: serde::Deserialize<'de>, const MAX: usize> serde::de::Visitor<'de>
+            for Visitor<T, MAX>
+        {
+            type Value = Vec<T>;
+            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+                formatter.write_str("a bounded vote sequence")
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut seq: A,
+            ) -> Result<Vec<T>, A::Error> {
+                if seq.size_hint().is_some_and(|size| size > MAX) {
+                    return Err(serde::de::Error::custom(
+                        "vote sequence exceeds instruction limit",
+                    ));
+                }
+                let mut values = Vec::new();
+                while let Some(value) = seq.next_element()? {
+                    if values.len() == MAX {
+                        return Err(serde::de::Error::custom(
+                            "vote sequence exceeds instruction limit",
+                        ));
+                    }
+                    values.push(value);
+                }
+                Ok(values)
+            }
+        }
+        deserializer.deserialize_seq(Visitor::<T, MAX>(core::marker::PhantomData))
+    }
+
+    fn deserialize_slots<'de, D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Vec<Slot>, D::Error> {
+        // Each slot occupies eight wire bytes; other fields only lower the maximum.
+        bounded_sequence::<D, Slot, { 1232 / 8 }>(deserializer)
+    }
+
+    fn deserialize_lockouts<'de, D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<VecDeque<Lockout>, D::Error> {
+        // A lockout occupies eight slot bytes and four confirmation-count bytes.
+        bounded_sequence::<D, Lockout, { 1232 / 12 }>(deserializer).map(VecDeque::from)
+    }
+
     #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
     pub struct VoteInit {
         pub node_pubkey: Pubkey,
@@ -45,6 +98,7 @@ pub mod state {
     #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
     pub struct Vote {
         /// A stack of votes starting with the oldest vote
+        #[serde(deserialize_with = "deserialize_slots")]
         pub slots: Vec<Slot>,
         /// signature of the bank's state at the last slot
         pub hash: Hash,
@@ -61,6 +115,7 @@ pub mod state {
     #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
     pub struct VoteStateUpdate {
         /// The proposed tower
+        #[serde(deserialize_with = "deserialize_lockouts")]
         pub lockouts: VecDeque<Lockout>,
         /// The proposed root
         pub root: Option<Slot>,

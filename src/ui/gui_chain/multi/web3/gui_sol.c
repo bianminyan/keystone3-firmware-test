@@ -217,7 +217,7 @@ void GuiShowSolMessagePaged(lv_obj_t *parent, void *param, bool raw)
     const char *text = raw ? message->raw_message : message->utf8_message;
     lv_obj_update_layout(parent);
     lv_obj_t *lengthLabel = GuiCreateIllustrateLabel(parent, "");
-    lv_label_set_text_fmt(lengthLabel, "Message Length: %u bytes", (unsigned)message->message_length);
+    lv_label_set_text_fmt(lengthLabel, _("solana_message_length"), (unsigned)message->message_length);
     lv_obj_set_width(lengthLabel, lv_obj_get_width(parent));
     lv_obj_update_layout(lengthLabel);
     lv_coord_t offset = lv_obj_get_height(lengthLabel) + 12;
@@ -1709,6 +1709,54 @@ void GuiShowSolTxDetail(lv_obj_t *parent, void *totalData)
 
 #define SOL_ADVANCED_ITEMS_PER_PAGE 4
 
+// Only the internal Advanced strings contain these translation tokens. Raw
+// transaction data stays in Details and must never pass through this renderer.
+static size_t GuiSolAdvancedTextPass(const char *text, char *output)
+{
+    size_t length = 0;
+    while (*text != '\0') {
+        const char *token = strstr(text, "{{solana_advanced_");
+        const char *end = token == NULL ? NULL : strstr(token + 2, "}}");
+        char key[64];
+        if (end == NULL || (size_t)(end - token - 2) >= sizeof(key)) {
+            size_t remaining = strlen(text);
+            if (output != NULL) {
+                memcpy(output + length, text, remaining);
+            }
+            length += remaining;
+            break;
+        }
+        size_t prefix = token - text;
+        if (output != NULL) {
+            memcpy(output + length, text, prefix);
+        }
+        length += prefix;
+        size_t keyLength = end - token - 2;
+        memcpy(key, token + 2, keyLength);
+        key[keyLength] = '\0';
+        const char *translated = _(key);
+        size_t translatedLength = strlen(translated);
+        if (output != NULL) {
+            memcpy(output + length, translated, translatedLength);
+        }
+        length += translatedLength;
+        text = end + 2;
+    }
+    if (output != NULL) {
+        output[length] = '\0';
+    }
+    return length;
+}
+
+static char *GuiSolAdvancedText(const char *text)
+{
+    size_t size = GuiSolAdvancedTextPass(text, NULL) + 1;
+    char *translated = lv_mem_alloc(size);
+    ASSERT(translated != NULL);
+    GuiSolAdvancedTextPass(text, translated);
+    return translated;
+}
+
 typedef struct {
     const VecFFI_DisplaySolanaAdvancedItem *items;
     size_t page;
@@ -1730,8 +1778,24 @@ static void GuiSolAdvancedRefresh(SolAdvancedPager *state)
     lv_obj_t *last = NULL;
     for (size_t i = start; i < end; i++) {
         const DisplaySolanaAdvancedItem *item = &state->items->data[i];
+        char *title = GuiSolAdvancedText(item->title);
+        char *value = GuiSolAdvancedText(item->value);
         last = CreateTransactionItemViewWithWidth(
-            state->content, item->title, item->value, last, SOL_COMPONENT_WIDTH);
+            state->content, title, value, last, SOL_COMPONENT_WIDTH);
+        lv_obj_t *titleLabel = lv_obj_get_child(last, 0);
+        lv_obj_t *valueLabel = lv_obj_get_child(last, 1);
+        if (lv_obj_get_width(titleLabel) > SOL_COMPONENT_CONTENT_WIDTH) {
+            lv_obj_set_width(titleLabel, SOL_COMPONENT_CONTENT_WIDTH);
+            lv_label_set_long_mode(titleLabel, LV_LABEL_LONG_WRAP);
+            lv_obj_update_layout(titleLabel);
+            lv_obj_set_width(valueLabel, SOL_COMPONENT_CONTENT_WIDTH);
+            lv_label_set_long_mode(valueLabel, LV_LABEL_LONG_WRAP);
+            lv_obj_align_to(valueLabel, titleLabel, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 0);
+            lv_obj_update_layout(valueLabel);
+            lv_obj_set_height(last, 32 + lv_obj_get_height(titleLabel) + lv_obj_get_height(valueLabel));
+        }
+        lv_mem_free(title);
+        lv_mem_free(value);
     }
     size_t pages = (state->items->size + SOL_ADVANCED_ITEMS_PER_PAGE - 1) / SOL_ADVANCED_ITEMS_PER_PAGE;
     if (pages == 0) {

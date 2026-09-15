@@ -233,9 +233,8 @@ impl Instruction {
     ) -> Result<T> {
         // Copied from solana_sdk
         // pub const PACKET_DATA_SIZE: usize = 1280 - 40 - 8;
-        crate::solana_lib::solana_program::program_utils::limited_deserialize(
+        crate::solana_lib::solana_program::program_utils::limited_deserialize::<T, 1232>(
             instruction_data.as_slice(),
-            1280 - 40 - 8,
         )
         .map_err(|e| ProgramError(e.to_string()))
     }

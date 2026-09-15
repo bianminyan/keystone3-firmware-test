@@ -169,6 +169,8 @@ cargo test -p rust_c --offline --no-default-features --features simulator-multi-
 
 新增 UI 翻译修改 `data.csv` 后同步生成翻译表与所需字体；当前相关 C 文件做过语法检查，但多语言布局仍需视觉验证。
 
+后续 review 修复（当前工作区）：native 指令反序列化使用调用方指定的编译期 1232 字节 bincode limit，并检查输入长度及完整消费；Vote slots/lockouts 还在集合分配前校验声明数量，避免 Serde 根据过大的 size_hint 预分配；测试覆盖超大声明长度、边界和正常 wire 数据。Advanced 内部文案使用 `{{solana_advanced_*}}` 翻译标记，C 展示层按当前语言展开，原始 Details JSON 不做翻译。模拟器 `ui_simulator/assets/page_sol.json` 从固件内嵌布局提取并纳入版本控制。
+
 ## 8. Review 应重点核实的开放问题
 
 1. Message 分类边界：哪些截断/未知版本输入可签为消息，哪些可能造成实际交易签名风险；怎样保留合法 UTF-8 和 offchain 消息。
@@ -176,3 +178,5 @@ cargo test -p rust_c --offline --no-default-features --features simulator-multi-
 3. 新增长字符串、ALT 内容、分页和多语言是否存在裁剪或重叠。
 4. UI 检查与最终签名入口是否保持同等安全约束；不得仅凭扫描成功断言签名安全。
 5. 任何“允许未知指令”“允许任意消息”的兼容策略都应明确展示边界，不应被本文解释为无限制放行的理由。
+
+本轮补充验证：app_solana 87 项测试及 SOL FFI 4 项测试通过；Advanced 翻译展开的 7 个独立 C 用例通过 ASan/UBSan 检查，模拟器 JSON 与固件内嵌 JSON 相同。未执行真机或模拟器视觉验证。

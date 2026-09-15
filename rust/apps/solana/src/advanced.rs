@@ -1,4 +1,7 @@
 //! Structural review information derived only from the validated message.
+//! UI phrases use {{solana_advanced_*}} tokens expanded by the C display layer.
+//! Dynamic values are base58 addresses, numbers, or numeric lists and cannot
+//! contain these tokens. The raw message JSON is never localized.
 use crate::message::Message;
 use alloc::{format, string::String, vec::Vec};
 use bitcoin::base58;
@@ -46,7 +49,7 @@ impl Message {
                     for index in indexes {
                         accounts.push((
                             format!(
-                                "Unresolved ALT\nTable: {}\nIndex: {}",
+                                "{{{{solana_advanced_unresolved}}}}\n{{{{solana_advanced_table}}}}: {}\n{{{{solana_advanced_index}}}}: {}",
                                 base58::encode(&lookup.account_key.value),
                                 index
                             ),
@@ -65,26 +68,37 @@ impl Message {
             "Legacy"
         };
         let mut items = alloc::vec![
-            item("Message version", version),
-            item("Required signatures", format!("{}", required)),
+            item("{{solana_advanced_version}}", version),
+            item("{{solana_advanced_signatures}}", format!("{}", required)),
             item(
-                "Fee payer",
+                "{{solana_advanced_fee_payer}}",
                 self.accounts
                     .first()
                     .map(|a| base58::encode(&a.value))
-                    .unwrap_or_else(|| String::from("Not present"))
+                    .unwrap_or_else(|| String::from("{{solana_advanced_not_present}}"))
             ),
         ];
         if let Some(signer) = signer {
-            items.push(item("Device signer", base58::encode(signer)));
+            items.push(item(
+                "{{solana_advanced_device_signer}}",
+                base58::encode(signer),
+            ));
         }
         for (i, (address, signer, writable)) in accounts.iter().enumerate() {
             items.push(item(
-                format!("Account #{}", i),
+                format!("{{{{solana_advanced_account}}}} #{}", i),
                 format!(
                     "{} | {}\n{}",
-                    if *signer { "Signer" } else { "Non-signer" },
-                    if *writable { "Writable" } else { "Read-only" },
+                    if *signer {
+                        "{{solana_advanced_signer}}"
+                    } else {
+                        "{{solana_advanced_non_signer}}"
+                    },
+                    if *writable {
+                        "{{solana_advanced_writable}}"
+                    } else {
+                        "{{solana_advanced_readonly}}"
+                    },
                     address
                 ),
             ));
@@ -92,7 +106,7 @@ impl Message {
         for (i, instruction) in self.instructions.iter().enumerate() {
             let program = &accounts[instruction.program_index as usize].0;
             let mut value = format!(
-                "Program [{}]\n{}\nAccount indexes: {:?}\nData: {} bytes",
+                "{{{{solana_advanced_program}}}} [{}]\n{}\n{{{{solana_advanced_indexes}}}}: {:?}\n{{{{solana_advanced_data}}}}: {} {{{{solana_advanced_bytes}}}}",
                 instruction.program_index,
                 program,
                 instruction.account_indexes,
@@ -101,15 +115,18 @@ impl Message {
             if self.transaction_config.is_some()
                 && program == "ComputeBudget111111111111111111111111111111"
             {
-                value.push_str("\nIgnored in V1");
+                value.push_str("\n{{solana_advanced_ignored}}");
             }
-            items.push(item(format!("Instruction #{}", i + 1), value));
+            items.push(item(
+                format!("{{{{solana_advanced_instruction}}}} #{}", i + 1),
+                value,
+            ));
         }
         items.push(item(
             if self.transaction_config.is_some() {
-                "Lifetime specifier"
+                "{{solana_advanced_lifetime}}"
             } else {
-                "Recent blockhash"
+                "{{solana_advanced_blockhash}}"
             },
             base58::encode(&self.block_hash.value),
         ));
@@ -131,7 +148,8 @@ mod tests {
         assert!(message
             .advanced_review(None)
             .iter()
-            .any(|i| i.title == "Fee payer" && i.value == "Not present"));
+            .any(|i| i.title == "{{solana_advanced_fee_payer}}"
+                && i.value == "{{solana_advanced_not_present}}"));
     }
 
     #[test]
@@ -158,26 +176,36 @@ mod tests {
                 .value
                 .as_str()
         };
-        assert!(value("Account #0").starts_with("Signer | Writable"));
-        assert!(value("Account #1").starts_with("Signer | Read-only"));
-        assert!(value("Account #2").starts_with("Non-signer | Writable"));
-        assert!(value("Account #3").starts_with("Non-signer | Read-only"));
+        assert!(value("{{solana_advanced_account}} #0")
+            .starts_with("{{solana_advanced_signer}} | {{solana_advanced_writable}}"));
+        assert!(value("{{solana_advanced_account}} #1")
+            .starts_with("{{solana_advanced_signer}} | {{solana_advanced_readonly}}"));
+        assert!(value("{{solana_advanced_account}} #2")
+            .starts_with("{{solana_advanced_non_signer}} | {{solana_advanced_writable}}"));
+        assert!(value("{{solana_advanced_account}} #3")
+            .starts_with("{{solana_advanced_non_signer}} | {{solana_advanced_readonly}}"));
         assert_eq!(
-            value("Account #5"),
+            value("{{solana_advanced_account}} #5"),
             format!(
-                "Non-signer | Writable\nUnresolved ALT\nTable: {}\nIndex: 7",
+                "{{{{solana_advanced_non_signer}}}} | {{{{solana_advanced_writable}}}}\n{{{{solana_advanced_unresolved}}}}\n{{{{solana_advanced_table}}}}: {}\n{{{{solana_advanced_index}}}}: 7",
                 base58::encode(&[6; 32])
             )
         );
         assert_eq!(
-            value("Account #6"),
+            value("{{solana_advanced_account}} #6"),
             format!(
-                "Non-signer | Read-only\nUnresolved ALT\nTable: {}\nIndex: 8",
+                "{{{{solana_advanced_non_signer}}}} | {{{{solana_advanced_readonly}}}}\n{{{{solana_advanced_unresolved}}}}\n{{{{solana_advanced_table}}}}: {}\n{{{{solana_advanced_index}}}}: 8",
                 base58::encode(&[5; 32])
             )
         );
-        assert!(value("Instruction #1").contains("Program [3]"));
-        assert!(value("Instruction #1").contains("Account indexes: [0, 4, 5, 7]"));
-        assert_eq!(value("Device signer"), base58::encode(&[1; 32]));
+        assert!(
+            value("{{solana_advanced_instruction}} #1").contains("{{solana_advanced_program}} [3]")
+        );
+        assert!(value("{{solana_advanced_instruction}} #1")
+            .contains("{{solana_advanced_indexes}}: [0, 4, 5, 7]"));
+        assert_eq!(
+            value("{{solana_advanced_device_signer}}"),
+            base58::encode(&[1; 32])
+        );
     }
 }

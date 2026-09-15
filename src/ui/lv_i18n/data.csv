@@ -1118,3 +1118,25 @@ Wallet Profile,24,wallet_profile_mid_btn,Wallet Profile,Профиль коше�
 ,20,solana_alt_unresolved_notice,Unresolved offline. Verify table and index.,Недоступно офлайн. Проверьте таблицу и индекс.,오프라인에서 확인할 수 없습니다. 테이블과 인덱스를 확인하세요.,离线无法解析。请核对表和索引。,No se puede resolver sin conexión. Verifica la tabla y el índice.,Offline nicht auflösbar. Tabelle und Index prüfen.,オフラインでは解決できません。テーブルとインデックスを確認してください。
 ,20,solana_alt_check,Check ALT,Проверить ALT,ALT 확인,检查 ALT,Verificar ALT,ALT prüfen,ALT を確認
 ,20,solana_parse_tx_alt_warning_body,Address Lookup Table accounts cannot be resolved offline. Review every table and index in Details.,Аккаунты таблиц поиска адресов нельзя определить офлайн. Проверьте каждую таблицу и индекс в деталях.,주소 조회 테이블의 계정은 오프라인에서 확인할 수 없습니다. 상세 정보에서 각 테이블과 인덱스를 확인하세요.,离线无法解析地址查找表中的账户。请在详情中核对每个表和索引。,Las cuentas de las tablas de búsqueda de direcciones no se pueden resolver sin conexión. Revisa cada tabla e índice en Detalles.,Konten aus Adressnachschlagetabellen können offline nicht aufgelöst werden. Prüfen Sie jede Tabelle und jeden Index unter Details.,アドレスルックアップテーブルのアカウントはオフラインでは解決できません。詳細で各テーブルとインデックスを確認してください。
+,20,solana_advanced_version,Message version,Версия сообщения,메시지 버전,消息版本,Versión del mensaje,Nachrichtenversion,メッセージのバージョン
+,20,solana_advanced_signatures,Required signatures,Требуемые подписи,필요한 서명,所需签名数,Firmas requeridas,Erforderliche Signaturen,必要な署名数
+,20,solana_advanced_fee_payer,Fee payer,Плательщик комиссии,수수료 지불자,手续费支付方,Pagador de comisiones,Gebührenzahler,手数料支払者
+,20,solana_advanced_not_present,Not present,Отсутствует,없음,无,No disponible,Nicht vorhanden,なし
+,20,solana_advanced_device_signer,Device signer,Подписант устройства,기기 서명자,设备签名者,Firmante del dispositivo,Geräteunterzeichner,デバイスの署名者
+,20,solana_advanced_account,Account,Аккаунт,계정,账户,Cuenta,Konto,アカウント
+,20,solana_advanced_instruction,Instruction,Инструкция,명령,指令,Instrucción,Anweisung,命令
+,20,solana_advanced_lifetime,Lifetime specifier,Параметр срока действия,유효 기간 지정자,有效期标识,Indicador de vigencia,Gültigkeitsangabe,有効期間識別子
+,20,solana_advanced_blockhash,Recent blockhash,Недавний хеш блока,최근 블록 해시,最近区块哈希,Hash de bloque reciente,Aktueller Blockhash,最近のブロックハッシュ
+,20,solana_advanced_signer,Signer,Подписант,서명자,签名者,Firmante,Unterzeichner,署名者
+,20,solana_advanced_non_signer,Non-signer,Не подписант,비서명자,非签名者,No firmante,Kein Unterzeichner,非署名者
+,20,solana_advanced_writable,Writable,Доступен для записи,쓰기 가능,可写,Escritura permitida,Schreibbar,書き込み可能
+,20,solana_advanced_readonly,Read-only,Только чтение,읽기 전용,只读,Solo lectura,Schreibgeschützt,読み取り専用
+,20,solana_advanced_unresolved,Unresolved ALT,Неопределённый ALT,확인되지 않은 ALT,未解析 ALT,ALT sin resolver,Nicht aufgelöste ALT,未解決の ALT
+,20,solana_advanced_table,Table,Таблица,테이블,表,Tabla,Tabelle,テーブル
+,20,solana_advanced_index,Index,Индекс,인덱스,索引,Índice,Index,インデックス
+,20,solana_advanced_program,Program,Программа,프로그램,程序,Programa,Programm,プログラム
+,20,solana_advanced_indexes,Account indexes,Индексы аккаунтов,계정 인덱스,账户索引,Índices de cuentas,Kontenindizes,アカウントのインデックス
+,20,solana_advanced_data,Data,Данные,데이터,数据,Datos,Daten,データ
+,20,solana_advanced_bytes,bytes,байт,바이트,字节,bytes,Bytes,バイト
+,20,solana_advanced_ignored,Ignored in V1,Игнорируется в V1,V1에서 무시됨,V1 中忽略,Ignorado en V1,In V1 ignoriert,V1 では無視
+,20,solana_message_length,Message Length: %u bytes,Длина сообщения: %u байт,메시지 길이: %u바이트,消息长度：%u 字节,Longitud del mensaje: %u bytes,Nachrichtenlänge: %u Bytes,メッセージ長: %u バイト
