@@ -233,6 +233,19 @@ mod fixture_tests {
                     fixture["id"]
                 );
                 if expected {
+                    // Keep the request valid and change only the device fingerprint,
+                    // so rejection cannot be caused by payload or path validation.
+                    let mut wrong_fingerprint = fingerprint;
+                    wrong_fingerprint[0] ^= 1;
+                    let checked = solana_check(ptr, wrong_fingerprint.as_mut_ptr(), 4);
+                    let error_code = *(checked as *const u32);
+                    crate::common::structs::free_TransactionCheckResult(checked);
+                    assert_eq!(
+                        error_code,
+                        crate::common::errors::ErrorCodes::MasterFingerprintMismatch as u32,
+                        "fingerprint mismatch {}",
+                        fixture["id"]
+                    );
                     // Changing the host's type hint must not turn a transaction
                     // into a message signature (or plain text into a transaction).
                     request.set_sign_type(if request.get_sign_type() == SignType::Transaction {

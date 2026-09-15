@@ -141,6 +141,10 @@ impl Instruction {
                         | [0xb0, 0xd1, 0x69, 0xa8, 0x9a, 0x7d, 0x45, 0x3e]
                 );
                 if !is_supported_instruction {
+                    // An unrecognized full discriminator is unsupported, not a
+                    // failed parse of a supported instruction. Preserve it for
+                    // raw review; truncated discriminators above and decoding
+                    // failures of supported instructions below must be rejected.
                     return Err(SolanaError::UnsupportedProgram(
                         "unsupported Jupiter v6 instruction".to_string(),
                     ));
