@@ -231,18 +231,41 @@ mod tests {
     #[test]
     fn security_review_preserves_v1_instruction_order_and_metadata() {
         use crate::parser::structs::OverviewAction;
-        let unknown = Instruction { program_index: 3, account_indexes: vec![0], data: vec![42] };
+        let unknown = Instruction {
+            program_index: 3,
+            account_indexes: vec![0],
+            data: vec![42],
+        };
         for unknown_first in [true, false] {
-            let instructions = if unknown_first { vec![unknown.clone(), transfer()] } else { vec![transfer(), unknown.clone()] };
-            let raw = encode(3, &5000u64.to_le_bytes(), &[[1; 32], [2; 32], [0; 32], [3; 32]], &instructions);
+            let instructions = if unknown_first {
+                vec![unknown.clone(), transfer()]
+            } else {
+                vec![transfer(), unknown.clone()]
+            };
+            let raw = encode(
+                3,
+                &5000u64.to_le_bytes(),
+                &[[1; 32], [2; 32], [0; 32], [3; 32]],
+                &instructions,
+            );
             let parsed = parse_for_signer(&raw, &[1; 32]).unwrap();
             let expected = if unknown_first {
-                vec![(1, OverviewAction::Unknown(0)), (2, OverviewAction::Primary), (0, OverviewAction::General(0))]
+                vec![
+                    (1, OverviewAction::Unknown(0)),
+                    (2, OverviewAction::Primary),
+                    (0, OverviewAction::General(0)),
+                ]
             } else {
-                vec![(1, OverviewAction::Primary), (2, OverviewAction::Unknown(0)), (0, OverviewAction::General(0))]
+                vec![
+                    (1, OverviewAction::Primary),
+                    (2, OverviewAction::Unknown(0)),
+                    (0, OverviewAction::General(0)),
+                ]
             };
             assert_eq!(parsed.overview_order, expected);
-            assert!(parsed.additional_overviews[0].memo.contains("5000 lamports"));
+            assert!(parsed.additional_overviews[0]
+                .memo
+                .contains("5000 lamports"));
             assert_eq!(parsed.unknown_programs.len(), 1);
         }
     }
@@ -279,7 +302,10 @@ mod tests {
             let mut raw = encode(mask, &values, &[[1; 32], [2; 32], [0; 32]], &[transfer()]);
             let original = raw.clone();
             let message = Message::read_exact(&mut raw).unwrap();
-            crate::message_json::tests::assert_json_roundtrip(&original, &message.to_message_json().unwrap());
+            crate::message_json::tests::assert_json_roundtrip(
+                &original,
+                &message.to_message_json().unwrap(),
+            );
             let config = message.transaction_config.unwrap();
             assert_eq!(
                 config.priority_fee_lamports,

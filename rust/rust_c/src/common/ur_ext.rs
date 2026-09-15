@@ -473,10 +473,9 @@ mod tests {
     #[test]
     fn solana_transaction_fixtures_never_fall_back_to_message_view() {
         use super::{InferViewType, SolSignRequest, ViewType};
-        let dataset: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tests/fixtures/solana-security.json"
-        ))
-        .unwrap();
+        let dataset: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/solana-security.json"))
+                .unwrap();
         for fixture in dataset["fixtures"].as_array().unwrap() {
             let mut decoder = ur::Decoder::default();
             for frame in fixture["ur"].as_array().unwrap() {

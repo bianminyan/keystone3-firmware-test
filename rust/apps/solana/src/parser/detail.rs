@@ -30,7 +30,10 @@ pub struct ProgramDetailSystemTransfer {
     pub to: String,
 }
 
-fn serialize_account_reference<S: Serializer>(account: &String, serializer: S) -> core::result::Result<S::Ok, S::Error> {
+fn serialize_account_reference<S: Serializer>(
+    account: &String,
+    serializer: S,
+) -> core::result::Result<S::Ok, S::Error> {
     if let Some((table, index)) = account.split_once('#') {
         if let Ok(index) = index.parse::<u8>() {
             if !table.is_empty() {
@@ -45,7 +48,10 @@ fn serialize_account_reference<S: Serializer>(account: &String, serializer: S) -
     serializer.serialize_str(account)
 }
 
-fn serialize_account_references<S: Serializer>(accounts: &Vec<String>, serializer: S) -> core::result::Result<S::Ok, S::Error> {
+fn serialize_account_references<S: Serializer>(
+    accounts: &Vec<String>,
+    serializer: S,
+) -> core::result::Result<S::Ok, S::Error> {
     struct Account<'a>(&'a String);
     impl Serialize for Account<'_> {
         fn serialize<S: Serializer>(&self, serializer: S) -> core::result::Result<S::Ok, S::Error> {
@@ -53,7 +59,9 @@ fn serialize_account_references<S: Serializer>(accounts: &Vec<String>, serialize
         }
     }
     let mut seq = serializer.serialize_seq(Some(accounts.len()))?;
-    for account in accounts { seq.serialize_element(&Account(account))?; }
+    for account in accounts {
+        seq.serialize_element(&Account(account))?;
+    }
     seq.end()
 }
 

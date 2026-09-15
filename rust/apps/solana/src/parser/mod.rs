@@ -10,11 +10,9 @@ use serde_json::json;
 
 use crate::errors::{Result, SolanaError};
 use crate::message::Message;
-use crate::parser::detail::{
-    CommonDetail, ProgramDetail, SolanaDetail,
-};
 #[cfg(test)]
 use crate::parser::detail::ProgramDetailGeneralUnknown;
+use crate::parser::detail::{CommonDetail, ProgramDetail, SolanaDetail};
 use crate::parser::overview::{
     JupiterV6SwapOverview, JupiterV6SwapTokenInfoOverview, ProgramOverviewGeneral,
     ProgramOverviewInstruction, ProgramOverviewInstructions, ProgramOverviewMultisigCreate,
@@ -106,16 +104,24 @@ impl ParsedSolanaTx {
         while cursor < bytes.len() {
             let byte = bytes[cursor];
             if quoted {
-                if escaped { escaped = false; }
-                else if byte == b'\\' { escaped = true; }
-                else if byte == b'"' { quoted = false; }
+                if escaped {
+                    escaped = false;
+                } else if byte == b'\\' {
+                    escaped = true;
+                } else if byte == b'"' {
+                    quoted = false;
+                }
             } else if byte == b'"' {
                 quoted = true;
             } else if byte == b'[' {
                 // Stop at the first non-byte-array character; this avoids
                 // scanning entire nested objects or interpreting memo text.
                 let mut end = cursor + 1;
-                while end < bytes.len() && (bytes[end].is_ascii_whitespace() || bytes[end].is_ascii_digit() || bytes[end] == b',') {
+                while end < bytes.len()
+                    && (bytes[end].is_ascii_whitespace()
+                        || bytes[end].is_ascii_digit()
+                        || bytes[end] == b',')
+                {
                     end += 1;
                 }
                 if end < bytes.len() && bytes[end] == b']' {
@@ -123,7 +129,9 @@ impl ParsedSolanaTx {
                         output.push_str(&json[copied..cursor]);
                         output.push('[');
                         for (index, value) in values.iter().enumerate() {
-                            if index > 0 { output.push_str(", "); }
+                            if index > 0 {
+                                output.push_str(", ");
+                            }
                             output.push_str(&value.to_string());
                         }
                         output.push(']');
@@ -166,7 +174,11 @@ impl ParsedSolanaTx {
                 action
             };
             // V1 configuration is message metadata, not a signed instruction.
-            let ordinal = if detail.common.program == "TransactionConfig" { 0 } else { index + 1 };
+            let ordinal = if detail.common.program == "TransactionConfig" {
+                0
+            } else {
+                index + 1
+            };
             order.push((ordinal, action));
         }
         order
@@ -283,15 +295,15 @@ impl ParsedSolanaTx {
     #[cfg(test)]
     fn build_unknown_detail(details: &[SolanaDetail], message: &Message) -> Result<String> {
         let value = json!({
-                    "header": {
-                        "num_required_signatures": message.header.num_required_signatures,
-                        "num_readonly_signed_accounts": message.header.num_readonly_signed_accounts,
-                        "num_readonly_unsigned_accounts": message.header.num_readonly_unsigned_accounts,
-                    },
-                    "accounts": message.accounts.iter().map(|account| {base58::encode(&account.value)}).collect::<Vec<String>>(),
-                    "block_hash": base58::encode(&message.block_hash.value),
-                    "instructions": details,
-                });
+            "header": {
+                "num_required_signatures": message.header.num_required_signatures,
+                "num_readonly_signed_accounts": message.header.num_readonly_signed_accounts,
+                "num_readonly_unsigned_accounts": message.header.num_readonly_unsigned_accounts,
+            },
+            "accounts": message.accounts.iter().map(|account| {base58::encode(&account.value)}).collect::<Vec<String>>(),
+            "block_hash": base58::encode(&message.block_hash.value),
+            "instructions": details,
+        });
         Ok(serde_json::to_string_pretty(&value)?)
     }
 
@@ -1194,7 +1206,12 @@ mod tests {
     // Details now has a separate lossless message JSON contract, checked below.
     fn semantic_detail_json(transaction: &[u8], display_type: &SolanaTxDisplayType) -> String {
         let message = Message::read_exact(&mut transaction.to_vec()).unwrap();
-        ParsedSolanaTx::build_detail(display_type, &message.to_program_details().unwrap(), &message).unwrap()
+        ParsedSolanaTx::build_detail(
+            display_type,
+            &message.to_program_details().unwrap(),
+            &message,
+        )
+        .unwrap()
     }
 
     fn detail(program: &str, method: &str) -> SolanaDetail {
@@ -1550,7 +1567,9 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
+        let parsed_detail: Value =
+            serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type))
+                .unwrap();
         let expected_detail = json!([
             {
                 "program": "System",
@@ -1586,7 +1605,9 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
+        let parsed_detail: Value =
+            serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type))
+                .unwrap();
         let expected_detail = json!([
             {
                 "program": "System",
@@ -1669,7 +1690,9 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
+        let parsed_detail: Value =
+            serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type))
+                .unwrap();
         let expected_detail = json!([
             {
                 "program": "Vote",
@@ -1712,7 +1735,9 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
+        let parsed_detail: Value =
+            serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type))
+                .unwrap();
 
         let expected_detail = json!(
                     [
@@ -1850,7 +1875,9 @@ mod tests {
                 "owner": "GinwSnwbsjkWXkancBr5E6EPrQtKdwnE5vPdriv1tK3i"
             }
         ]);
-        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
+        let parsed_detail: Value =
+            serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type))
+                .unwrap();
         assert_eq!(expected_detail, parsed_detail);
     }
 
@@ -1870,7 +1897,9 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
+        let parsed_detail: Value =
+            serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type))
+                .unwrap();
 
         let expected_detail = json!([
           {
@@ -1931,7 +1960,9 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
+        let parsed_detail: Value =
+            serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type))
+                .unwrap();
 
         let expected_detail = json!(
                     [
@@ -2064,7 +2095,10 @@ mod tests {
         ]);
         let mut expect_data = expect_data;
         for instruction in expect_data.as_array_mut().unwrap() {
-            if let Some(accounts) = instruction.get_mut("accounts").and_then(Value::as_array_mut) {
+            if let Some(accounts) = instruction
+                .get_mut("accounts")
+                .and_then(Value::as_array_mut)
+            {
                 for account in accounts {
                     if let Some((table, index)) = account.as_str().and_then(|s| s.split_once('#')) {
                         *account = json!({"Table": table, "Index": index.parse::<u8>().unwrap(), "Status": "Unresolved offline"});
@@ -2227,7 +2261,9 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
+        let parsed_detail: Value =
+            serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type))
+                .unwrap();
         let expected_detail = json!([
             {
                 "program": "System",
@@ -2282,7 +2318,9 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
+        let parsed_detail: Value =
+            serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type))
+                .unwrap();
         let expected_detail = json!([
             {
                 "program": "Stake",
@@ -2315,7 +2353,9 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
+        let parsed_detail: Value =
+            serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type))
+                .unwrap();
         let expected_detail = json!([
             {
                 "program": "Stake",
@@ -2354,7 +2394,9 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
+        let parsed_detail: Value =
+            serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type))
+                .unwrap();
         let expected_detail = json!({
           "accounts": [
             "2nkVYBJQg5UavBjvBT4jcahJamnFyr8wzPhzabDaRnBD",
@@ -2419,7 +2461,9 @@ mod tests {
             }
             _ => println!("program overview parse error!"),
         };
-        let parsed_detail: Value = serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type)).unwrap();
+        let parsed_detail: Value =
+            serde_json::from_str(&semantic_detail_json(&transaction, &parsed.display_type))
+                .unwrap();
         let expected_detail = json!([{"program":"Stake","method":"Merge","destination_stake_account":"AJWneUm7QuQENJXkn7rDMp1Bvfab3R5vY7LcGuMmTtQv","source_stake_account":"BS1bVhRD2iJrGbiHV61J3SRg8TsGjR2a9TSBeoJBY6Ce","sysvar_clock":"SysvarC1ock11111111111111111111111111111111","sysvar_stake_history":"SysvarStakeHistory1111111111111111111111111","stake_authority_pubkey":"6RDS19fkTJ3BtTx78NswVm2VSPRmwM9tEa6kGuadAPKS"}]);
         assert_eq!(expected_detail, parsed_detail);
     }

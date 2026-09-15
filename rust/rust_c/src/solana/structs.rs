@@ -478,10 +478,17 @@ impl From<ParsedSolanaTx> for DisplaySolanaTx {
             network: convert_c_char(value.network.to_string()),
             overview: overview.c_ptr(),
             detail: convert_c_char(value.detail),
-            advanced: VecFFI::from(value.advanced.into_iter().map(|item| DisplaySolanaAdvancedItem {
-                title: convert_c_char(item.title),
-                value: convert_c_char(item.value),
-            }).collect::<Vec<_>>()).c_ptr(),
+            advanced: VecFFI::from(
+                value
+                    .advanced
+                    .into_iter()
+                    .map(|item| DisplaySolanaAdvancedItem {
+                        title: convert_c_char(item.title),
+                        value: convert_c_char(item.value),
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .c_ptr(),
         }
     }
 }

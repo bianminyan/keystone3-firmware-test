@@ -1403,6 +1403,9 @@ mod tests {
                 *account = json!({"Table": table, "Index": index.parse::<u8>().unwrap(), "Status": "Unresolved offline"});
             }
         }
-        assert_eq!(expect_msg_detail, serde_json::to_value(&msg_detail[5]).unwrap());
+        assert_eq!(
+            expect_msg_detail,
+            serde_json::to_value(&msg_detail[5]).unwrap()
+        );
     }
 }

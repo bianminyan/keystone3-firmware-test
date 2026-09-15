@@ -41,22 +41,39 @@ mod fixture_tests {
     #[test]
     fn v1_security_checks_apply_at_final_signing() {
         let seed = hex::decode("5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4").unwrap();
-        let dataset: serde_json::Value = serde_json::from_str(include_str!("../../tests/fixtures/solana-security.json")).unwrap();
+        let dataset: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/solana-security.json"))
+                .unwrap();
         let mut count = 0;
-        for fixture in dataset["fixtures"].as_array().unwrap().iter().filter(|f| f["id"].as_str().unwrap().starts_with("v1--")) {
+        for fixture in dataset["fixtures"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f["id"].as_str().unwrap().starts_with("v1--"))
+        {
             count += 1;
             let mut decoder = ur::Decoder::default();
             for frame in fixture["ur"].as_array().unwrap() {
-                decoder.receive(&frame.as_str().unwrap().to_lowercase()).unwrap();
+                decoder
+                    .receive(&frame.as_str().unwrap().to_lowercase())
+                    .unwrap();
             }
-            let mut request = SolSignRequest::try_from(decoder.message().unwrap().unwrap()).unwrap();
+            let mut request =
+                SolSignRequest::try_from(decoder.message().unwrap().unwrap()).unwrap();
             let expected = fixture["expected_result"] == "success";
             unsafe {
-                assert_eq!(build_sign_result(&mut request as *mut _ as PtrUR, &seed).is_ok(), expected, "{}", fixture["id"]);
+                assert_eq!(
+                    build_sign_result(&mut request as *mut _ as PtrUR, &seed).is_ok(),
+                    expected,
+                    "{}",
+                    fixture["id"]
+                );
             }
             request.set_sign_type(SignType::Message);
             assert!(validated_payload(&request).is_err(), "{}", fixture["id"]);
-            unsafe { assert!(build_sign_result(&mut request as *mut _ as PtrUR, &seed).is_err()); }
+            unsafe {
+                assert!(build_sign_result(&mut request as *mut _ as PtrUR, &seed).is_err());
+            }
             if fixture["id"] == "v1--transfer" {
                 request.set_sign_type(SignType::Transaction);
                 let mut data = request.get_sign_data();
@@ -69,7 +86,9 @@ mod fixture_tests {
                 assert!(app_solana::message::Message::read_exact(&mut data.clone()).is_ok());
                 request.set_sign_data(data);
                 assert!(validated_payload(&request).is_err());
-                unsafe { assert!(build_sign_result(&mut request as *mut _ as PtrUR, &seed).is_err()); }
+                unsafe {
+                    assert!(build_sign_result(&mut request as *mut _ as PtrUR, &seed).is_err());
+                }
             }
         }
         assert_eq!(count, 6);
@@ -79,10 +98,9 @@ mod fixture_tests {
     fn canonical_display_regressions_preserve_order_alt_and_message_length() {
         use crate::common::free::Free;
         use app_solana::parser::{overview::SolanaOverview, structs::OverviewAction};
-        let dataset: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tests/fixtures/solana-security.json"
-        ))
-        .unwrap();
+        let dataset: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/solana-security.json"))
+                .unwrap();
         for id in ["04", "05", "11", "14", "22"] {
             let fixture = dataset["fixtures"]
                 .as_array()
@@ -113,20 +131,32 @@ mod fixture_tests {
             if id == "22" {
                 let instructions = detail["instructions"].as_array().unwrap();
                 assert!(instructions.iter().any(|instruction| {
-                    let bytes = bitcoin::base58::decode(instruction["data"].as_str().unwrap()).unwrap();
-                    bytes.windows(b"SQUADS-DETAILS-END".len()).any(|w| w == b"SQUADS-DETAILS-END")
+                    let bytes =
+                        bitcoin::base58::decode(instruction["data"].as_str().unwrap()).unwrap();
+                    bytes
+                        .windows(b"SQUADS-DETAILS-END".len())
+                        .any(|w| w == b"SQUADS-DETAILS-END")
                 }));
                 continue;
             }
             if id == "11" {
-                assert_eq!(detail["address_table_lookups"][0]["account_key"], "7tj9biW3KRJ7EEWmVUGigHiouCTXhV2dzcyvwma7Cyu7");
-                assert!(detail["address_table_lookups"][0]["writable_indexes"].as_array().unwrap().contains(&serde_json::json!(7)));
+                assert_eq!(
+                    detail["address_table_lookups"][0]["account_key"],
+                    "7tj9biW3KRJ7EEWmVUGigHiouCTXhV2dzcyvwma7Cyu7"
+                );
+                assert!(detail["address_table_lookups"][0]["writable_indexes"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&serde_json::json!(7)));
                 let SolanaOverview::Transfer(transfer) = &parsed.overview else {
                     panic!("ALT transfer should retain its recognized layout")
                 };
                 assert_eq!(transfer.value, "0.001 SOL");
                 assert!(transfer.to_in_lookup_table);
-                assert_eq!(transfer.to, "Table: 7tj9biW3KRJ7EEWmVUGigHiouCTXhV2dzcyvwma7Cyu7\nIndex: 7");
+                assert_eq!(
+                    transfer.to,
+                    "Table: 7tj9biW3KRJ7EEWmVUGigHiouCTXhV2dzcyvwma7Cyu7\nIndex: 7"
+                );
             } else {
                 let expected = if id == "04" {
                     alloc::vec![
@@ -166,10 +196,9 @@ mod fixture_tests {
     fn canonical_fixtures_check_and_sign() {
         let seed = hex::decode("5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4").unwrap();
         let mut fingerprint = [0x73, 0xc5, 0xda, 0x0a];
-        let dataset: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tests/fixtures/solana-security.json"
-        ))
-        .unwrap();
+        let dataset: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/solana-security.json"))
+                .unwrap();
         for fixture in dataset["fixtures"].as_array().unwrap() {
             if !["01", "02", "07", "08", "13", "14", "23", "24"]
                 .iter()
