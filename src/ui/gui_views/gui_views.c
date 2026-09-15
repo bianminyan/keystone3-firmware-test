@@ -240,8 +240,8 @@ void *GuiCreateErrorCodeWindow(int32_t errCode, lv_obj_t **param, ErrorWindowCal
     switch (errCode) {
     case ERR_AR_NOT_SETUP:
     case ERR_AR_DATA_INVALID:
-        titleText = _("AR Address Setup Required");
-        descText = _("Please return to Home to complete your AR address setup first.");
+        titleText = _("ar_address_setup_required");
+        descText = _("ar_address_setup_desc");
         imgSrc = &imgWarn;
         break;
     case ERR_KEYSTORE_MNEMONIC_REPEAT:
