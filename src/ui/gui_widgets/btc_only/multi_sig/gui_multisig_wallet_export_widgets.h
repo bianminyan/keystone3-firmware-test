@@ -6,6 +6,7 @@ void GuiMultisigWalletExportWidgetsDeInit();
 void GuiMultisigWalletExportWidgetsRefresh();
 void GuiSetExportMultiSigSwitch();
 bool GuiGetExportMultisigWalletSwitch();
-void ModelGenerateMultiSigAddress(char *address, uint32_t maxLen, char *walletConfig, uint32_t index);
+// true: `address` holds a NUL-terminated address. false: `address` is "" and the caller must fail closed.
+bool ModelGenerateMultiSigAddress(char *address, uint32_t maxLen, char *walletConfig, uint32_t index);
 
 #endif

@@ -1738,9 +1738,17 @@ static void ModelGetUtxoAddress(uint32_t index, AddressDataItem_t *item)
     if (GetCurrentWalletIndex() != SINGLE_WALLET) {
         snprintf_s(hdPath, ADDRESS_MAX_LEN, "*/0/%u", (unsigned int)index);
         strcpy_s(item->path, sizeof(item->path), hdPath);
-        // On failure the helper closes the view and leaves item->address untouched; thanks
-        // to the memset above that is now an empty string instead of stack garbage.
-        ModelGenerateMultiSigAddress(item->address, sizeof(item->address), GetDefaultMultisigWallet()->walletConfig, index);
+        // The helper reports success/failure and never touches the view itself. Failing
+        // closed here keeps the callers (RefreshQrCode, RefreshSwitchAccount, ...) from
+        // drawing into objects that a view close would already have DeInit-ed.
+        MultiSigWalletItem_t *wallet = GetDefaultMultisigWallet();
+        valid = valid && wallet != NULL &&
+                ModelGenerateMultiSigAddress(item->address, sizeof(item->address), wallet->walletConfig, index);
+        if (!valid) {
+            memset_s(item, sizeof(*item), 0, sizeof(*item));
+            ClearSecretCache();
+        }
+        ASSERT(valid);
         item->index = index;
         return;
     }

@@ -300,18 +300,33 @@ static void ModelGenerateAddress(char *address, uint32_t maxLen)
     strncpy_s(address, maxLen, result->data, strnlen_s(result->data, maxLen));
 }
 
-void ModelGenerateMultiSigAddress(char *address, uint32_t maxLen, char *walletConfig, uint32_t index)
+// Returns true only when `address` holds a complete, NUL-terminated multisig address.
+// On failure `address` is an empty string. This helper no longer closes the current view:
+// the caller owns the view lifecycle and must fail closed itself. Closing it from here let
+// the caller keep drawing into LVGL objects that had already been DeInit-ed.
+bool ModelGenerateMultiSigAddress(char *address, uint32_t maxLen, char *walletConfig, uint32_t index)
 {
-    uint8_t mfp[4];
+    if (address == NULL || maxLen == 0) {
+        return false;
+    }
+    address[0] = '\0';
+    if (walletConfig == NULL) {
+        return false;
+    }
+    uint8_t mfp[4] = {0};
     GetMasterFingerPrint(mfp);
     SimpleResponse_c_char *result = generate_address_for_multisig_wallet_config(walletConfig, 0, index, mfp, 4);
-    if (result->error_code != 0) {
-        printf("errorMessage: %s\r\n", result->error_message);
-        GuiCloseCurrentWorkingView();
-        return;
+    bool valid = result != NULL && result->error_code == 0 && result->data != NULL && result->data[0] != '\0' &&
+                 strnlen_s(result->data, maxLen) < maxLen;   // leaves room for the terminator
+    if (valid) {
+        strcpy_s(address, maxLen, result->data);
+    } else if (result != NULL) {
+        printf("multisig address error: %s\r\n", result->error_message != NULL ? result->error_message : "unknown");
     }
-    strncpy_s(address, maxLen, result->data, strnlen_s(result->data, maxLen));
-    address[strnlen_s(result->data, maxLen)] = '\0';
+    if (result != NULL) {
+        free_simple_response_c_char(result);   // was leaked on every call
+    }
+    return valid;
 }
 
 static void ImportMultisigGoToHomeViewHandler(lv_event_t *e)
