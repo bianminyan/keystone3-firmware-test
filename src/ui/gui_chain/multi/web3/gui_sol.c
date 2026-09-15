@@ -299,14 +299,15 @@ static lv_obj_t *GuiCreateAltWarningCard(lv_obj_t *parent, const char *reference
     lv_obj_t *title = lv_obj_get_child(card, 1);
     lv_obj_t *content = lv_obj_get_child(card, 2);
     if (title != NULL) {
-        lv_label_set_text(title, "ALT Address");
+        lv_label_set_text(title, _("solana_alt_address_title"));
     }
     if (content != NULL) {
-        lv_label_set_text(content, "Unresolved offline. Verify table and index.");
+        lv_label_set_text(content, _("solana_alt_unresolved_notice"));
     }
 
     lv_obj_t *checkLabel = lv_label_create(card);
-    lv_label_set_text(checkLabel, "Check ALT");
+    lv_label_set_text(checkLabel, _("solana_alt_check"));
+    lv_obj_set_style_text_font(checkLabel, g_defIllustrateFont, LV_PART_MAIN);
     lv_obj_set_style_text_color(checkLabel, lv_color_hex(0x1BE0C6), LV_PART_MAIN);
     lv_obj_align_to(checkLabel, content != NULL ? content : title, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 12);
 
@@ -422,19 +423,21 @@ lv_obj_t *CreateSquadsSolanaTransferOverviewCard(lv_obj_t *parent, PtrString fro
 }
 static void GuiShowSolTxTransferOverview(lv_obj_t *parent, PtrT_DisplaySolanaTxOverview overviewData)
 {
-    lv_obj_t *warningCard = overviewData->transfer_to_in_lookup_table
-        ? GuiCreateAltWarningCard(parent, overviewData->transfer_to_lookup_table_reference)
-        : NULL;
-    lv_obj_t *lastView = CreateTransactionOverviewCardWithWidth(
+    lv_obj_t *lastView = NULL;
+    if (overviewData->transfer_to_in_lookup_table) {
+        lastView = GuiCreateAltWarningCard(parent, overviewData->transfer_to_lookup_table_reference);
+    }
+    lv_obj_t *overviewCard = CreateTransactionOverviewCardWithWidth(
         parent,
         _("Value"),
         overviewData->transfer_value,
         _("Main Action"),
         overviewData->main_action,
         SOL_COMPONENT_WIDTH);
-    if (warningCard != NULL) {
-        lv_obj_align_to(lastView, warningCard, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 16);
+    if (lastView != NULL) {
+        lv_obj_align_to(overviewCard, lastView, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 16);
     }
+    lastView = overviewCard;
     lastView = CreateTransactionItemViewWithWidth(
         parent,
         _("From"),
@@ -1407,6 +1410,7 @@ static void GuiShowSolTxInstructionsOverview(lv_obj_t *parent, PtrT_DisplaySolan
 {
     PtrT_DisplaySolanaTxOverviewUnknownInstructions unknown_instructions = overviewData->unknown_instructions;
     PtrT_VecFFI_Instruction overview_instructions = unknown_instructions->overview_instructions;
+    const bool usesAlt = GuiSolInstructionsUseAddressLookupTable(overview_instructions);
     // notice container
     lv_obj_t *noticeContainer = GuiCreateContainerWithParent(parent, SOL_COMPONENT_WIDTH, LV_SIZE_CONTENT);
     lv_obj_align(noticeContainer, LV_ALIGN_DEFAULT, 0, 0);
@@ -1427,7 +1431,7 @@ static void GuiShowSolTxInstructionsOverview(lv_obj_t *parent, PtrT_DisplaySolan
     lv_obj_t *noticeLabel = lv_label_create(iconNoticeContainer);
     lv_obj_set_style_text_font(noticeLabel, g_defIllustrateFont, LV_PART_MAIN);
     lv_obj_set_style_text_color(noticeLabel, lv_color_hex(0xF5870A), LV_PART_MAIN);
-    lv_label_set_text(noticeLabel, GuiSolInstructionsUseAddressLookupTable(overview_instructions) ? "Warning" : "Notice");
+    lv_label_set_text(noticeLabel, usesAlt ? _("solana_warning_title") : _("scan_qr_code_signing_notice"));
 
     lv_obj_t *noticeContent = lv_label_create(noticeContainer);
     lv_obj_set_width(noticeContent, lv_pct(90));
@@ -1438,8 +1442,8 @@ static void GuiShowSolTxInstructionsOverview(lv_obj_t *parent, PtrT_DisplaySolan
     // reviewed as generic instructions rather than a trusted transfer/swap.
     lv_label_set_text(
         noticeContent,
-        GuiSolInstructionsUseAddressLookupTable(overview_instructions)
-            ? "Address Lookup Table accounts cannot be resolved offline. Review every table and index in Details."
+        usesAlt
+            ? _("solana_parse_tx_alt_warning_body")
             : _("solana_parse_tx_notice"));
     lv_obj_set_style_text_opa(noticeContent, 144, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_align_to(noticeContent, iconNoticeContainer, LV_ALIGN_OUT_BOTTOM_LEFT, 24, 10);
@@ -1527,7 +1531,7 @@ static void GuiShowSolTxInstructionsOverview(lv_obj_t *parent, PtrT_DisplaySolan
             10);
 
         lv_obj_t *data_label = GuiCreateIllustrateLabel(container, overview_instructions->data[i].data);
-        lv_obj_set_width(data_label, 328);
+        lv_obj_set_width(data_label, SOL_COMPONENT_CONTENT_WIDTH);
         lv_label_set_long_mode(data_label, LV_LABEL_LONG_WRAP);
         lv_obj_align_to(data_label, dataTitle, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 8);
 
@@ -1537,7 +1541,7 @@ static void GuiShowSolTxInstructionsOverview(lv_obj_t *parent, PtrT_DisplaySolan
 
         lv_obj_t *programAddress_label = GuiCreateIllustrateLabel(
             container, overview_instructions->data[i].program_address);
-        lv_obj_set_width(programAddress_label, 328);
+        lv_obj_set_width(programAddress_label, SOL_COMPONENT_CONTENT_WIDTH);
         lv_label_set_long_mode(programAddress_label, LV_LABEL_LONG_WRAP);
         lv_obj_align_to(programAddress_label, programTitle, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 8);
 
