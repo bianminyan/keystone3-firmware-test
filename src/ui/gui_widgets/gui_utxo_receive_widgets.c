@@ -248,12 +248,24 @@ void InitMultisigWalletConfig(void)
 {
 #ifdef BTC_ONLY
     if (GetCurrentWalletIndex() != SINGLE_WALLET) {
-        uint8_t mfp[4];
+        uint8_t mfp[4] = {0};
         GetMasterFingerPrint(mfp);
-        Ptr_Response_MultiSigWallet result = import_multi_sig_wallet_by_file(GetDefaultMultisigWallet()->walletConfig, mfp, 4);
-        if (result->error_code != 0) {
-            return;
+        MultiSigWalletItem_t *wallet = GetDefaultMultisigWallet();
+        Ptr_Response_MultiSigWallet result = wallet == NULL ? NULL :
+                                             import_multi_sig_wallet_by_file(wallet->walletConfig, mfp, 4);
+        // A stored multisig config that no longer parses (corrupt, or it belongs to another
+        // seed) is not a state this page can work in: g_multiSigWallet would stay NULL and be
+        // dereferenced by GetRootHdPath once the page is built. Fail closed here, before any
+        // widget exists, instead of letting the page initialise and crash later.
+        bool valid = result != NULL && result->error_code == 0 && result->data != NULL &&
+                     result->data->derivations != NULL && result->data->derivations->size > 0 &&
+                     result->data->derivations->data != NULL && result->data->derivations->data[0] != NULL;
+        if (!valid) {
+            printf("multisig config load failed: %s\r\n",
+                   (result != NULL && result->error_message != NULL) ? result->error_message : "unknown");
+            ClearSecretCache();
         }
+        ASSERT(valid);
         g_multiSigWallet = result->data;
     }
 #endif
