@@ -393,29 +393,13 @@ static bool IsAda(int walletIndex)
     }
 }
 
-static void GuiARAddressCheckConfirmHandler(lv_event_t *event)
+void GuiConnectShowArSetupNotice(int32_t status)
 {
-    GUI_DEL_OBJ(g_noticeWindow);
-    GuiCreateAttentionHintbox(SIG_SETUP_RSA_PRIVATE_KEY_CONNECT_CONFIRM);
-}
-
-static void GuiOpenARAddressNoticeWindow()
-{
-    g_noticeWindow = GuiCreateGeneralHintBox(&imgWarn, _("ar_address_check"), _("ar_address_check_desc"), NULL, _("not_now"), WHITE_COLOR_OPA20, _("understand"), ORANGE_COLOR);
-    lv_obj_add_event_cb(lv_obj_get_child(g_noticeWindow, 0), CloseHintBoxHandler, LV_EVENT_CLICKED, &g_noticeWindow);
-
-    lv_obj_t *btn = GuiGetHintBoxRightBtn(g_noticeWindow);
-    lv_obj_set_width(btn, 192);
-    lv_obj_add_event_cb(btn, GuiARAddressCheckConfirmHandler, LV_EVENT_CLICKED, &g_noticeWindow);
-
-    btn = GuiGetHintBoxLeftBtn(g_noticeWindow);
-    lv_obj_set_width(btn, 192);
-    lv_obj_add_event_cb(btn, CloseHintBoxHandler, LV_EVENT_CLICKED, &g_noticeWindow);
-
-    lv_obj_t *img = GuiCreateImg(g_noticeWindow, &imgClose);
-    lv_obj_add_flag(img, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(img, CloseHintBoxHandler, LV_EVENT_CLICKED, &g_noticeWindow);
-    lv_obj_align_to(img, lv_obj_get_child(g_noticeWindow, 1), LV_ALIGN_TOP_RIGHT, -36, 36);
+    if (g_connectWalletTileView.currentTile == CONNECT_WALLET_QRCODE) {
+        GuiConnectWalletPrevTile();
+    }
+    ClearSecretCache();
+    GuiCreateErrorCodeWindow(status, NULL, NULL);
 }
 
 static void GuiOpenUsbNoticeWindow(WALLET_LIST_INDEX_ENUM walletIndex)
@@ -461,9 +445,8 @@ static void OpenQRCodeHandler(lv_event_t *e)
         GuiOpenUsbNoticeWindow(g_connectWalletTileView.walletIndex);
         return;
     }
-    bool skipGenerateArweaveKey = IsArweaveSetupComplete();
-    if (g_connectWalletTileView.walletIndex == WALLET_LIST_WANDER && !skipGenerateArweaveKey) {
-        GuiOpenARAddressNoticeWindow();
+    if (g_connectWalletTileView.walletIndex == WALLET_LIST_WANDER) {
+        GuiConnectShowRsaSetupasswordHintbox();
         return;
     }
 
@@ -479,6 +462,7 @@ void GuiConnectWalletPasswordErrorCount(void *param)
 
 void GuiConnectShowRsaSetupasswordHintbox(void)
 {
+    ClearSecretCache();
     g_keyboardWidget = GuiCreateKeyboardWidget(g_pageWidget->contentZone);
     SetKeyboardWidgetSelf(g_keyboardWidget, &g_keyboardWidget);
     static uint16_t sig = SIG_SETUP_RSA_PRIVATE_KEY_WITH_PASSWORD;
@@ -1118,9 +1102,9 @@ void GuiPrepareArConnectWalletView(void)
     GuiEmitSignal(SIG_SETUP_VIEW_TILE_NEXT, NULL, 0);
 }
 
-void GuiSetupArConnectWallet(void)
+int32_t GuiSetupArConnectWallet(SimpleResponse_c_char **publicKeyOut)
 {
-    RsaGenerateKeyPair(false);
+    return RsaGenerateKeyPair(false, false, publicKeyOut);
 }
 
 void GuiConnectWalletSetQrdata(WALLET_LIST_INDEX_ENUM index)
@@ -1255,12 +1239,12 @@ void GuiConnectWalletSetQrdata(WALLET_LIST_INDEX_ENUM index)
         return;
     }
     if (func) {
-        bool skipGenerateArweaveKey = IsArweaveSetupComplete();
-        if (index == WALLET_LIST_WANDER && !skipGenerateArweaveKey) {
-            GuiAnimatingQRCodeInitWithLoadingParams(g_connectWalletTileView.qrCode, func, true, _("InitializingRsaTitle"), _("FindingRsaPrimes"));
-            return;
+        if (func == GuiGetWanderData) {
+            GuiAnimatingQRCodeInitWithLoadingParams(g_connectWalletTileView.qrCode, func, true,
+                                                    _("PreparingArAddress"), NULL);
+        } else {
+            GuiAnimatingQRCodeInit(g_connectWalletTileView.qrCode, func, true);
         }
-        GuiAnimatingQRCodeInit(g_connectWalletTileView.qrCode, func, true);
     }
 }
 
@@ -1963,6 +1947,7 @@ void GuiConnectWalletRefresh(void)
 }
 void GuiConnectWalletDeInit(void)
 {
+    ClearSecretCache();
     GUI_DEL_OBJ(g_openMoreHintBox)
     GUI_DEL_OBJ(g_manageImg);
     GUI_DEL_OBJ(g_coinCont)

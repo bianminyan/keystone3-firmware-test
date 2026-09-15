@@ -1,5 +1,7 @@
 #include "stdio.h"
 #include "gui_wallet.h"
+#include "gui_api.h"
+#include "rsa.h"
 #include "keystore.h"
 #include "account_public_info.h"
 #include "gui_connect_wallet_widgets.h"
@@ -252,14 +254,20 @@ UREncodeResult *GuiGetWanderData(void)
 {
     uint8_t mfp[4] = {0};
     GetMasterFingerPrint(mfp);
-    char *arXpub = GetCurrentAccountPublicKey(XPUB_TYPE_ARWEAVE);
-    if (arXpub == NULL || strlen(arXpub) != 1024) {
-        GuiSetupArConnectWallet();
-        arXpub = GetCurrentAccountPublicKey(XPUB_TYPE_ARWEAVE);
+    SimpleResponse_c_char *publicKey = NULL;
+    int32_t ret = GuiSetupArConnectWallet(&publicKey);
+    if (!ArKeyNeedsSetup(ret)) {
         ClearSecretCache();
     }
-    ASSERT(arXpub != NULL);
-    UREncodeResult *urEncode = get_connect_arconnect_wallet_ur_from_xpub(mfp, sizeof(mfp), arXpub);
+    if (ret != SUCCESS_CODE) {
+        GuiApiEmitSignal(SIG_SETUP_RSA_PRIVATE_KEY_WRITE_FAIL, &ret, sizeof(ret));
+        return NULL;
+    }
+    if (publicKey == NULL) {
+        return NULL;
+    }
+    UREncodeResult *urEncode = get_connect_arconnect_wallet_ur_from_xpub(mfp, sizeof(mfp), publicKey->data);
+    free_simple_response_c_char(publicKey);
     CHECK_CHAIN_PRINT(urEncode);
     return urEncode;
 }

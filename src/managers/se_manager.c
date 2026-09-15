@@ -25,7 +25,7 @@
 static int32_t SetNewKeyPieceToDs28s60(uint8_t accountIndex, uint8_t *piece, const char *password);
 static int32_t GetKeyPieceFromDs28s60(uint8_t accountIndex, uint8_t *piece, const char *password);
 static int32_t SetSeHash(uint8_t page, const uint8_t *info);
-static bool VerifySeHash(uint8_t page, uint8_t *info, bool writeExpectedIfEmpty);
+static bool VerifySeHash(uint8_t page, uint8_t *info);
 
 // gen-1-specific 608 derivation lives in se_backend_gen1.c; gen-2 in se_backend_gen2.c. This file keeps
 // the generation-agnostic pieces: the shared DS28S60 key piece, GetAccountSlot, the SeBackend() dispatcher
@@ -359,17 +359,9 @@ static int32_t SetSeHash(uint8_t page, const uint8_t *info)
     return ret;
 }
 
-// writeExpectedIfEmpty controls the blank-baseline (all-00/all-FF) first-use path: adopt the
-// presented `info` as the new baseline (true) or leave it blank and just pass (false). Adopt ONLY
-// when `info` has already been validated against seed-derived data, so we are not promoting
-// unverified content into a trust anchor:
-//   - RSA primes (true): the caller runs HasMatchingPrimesHash(primes, hash) against the
-//     seed-decrypted primes BEFORE this, so `info` is trustworthy -> safe to adopt.
-//   - wallet / multisig (false): `info` is sha256 of RAW flash content that THIS guard is the anchor
-//     for (no independent validation), so adopting it would trust unverified flash. Leave it blank
-//     and let the write path (SaveCurrentPublicInfoToFlash etc.) establish the baseline from
-//     freshly-generated, seed-derived data instead.
-static bool VerifySeHash(uint8_t page, uint8_t *info, bool writeExpectedIfEmpty)
+// A blank SE page cannot authenticate Flash data. Verification must not
+// establish a baseline from unverified Flash content.
+static bool VerifySeHash(uint8_t page, uint8_t *info)
 {
     uint8_t data[SE_HASH_LEN] = {0};
     int32_t ret;
@@ -378,14 +370,10 @@ static bool VerifySeHash(uint8_t page, uint8_t *info, bool writeExpectedIfEmpty)
     if (ret != SUCCESS_CODE) {
         return false;
     }
-    if (!memcmp(data, info, SE_HASH_LEN)) {
-        return true;
-    }
     if (CheckAllFF(data, SE_HASH_LEN) || CheckAllZero(data, SE_HASH_LEN)) {
-        SetSeHash(page, writeExpectedIfEmpty ? info : data);
-        return true;
+        return false;
     }
-    return false;
+    return !memcmp(data, info, SE_HASH_LEN);
 }
 
 /// @brief Set the wallet data hash.
@@ -405,7 +393,7 @@ int32_t SetWalletDataHash(uint8_t index, uint8_t *info)
 bool VerifyWalletDataHash(uint8_t index, uint8_t *info)
 {
     ASSERT(index <= 2);
-    return VerifySeHash(PAGE_WALLET1_PUB_KEY_HASH + index, info, false);
+    return VerifySeHash(PAGE_WALLET1_PUB_KEY_HASH + index, info);
 }
 
 int32_t SetRsaPrimesHash(uint8_t index, uint8_t *info)
@@ -414,10 +402,12 @@ int32_t SetRsaPrimesHash(uint8_t index, uint8_t *info)
     return SetSeHash(PAGE_WALLET1_RSA_PRIMES_HASH + index, info);
 }
 
-bool VerifyRsaPrimesHash(uint8_t index, uint8_t *info)
+int32_t GetRsaPrimesHash(uint8_t index, uint8_t *info)
 {
-    ASSERT(index <= 2);
-    return VerifySeHash(PAGE_WALLET1_RSA_PRIMES_HASH + index, info, true);
+    if (index > 2 || info == NULL) {
+        return ERR_GENERAL_FAIL;
+    }
+    return SE_HmacEncryptRead(info, PAGE_WALLET1_RSA_PRIMES_HASH + index);
 }
 
 int32_t SetMultisigDataHash(uint8_t index, uint8_t *info)
@@ -429,7 +419,7 @@ int32_t SetMultisigDataHash(uint8_t index, uint8_t *info)
 bool VerifyMultisigWalletDataHash(uint8_t index, uint8_t *info)
 {
     ASSERT(index <= 2);
-    return VerifySeHash(index * PAGE_NUM_PER_ACCOUNT + PAGE_INDEX_MULTISIG_CONFIG_HASH, info, false);
+    return VerifySeHash(index * PAGE_NUM_PER_ACCOUNT + PAGE_INDEX_MULTISIG_CONFIG_HASH, info);
 }
 
 /// @brief Get the fingerprint encrypted password which stored in SE.

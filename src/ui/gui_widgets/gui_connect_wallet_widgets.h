@@ -146,9 +146,14 @@ ETHAccountType GetMetamaskAccountType(void);
 SOLAccountType GetSolflareAccountType(void);
 SOLAccountType GetHeliumAccountType(void);
 void GuiPrepareArConnectWalletView(void);
-void GuiSetupArConnectWallet(void);
+int32_t GuiSetupArConnectWallet(SimpleResponse_c_char **publicKeyOut);
 void GuiConnectWalletPasswordErrorCount(void *param);
+#ifdef WEB3_VERSION
 void GuiConnectShowRsaSetupasswordHintbox(void);
+void GuiConnectShowArSetupNotice(int32_t status);
+#else
+void GuiConnectShowRsaSetupasswordHintbox(void);
+#endif
 UREncodeResult *GuiGetNaboxData(void);
 #endif
 #endif /* _GUI_CONNECT_WALLET_WIDGETS_H */

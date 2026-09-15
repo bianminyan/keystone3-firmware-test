@@ -28,6 +28,7 @@
 #include "general/eapdu_services/service_resolve_ur.h"
 #ifdef WEB3_VERSION
 #include "gui_eth.h"
+#include "gui_ar.h"
 #endif
 #ifndef COMPILE_SIMULATOR
 #include "keystore.h"
@@ -177,6 +178,11 @@ void GuiTransactionDetailInit(uint8_t viewType)
 
 void GuiTransactionDetailDeInit()
 {
+#ifdef WEB3_VERSION
+    if (g_viewType == ArweaveTx || g_viewType == ArweaveMessage) {
+        GuiArSetMessageAddress(NULL);
+    }
+#endif
     // for learn more hintbox in eth contract data block;
     if (GuiQRHintBoxIsActive()) {
         GuiQRHintBoxRemove();

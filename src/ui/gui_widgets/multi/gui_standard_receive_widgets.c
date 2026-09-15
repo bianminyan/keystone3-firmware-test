@@ -73,6 +73,7 @@ typedef struct {
     lv_obj_t *inputAccountCont;
     lv_obj_t *inputAccountKeyboard;
     SwitchAddressWidgetsItem_t switchAddressWidgets[5];
+    char arAddress[44];
 } StandardReceiveWidgets_t;
 
 typedef struct {
@@ -406,9 +407,13 @@ static void GuiCreateGotoAddressWidgets(lv_obj_t *parent)
     }
 }
 
-void GuiStandardReceiveInit(uint8_t chain)
+void GuiStandardReceiveInit(uint8_t chain, const char *address)
 {
     g_chainCard = chain;
+    memset(g_standardReceiveWidgets.arAddress, 0, sizeof(g_standardReceiveWidgets.arAddress));
+    if (address != NULL) {
+        strcpy_s(g_standardReceiveWidgets.arAddress, sizeof(g_standardReceiveWidgets.arAddress), address);
+    }
     g_showIndex = GetCurrentSelectIndex() / 5 * 5;
     g_pageWidget = CreatePageWidget();
     g_standardReceiveWidgets.cont = g_pageWidget->contentZone;
@@ -981,12 +986,10 @@ static void ModelGetAddress(uint32_t index, AddressDataItem_t *item)
         result = xrp_get_address(hdPath, xPub, "m/44'/144'/0'/");
         break;
     case HOME_WALLET_CARD_ARWEAVE:
-        xPub = GetCurrentAccountPublicKey(XPUB_TYPE_ARWEAVE);
-        if (xPub == NULL || xPub[0] == '\0') {
-            break;
-        }
-        result = arweave_get_address(xPub);
-        break;
+        item->index = index;
+        strcpy_s(item->address, ADDRESS_MAX_LEN, g_standardReceiveWidgets.arAddress);
+        item->path[0] = '\0';
+        return;
     case HOME_WALLET_CARD_ZEC:
         xPub = GetCurrentAccountPublicKey(XPUB_TYPE_ZEC_TRANSPARENT_LEGACY);
         if (xPub == NULL || xPub[0] == '\0') {

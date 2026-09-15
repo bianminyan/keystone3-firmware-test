@@ -320,7 +320,7 @@ static bool g_zcashSeedFingerprintValid = false;
 #endif
 
 // 1.0.1 support slip39 for ada
-static const char g_xpubInfoVersion[] = "1.0.1";
+static const char g_xpubInfoVersion[] = "1.0.2";
 static const char g_multiSigInfoVersion[] = "1.0.0";
 
 static const ChainItem_t g_chainTable[] = {
@@ -641,21 +641,6 @@ static SimpleResponse_c_char *ProcessKeyType(uint8_t *seed, int len, int cryptoK
     case MONERO_PVK:
         return get_monero_pvk_by_seed(seed, len);
 #endif
-
-#ifdef WEB3_VERSION
-    case RSA_KEY: {
-        printf("here, RSA_KEY\n");
-        Rsa_primes_t *primes = FlashReadRsaPrimes();
-        if (primes == NULL)
-            return NULL;
-        SimpleResponse_c_char *result = generate_rsa_public_key(primes->p, 256, primes->q, 256);
-        memset_s(primes->p, SPI_FLASH_RSA_PRIME_SIZE, 0, SPI_FLASH_RSA_PRIME_SIZE);
-        memset_s(primes->q, SPI_FLASH_RSA_PRIME_SIZE, 0, SPI_FLASH_RSA_PRIME_SIZE);
-        memset_s(primes, sizeof(Rsa_primes_t), 0, sizeof(Rsa_primes_t));
-        SRAM_FREE(primes);
-        return result;
-    }
-#endif
     default:
         return NULL;
     }
@@ -858,6 +843,7 @@ int32_t AccountPublicInfoReadFromFlash(uint8_t accountIndex, uint32_t addr)
     sha256((struct sha256 *)hash, jsonString, size);
     if (!VerifyWalletDataHash(accountIndex, hash)) {
         CLEAR_ARRAY(hash);
+        SRAM_FREE(jsonString);
         return ERR_KEYSTORE_EXTEND_PUBLIC_KEY_NOT_MATCH;
     } else {
         ret = SUCCESS_CODE;
@@ -1476,35 +1462,46 @@ int32_t TempAccountPublicInfo(uint8_t accountIndex, const char *password, bool s
     return ret;
 }
 
-void DeleteAccountPublicInfo(uint8_t accountIndex)
+static int32_t DeleteAccountPublicInfoFlash(uint8_t accountIndex)
 {
-    uint32_t addr, eraseAddr;
-
-    ASSERT(accountIndex < 3);
-    addr = SPI_FLASH_ADDR_USER1_DATA + accountIndex * SPI_FLASH_ADDR_EACH_SIZE;
-    for (eraseAddr = addr; eraseAddr < addr + SPI_FLASH_SIZE_USER1_DATA; eraseAddr += GD25QXX_SECTOR_SIZE) {
-        Gd25FlashSectorErase(eraseAddr);
+    if (accountIndex >= 3) {
+        return ERR_GENERAL_FAIL;
     }
-
-    addr = SPI_FLASH_ADDR_USER1_MUTABLE_DATA + accountIndex * SPI_FLASH_ADDR_EACH_SIZE;
-    for (eraseAddr = addr; eraseAddr < addr + SPI_FLASH_SIZE_USER1_MUTABLE_DATA; eraseAddr += GD25QXX_SECTOR_SIZE) {
-        Gd25FlashSectorErase(eraseAddr);
+    const struct {
+        uint32_t address;
+        uint32_t size;
+    } regions[] = {
+        {SPI_FLASH_ADDR_USER1_DATA, SPI_FLASH_SIZE_USER1_DATA},
+        {SPI_FLASH_ADDR_USER1_MUTABLE_DATA, SPI_FLASH_SIZE_USER1_MUTABLE_DATA},
+        {SPI_FLASH_ADDR_USER1_MULTI_SIG_DATA, SPI_FLASH_SIZE_USER1_MULTI_SIG_DATA},
+        {SPI_FLASH_RSA_USER1_DATA, SPI_FLASH_RSA_SIZE_USER1_DATA},
+    };
+    int32_t result = SUCCESS_CODE;
+    for (uint32_t i = 0; i < sizeof(regions) / sizeof(regions[0]); i++) {
+        uint32_t start = regions[i].address + accountIndex * SPI_FLASH_ADDR_EACH_SIZE;
+        for (uint32_t addr = start; addr < start + regions[i].size; addr += GD25QXX_SECTOR_SIZE) {
+            int32_t ret = Gd25FlashSectorErase(addr);
+            if (result == SUCCESS_CODE && ret != SUCCESS_CODE) {
+                result = ret;
+            }
+        }
     }
+    FreePublicKeyRam();
+    return result;
+}
 
-    addr = SPI_FLASH_ADDR_USER1_MULTI_SIG_DATA + accountIndex * SPI_FLASH_ADDR_EACH_SIZE;
-    for (eraseAddr = addr; eraseAddr < addr + SPI_FLASH_SIZE_USER1_MULTI_SIG_DATA; eraseAddr += GD25QXX_SECTOR_SIZE) {
-        Gd25FlashSectorErase(eraseAddr);
+int32_t DeleteAccountPublicInfo(uint8_t accountIndex)
+{
+    if (accountIndex >= 3) {
+        return ERR_GENERAL_FAIL;
     }
-#ifdef WEB3_VERSION
-    addr = SPI_FLASH_RSA_USER1_DATA + accountIndex * SPI_FLASH_ADDR_EACH_SIZE;
-    for (eraseAddr = addr; eraseAddr < addr + SPI_FLASH_RSA_SIZE_USER1_DATA; eraseAddr += GD25QXX_SECTOR_SIZE) {
-        Gd25FlashSectorErase(eraseAddr);
+    int32_t ret = DeleteAccountPublicInfoFlash(accountIndex);
+    if (ret != SUCCESS_CODE) {
+        return ret;
     }
     uint8_t rsaHash[32] = {0};
-    SetRsaPrimesHash(accountIndex, rsaHash);
-#endif
-    //remove current publickey info to avoid accident reading.
-    FreePublicKeyRam();
+    ret = SetRsaPrimesHash(accountIndex, rsaHash);
+    return ret;
 }
 
 char *GetCurrentAccountPath(ChainType chain)
@@ -1518,6 +1515,11 @@ char *GetCurrentAccountPath(ChainType chain)
 
 char *GetCurrentAccountPublicKey(ChainType chain)
 {
+#ifdef WEB3_VERSION
+    if (chain == XPUB_TYPE_ARWEAVE) {
+        return NULL;
+    }
+#endif
     uint8_t accountIndex;
     int32_t index = GetChainTableIndex(chain);
 
@@ -1676,11 +1678,11 @@ static bool GetPublicKeyFromJsonString(const char *string)
             ret = false;
             break;
         }
-        for (i = 0; i < arraySize; i++) {
-            chainJson = cJSON_GetObjectItem(keyJson, g_chainTable[i].name);
-            if (g_chainTable[i].cryptoKey == RSA_KEY && chainJson == NULL) {
+        for (i = 0; i < NUMBER_OF_ARRAYS(g_chainTable); i++) {
+            if (g_chainTable[i].cryptoKey == RSA_KEY) {
                 continue;
             }
+            chainJson = cJSON_GetObjectItem(keyJson, g_chainTable[i].name);
             if (chainJson == NULL) {
                 ret = false;
                 break;
@@ -1711,6 +1713,9 @@ static char *GetJsonStringFromPublicKey(void)
     rootJson = cJSON_CreateObject();
     chainsJson = cJSON_CreateObject();
     for (i = 0; i < NUMBER_OF_ARRAYS(g_chainTable); i++) {
+        if (g_chainTable[i].cryptoKey == RSA_KEY) {
+            continue;
+        }
         jsonItem = cJSON_CreateObject();
         cJSON_AddItemToObject(jsonItem, "value", cJSON_CreateString(g_accountPublicInfo[i].value));
         cJSON_AddItemToObject(jsonItem, "current", cJSON_CreateNumber(g_accountPublicInfo[i].current));
@@ -1969,6 +1974,7 @@ int32_t MultiSigWalletGet(uint8_t accountIndex, const char *password, MultiSigWa
     sha256((struct sha256 *)hash, jsonString, strlen(jsonString));
     if (!VerifyMultisigWalletDataHash(accountIndex, hash)) {
         CLEAR_ARRAY(hash);
+        SRAM_FREE(jsonString);
         return ERR_KEYSTORE_EXTEND_PUBLIC_KEY_NOT_MATCH;
     } else {
         ret = SUCCESS_CODE;

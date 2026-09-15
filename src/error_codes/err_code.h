@@ -89,6 +89,10 @@ typedef enum {
 
     ERR_ZCASH_INVALID_ACCOUNT_INDEX,
 
+    ERR_AR_NOT_SETUP,
+    ERR_AR_AUTH_REQUIRED,
+    ERR_AR_DATA_INVALID,
+    ERR_AR_STORAGE,
     ERR_END,
 } Error_Code;
 
@@ -106,5 +110,4 @@ const char *GetErrorMessage(Error_Code errCode);
 #define PRINT_ERRCODE(ret)                      {if (ret != SUCCESS_CODE) {printf("%s err,%s,line=%d\r\n", __func__, GetErrorMessage(ret), __LINE__); }}
 
 #endif
-
 

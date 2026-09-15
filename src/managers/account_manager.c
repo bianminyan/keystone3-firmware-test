@@ -136,13 +136,14 @@ void SetMnemonicType(MnemonicType type)
 int32_t CreateNewAccount(uint8_t accountIndex, const uint8_t *entropy, uint8_t entropyLen, const char *password)
 {
     ASSERT(accountIndex <= 2);
-    DestroyAccount(accountIndex);
+    int32_t ret = DestroyAccount(accountIndex);
+    CHECK_ERRCODE_RETURN_INT(ret);
     CLEAR_OBJECT(g_currentAccountInfo);
     g_currentAccountIndex = accountIndex;
     SetWalletName(SecretCacheGetWalletName());
     SetWalletIconIndex(SecretCacheGetWalletIconIndex());
 
-    int32_t ret = SaveNewBip39Entropy(accountIndex, entropy, entropyLen, password);
+    ret = SaveNewBip39Entropy(accountIndex, entropy, entropyLen, password);
     CHECK_ERRCODE_RETURN_INT(ret);
 
     ret = SaveCurrentAccountInfo();
@@ -163,14 +164,15 @@ int32_t CreateNewAccount(uint8_t accountIndex, const uint8_t *entropy, uint8_t e
 int32_t CreateNewSlip39Account(uint8_t accountIndex, const uint8_t *ems, const uint8_t *entropy, uint8_t entropyLen, const char *password, uint16_t id, bool eb, uint8_t ie)
 {
     ASSERT(accountIndex <= 2);
-    DestroyAccount(accountIndex);
+    int32_t ret = DestroyAccount(accountIndex);
+    CHECK_ERRCODE_RETURN_INT(ret);
     CLEAR_OBJECT(g_currentAccountInfo);
     g_currentAccountIndex = accountIndex;
     g_currentAccountInfo.isSlip39 = true;
     SetWalletName(SecretCacheGetWalletName());
     SetWalletIconIndex(SecretCacheGetWalletIconIndex());
 
-    int32_t ret = SaveNewSlip39Entropy(accountIndex, ems, entropy, entropyLen, password, id, ie);
+    ret = SaveNewSlip39Entropy(accountIndex, ems, entropy, entropyLen, password, id, ie);
     CHECK_ERRCODE_RETURN_INT(ret);
     memcpy_s(g_currentAccountInfo.slip39Id, sizeof(g_currentAccountInfo.slip39Id), &id, sizeof(id));
     uint8_t ieEb = ie | (eb << 4);
@@ -648,7 +650,13 @@ int32_t DestroyAccount(uint8_t accountIndex)
         if (ret != SUCCESS_CODE) {
             printf("destroy account:erase se account err,0x%X\n", (unsigned int)ret);
         } else {
-            DeleteAccountPublicInfo(accountIndex);
+            ret = DeleteAccountPublicInfo(accountIndex);
+            if (ret != SUCCESS_CODE) {
+                LogoutCurrentAccount();
+                CLEAR_OBJECT(g_currentAccountInfo);
+                CLEAR_ARRAY(data);
+                return ret;
+            }
             ClearAccountPassphrase(accountIndex);
             ret = SetWalletDataHash(accountIndex, data);
             if (ret != SUCCESS_CODE) {
