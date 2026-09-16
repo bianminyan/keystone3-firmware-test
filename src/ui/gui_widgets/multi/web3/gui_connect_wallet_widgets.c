@@ -294,7 +294,7 @@ static int GetAccountType(void);
 CoinState_t g_fewchaCoinState[FEWCHA_COINS_BUTT];
 static char g_derivationPathAddr[LedgerLegacy + 1][DERIVATION_PATH_EG_LEN][64];
 static char g_solDerivationPathAddr[SOLBip44Change + 1][DERIVATION_PATH_EG_LEN][64];
-static char g_adaDerivationPathAddr[LEDGER_ADA + 1][DERIVATION_PATH_EG_LEN][64];
+static char g_adaDerivationPathAddr[LEDGER_ADA + 1][DERIVATION_PATH_EG_LEN][BUFFER_SIZE_128];   // Cardano base address is 103 chars; CutAndFormatString scans up to this size
 static lv_obj_t *g_derivationCheck[LedgerLegacy + 1];
 
 static lv_obj_t *g_egAddress[DERIVATION_PATH_EG_LEN];
