@@ -1389,12 +1389,16 @@ static char *GetEgXpub(ChainType chainType)
 static void SetEgAddress(char *dest, uint32_t destLen, SimpleResponse_c_char *result)
 {
     bool valid = result != NULL && result->error_code == 0 && result->data != NULL && result->data[0] != '\0';
+    if (valid) {
+        CutAndFormatString(dest, destLen, result->data, 24);
+    }
+    if (result != NULL) {
+        free_simple_response_c_char(result);
+    }
     if (!valid) {
         ClearSecretCache();
     }
     ASSERT(valid);
-    CutAndFormatString(dest, destLen, result->data, 24);
-    free_simple_response_c_char(result);
 }
 
 static void GetEthEgAddress(void)

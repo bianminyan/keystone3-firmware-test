@@ -1128,13 +1128,17 @@ static void GetCardanoEgAddress(void)
         ASSERT(valid);
         SimpleResponse_c_char *result = cardano_get_base_address(xPub, 0, 1);
         valid = result != NULL && result->error_code == 0 && result->data != NULL && result->data[0] != '\0';
+        if (valid) {
+            CutAndFormatString(g_derivationPathAddr[items[i].row][items[i].col], BUFFER_SIZE_128,
+                               result->data, 24);
+        }
+        if (result != NULL) {
+            free_simple_response_c_char(result);
+        }
         if (!valid) {
             ClearSecretCache();
         }
         ASSERT(valid);
-        CutAndFormatString(g_derivationPathAddr[items[i].row][items[i].col], BUFFER_SIZE_128,
-                           result->data, 24);
-        free_simple_response_c_char(result);
     }
 #endif
 }
