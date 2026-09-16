@@ -8,6 +8,7 @@
 #include "assert.h"
 #include "gui_hintbox.h"
 #include "sdcard_manager.h"
+#include "secret_cache.h"
 
 #ifdef BTC_ONLY
 #include "gui_animating_qrcode.h"
@@ -490,6 +491,12 @@ static void GetBtcPubkey(char *dest, uint8_t pathType, uint32_t maxLen)
     ChainType chainType = ConvertChainType(g_pathTypeList[pathType].pubkeyType);
 #endif
     char *xpub = GetCurrentAccountPublicKey(chainType);
+    // The cache returns "" for a never-derived entry, so a bare NULL check lets it through.
+    bool xpubValid = xpub != NULL && xpub[0] != '\0';
+    if (!xpubValid) {
+        ClearSecretCache();
+    }
+    ASSERT(xpubValid);
     char head[] = "ypub";
     switch (chainType) {
     case XPUB_TYPE_BTC_LEGACY:
@@ -525,7 +532,12 @@ static void GetBtcPubkey(char *dest, uint8_t pathType, uint32_t maxLen)
         break;
     }
     result = xpub_convert_version(xpub, head);
-    ASSERT(result);
+    // The response pointer is never NULL; failure is error_code != 0 with data == NULL.
+    bool valid = result != NULL && result->error_code == 0 && result->data != NULL;
+    if (!valid) {
+        ClearSecretCache();
+    }
+    ASSERT(valid);
     strcpy_s(dest, maxLen, result->data);
     free_simple_response_c_char(result);
 }
@@ -579,7 +591,7 @@ static void GetPathTypeDesc(char *dest, uint16_t chain, uint8_t pathType, uint32
 static void RefreshQrcode()
 {
     uint8_t pathType = GetPathType();
-    char pubkey[BUFFER_SIZE_128];
+    char pubkey[BUFFER_SIZE_128] = {0};   // GetExportPubkey leaves it untouched for an unsupported chain
     GetExportPubkey(pubkey, g_chain, pathType, sizeof(pubkey));
     lv_label_set_text(g_widgets.pubkey, pubkey);
     lv_label_set_text(g_widgets.title, GetPathTypeTitle(g_chain, pathType));
@@ -635,13 +647,20 @@ static void ModelGetUtxoAddress(char *dest, uint8_t pathType, uint32_t index, ui
 {
     char *xPub, hdPath[BUFFER_SIZE_128];
     xPub = GetCurrentAccountPublicKey(g_pathTypeList[pathType].pubkeyType);
-    ASSERT(xPub);
+    bool xpubValid = xPub != NULL && xPub[0] != '\0';
+    if(!xpubValid) {
+        ClearSecretCache();
+    }
+    ASSERT(xpubValid);
     SimpleResponse_c_char *result;
     snprintf_s(hdPath, sizeof(hdPath), "%s/0/%u", g_pathTypeList[pathType].path, (unsigned int)index);
-    do {
-        result = utxo_get_address(hdPath, xPub);
-        CHECK_CHAIN_BREAK(result);
-    } while (0);
+    result = utxo_get_address(hdPath, xPub);
+    // CHECK_CHAIN_BREAK only left the do/while; result->data (NULL on error) was still printed.
+    bool valid = result != NULL && result->error_code == 0 && result->data != NULL;
+    if (!valid) {
+        ClearSecretCache();
+    }
+    ASSERT(valid);
     snprintf_s(dest, maxLen, "%s", result->data);
     free_simple_response_c_char(result);
 }
@@ -656,13 +675,20 @@ static void ModelGetUtxoAddress(char *dest, uint8_t pathType, uint32_t index, ui
     ChainType chainType = ConvertChainType(g_pathTypeList[pathType].pubkeyType);
     rootPath = g_isTest ? g_btcTestNetPath[pathType] : g_pathTypeList[pathType].path;
     xPub = GetCurrentAccountPublicKey(chainType);
-    ASSERT(xPub);
+    bool xpubValid = xPub != NULL && xPub[0] != '\0';
+    if(!xpubValid) {
+        ClearSecretCache();
+    }
+    ASSERT(xpubValid);
     SimpleResponse_c_char *result;
     snprintf_s(hdPath, sizeof(hdPath), "%s/0/%u", rootPath, (unsigned int)index);
-    do {
-        result = utxo_get_address(hdPath, xPub);
-        CHECK_CHAIN_BREAK(result);
-    } while (0);
+    result = utxo_get_address(hdPath, xPub);
+    // CHECK_CHAIN_BREAK only left the do/while; result->data (NULL on error) was still printed.
+    bool valid = result != NULL && result->error_code == 0 && result->data != NULL;
+    if (!valid) {
+        ClearSecretCache();
+    }
+    ASSERT(valid);
     snprintf_s(dest, maxLen, "%s", result->data);
     free_simple_response_c_char(result);
 }
