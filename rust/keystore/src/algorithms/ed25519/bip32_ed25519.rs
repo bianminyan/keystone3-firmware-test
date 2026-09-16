@@ -53,6 +53,13 @@ pub fn sign_message_by_entropy(
 
 //https://cips.cardano.org/cips/cip3/icarus.md
 pub fn get_icarus_master_key_by_entropy(entropy: &[u8], passphrase: &[u8]) -> Result<XPrv> {
+    // bip39 entropy: 12/15/18/21/24 words -> 16/20/24/28/32 bytes
+    if !matches!(entropy.len(), 16 | 20 | 24 | 28 | 32) {
+        return Err(KeystoreError::SeedError(format!(
+            "invalid entropy length: {}, expected 16, 20, 24, 28, or 32 bytes",
+            entropy.len()
+        )));
+    }
     let mut hash = [0u8; 96];
     let digest = Sha512::new();
     let iter_count = 4096;
