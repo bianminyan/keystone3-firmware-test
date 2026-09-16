@@ -862,6 +862,31 @@ int32_t AccountPublicInfoReadFromFlash(uint8_t accountIndex, uint32_t addr)
     return ret;
 }
 
+/// @brief Cross-check the seed about to be used for public key derivation against the master fingerprint
+///        recorded when the wallet (or its passphrase) was set up. Seed bytes, seed length and the mnemonic
+///        type flag all feed the fingerprint, so a corrupted param page or blob/param mismatch is rejected
+///        here instead of turning into a valid-looking but wrong xpub set that gets persisted.
+///        TON wallets record no fingerprint and are skipped.
+static int32_t VerifySeedMasterFingerprint(const uint8_t *seed, int seedLen)
+{
+    if (GetMnemonicType() == MNEMONIC_TYPE_TON) {
+        return SUCCESS_CODE;
+    }
+    uint8_t expected[4] = {0};
+    GetMasterFingerPrint(expected);
+    SimpleResponse_u8 *response = get_master_fingerprint((PtrBytes)seed, (uint32_t)seedLen);
+    bool match = response != NULL && response->error_code == 0 && response->data != NULL &&
+                 timingsafe_bcmp(response->data, expected, sizeof(expected)) == 0;
+    if (response != NULL) {
+        free_simple_response_u8(response);
+    }
+    if (!match) {
+        printf("seed master fingerprint mismatch\r\n");
+        return ERR_KEYSTORE_EXTEND_PUBLIC_KEY_NOT_MATCH;
+    }
+    return SUCCESS_CODE;
+}
+
 int32_t AccountPublicSavePublicInfo(uint8_t accountIndex, const char *password, uint32_t addr)
 {
     uint8_t entropyLen = 0;
@@ -887,6 +912,8 @@ int32_t AccountPublicSavePublicInfo(uint8_t accountIndex, const char *password, 
         FreePublicKeyRam();
         ret = GetAccountSeed(accountIndex, seed, password);
         CHECK_ERRCODE_BREAK("get seed", ret);
+        ret = VerifySeedMasterFingerprint(seed, seedLen);
+        CHECK_ERRCODE_BREAK("verify seed fingerprint", ret);
         ret = GetAccountEntropy(accountIndex, entropy, &entropyLen, password);
         CHECK_ERRCODE_BREAK("get entropy", ret);
         if (isBip39) {
@@ -1333,6 +1360,8 @@ int32_t TempAccountPublicInfo(uint8_t accountIndex, const char *password, bool s
             FreePublicKeyRam();
             ret = GetAccountSeed(accountIndex, seed, password);
             CHECK_ERRCODE_BREAK("get temp account seed", ret);
+            ret = VerifySeedMasterFingerprint(seed, seedLen);
+            CHECK_ERRCODE_BREAK("verify temp account seed fingerprint", ret);
             ret = GetAccountEntropy(accountIndex, entropy, &entropyLen, password);
             CHECK_ERRCODE_BREAK("get temp account entropy", ret);
 
