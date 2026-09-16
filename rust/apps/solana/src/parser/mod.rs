@@ -197,6 +197,19 @@ impl ParsedSolanaTx {
             .filter(|d| Self::is_sqauds_v4_detail(&d.common))
             .collect::<Vec<&SolanaDetail>>();
         if !squads.is_empty() {
+            // The legacy creation card assumes two transfers and only shows
+            // fixed positions. Use complete, ordered raw review for creation
+            // and for transfers that the proposal card cannot represent.
+            if details.iter().any(|d| {
+                Self::is_system_transfer_detail(&d.common)
+                    || matches!(
+                        d.kind,
+                        ProgramDetail::SquadsV4MultisigCreate(_)
+                            | ProgramDetail::SquadsV4MultisigCreateV2(_)
+                    )
+            }) {
+                return SolanaTxDisplayType::Unknown;
+            }
             // A dedicated Squads card groups Squads instructions and transfers.
             // If a different instruction splits that group, aggregating it at
             // the first position would display later actions out of order.
@@ -1289,13 +1302,75 @@ mod tests {
         let contiguous = vec![
             detail("Unknown", ""),
             detail("SquadsV4", "ProposalActivate"),
-            detail("System", "Transfer"),
+            detail("SquadsV4", "ProposalActivate"),
             detail("Unknown", ""),
         ];
         assert!(matches!(
             ParsedSolanaTx::detect_display_type(&contiguous),
             SolanaTxDisplayType::SquadsV4
         ));
+    }
+
+    #[test]
+    fn squads_creation_and_transfers_use_complete_raw_review() {
+        let squads =
+            bitcoin::base58::decode("SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf").unwrap();
+        for discriminator in ["7a4d509f54585ac5", "32ddc75d28f58be9", "0b225cf89a1b336a"] {
+            let mut data = hex::decode(discriminator).unwrap();
+            let is_create = discriminator != "0b225cf89a1b336a";
+            if is_create {
+                // Borsh: no authority, threshold 1, one member with all
+                // permissions, zero timelock, optional rent collector, no memo.
+                data.extend([0, 1, 0, 1, 0, 0, 0]);
+                data.extend([1; 32]);
+                data.push(7);
+                data.extend([0; 4]);
+                if discriminator == "32ddc75d28f58be9" {
+                    data.push(0);
+                }
+                data.push(0);
+            }
+            for count in 0..=3u8 {
+                let mut raw = vec![1, 0, 2, 4];
+                raw.extend([1; 32]); // signer
+                raw.extend([2; 32]); // recipient
+                raw.extend(&squads);
+                raw.extend([0; 32]); // System program
+                raw.extend([9; 32]); // blockhash
+                raw.push(1 + count);
+                raw.extend([2, 0, data.len() as u8]);
+                raw.extend(&data);
+                for amount in 1..=count {
+                    raw.extend([3, 2, 0, 1, 12]);
+                    raw.extend(2u32.to_le_bytes());
+                    raw.extend(u64::from(amount).to_le_bytes());
+                }
+                let parsed = ParsedSolanaTx::build(&raw).unwrap();
+                if !is_create && count == 0 {
+                    assert!(matches!(parsed.display_type, SolanaTxDisplayType::SquadsV4));
+                    continue;
+                }
+                let SolanaOverview::Instructions(overview) = parsed.overview else {
+                    panic!("all creation and transfer instructions must be reviewable");
+                };
+                assert_eq!(overview.overview_instructions.len(), 1 + count as usize);
+                assert_eq!(
+                    overview.overview_instructions[0].data,
+                    bitcoin::base58::encode(&data)
+                );
+                for (index, instruction) in
+                    overview.overview_instructions.iter().skip(1).enumerate()
+                {
+                    assert_eq!(
+                        instruction.program_address,
+                        "11111111111111111111111111111111"
+                    );
+                    let mut expected = 2u32.to_le_bytes().to_vec();
+                    expected.extend((index as u64 + 1).to_le_bytes());
+                    assert_eq!(instruction.data, bitcoin::base58::encode(&expected));
+                }
+            }
+        }
     }
 
     #[test]
@@ -1432,7 +1507,7 @@ mod tests {
                 detail("SquadsV4", "ProposalCreate"),
                 detail("System", "Transfer")
             ]),
-            SolanaTxDisplayType::SquadsV4
+            SolanaTxDisplayType::Unknown
         ));
         assert!(ParsedSolanaTx::is_instructions_detail(
             &detail("Instructions", "").common

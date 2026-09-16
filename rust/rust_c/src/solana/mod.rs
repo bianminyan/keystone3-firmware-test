@@ -71,6 +71,42 @@ mod fixture_tests {
             }
             request.set_sign_type(SignType::Message);
             assert!(validated_payload(&request).is_err(), "{}", fixture["id"]);
+            // Exercise both exported UI entry points with the wrong type hint.
+            unsafe {
+                use crate::common::free::Free;
+                let ptr = &mut request as *mut _ as PtrUR;
+                let signer = app_solana::message::Message::read_exact(&mut request.get_sign_data())
+                    .ok()
+                    .and_then(|message| {
+                        message
+                            .accounts
+                            .first()
+                            .map(|account| hex::encode(&account.value))
+                    })
+                    .unwrap_or_else(|| "00".repeat(32));
+                let pubkey = cstr_core::CString::new(signer).unwrap();
+                if expected {
+                    request.set_sign_type(SignType::Transaction);
+                    for result in [
+                        solana_parse_tx(ptr),
+                        solana_parse_tx_with_pubkey(ptr, pubkey.as_ptr() as PtrString),
+                    ] {
+                        assert!(!(*(result as *const *mut DisplaySolanaTx)).is_null());
+                        let result = alloc::boxed::Box::from_raw(result);
+                        result.free();
+                    }
+                    request.set_sign_type(SignType::Message);
+                }
+                for result in [
+                    solana_parse_tx(ptr),
+                    solana_parse_tx_with_pubkey(ptr, pubkey.as_ptr() as PtrString),
+                ] {
+                    // TransactionParseResult is repr(C), with data first.
+                    assert!((*(result as *const *mut DisplaySolanaTx)).is_null());
+                    let result = alloc::boxed::Box::from_raw(result);
+                    result.free();
+                }
+            }
             unsafe {
                 assert!(build_sign_result(&mut request as *mut _ as PtrUR, &seed).is_err());
             }
@@ -351,14 +387,15 @@ pub unsafe extern "C" fn solana_parse_tx(
 ) -> PtrT<TransactionParseResult<DisplaySolanaTx>> {
     let solan_sign_reqeust = extract_ptr_with_type!(ptr, SolSignRequest);
     let tx_hex = solan_sign_reqeust.get_sign_data();
-    if matches!(
-        app_solana::classify_payload(&tx_hex),
-        app_solana::SolanaPayloadType::MalformedTransaction
-    ) {
-        return TransactionParseResult::from(SolanaError::InvalidData(
-            "invalid or unsupported transaction data".to_string(),
-        ))
-        .c_ptr();
+    match validated_payload(solan_sign_reqeust) {
+        Ok(app_solana::SolanaPayloadType::Transaction) => {}
+        Ok(_) => {
+            return TransactionParseResult::from(SolanaError::InvalidData(
+                "expected a transaction request".to_string(),
+            ))
+            .c_ptr()
+        }
+        Err(error) => return TransactionParseResult::from(error).c_ptr(),
     }
     match app_solana::parse(&tx_hex.to_vec()) {
         Ok(v) => TransactionParseResult::success(DisplaySolanaTx::from(v).c_ptr()).c_ptr(),
@@ -373,14 +410,15 @@ pub unsafe extern "C" fn solana_parse_tx_with_pubkey(
 ) -> PtrT<TransactionParseResult<DisplaySolanaTx>> {
     let solan_sign_reqeust = extract_ptr_with_type!(ptr, SolSignRequest);
     let tx_hex = solan_sign_reqeust.get_sign_data();
-    if matches!(
-        app_solana::classify_payload(&tx_hex),
-        app_solana::SolanaPayloadType::MalformedTransaction
-    ) {
-        return TransactionParseResult::from(SolanaError::InvalidData(
-            "invalid or unsupported transaction data".to_string(),
-        ))
-        .c_ptr();
+    match validated_payload(solan_sign_reqeust) {
+        Ok(app_solana::SolanaPayloadType::Transaction) => {}
+        Ok(_) => {
+            return TransactionParseResult::from(SolanaError::InvalidData(
+                "expected a transaction request".to_string(),
+            ))
+            .c_ptr()
+        }
+        Err(error) => return TransactionParseResult::from(error).c_ptr(),
     }
     let pubkey = recover_c_char(pubkey);
     let signer: [u8; 32] = match hex::decode(pubkey)
