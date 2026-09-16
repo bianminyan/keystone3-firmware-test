@@ -1140,3 +1140,6 @@ Wallet Profile,24,wallet_profile_mid_btn,Wallet Profile,Профиль коше�
 ,20,solana_advanced_bytes,bytes,байт,바이트,字节,bytes,Bytes,バイト
 ,20,solana_advanced_ignored,Ignored in V1,Игнорируется в V1,V1에서 무시됨,V1 中忽略,Ignorado en V1,In V1 ignoriert,V1 では無視
 ,20,solana_message_length,Message Length: %u bytes,Длина сообщения: %u байт,메시지 길이: %u바이트,消息长度：%u 字节,Longitud del mensaje: %u bytes,Nachrichtenlänge: %u Bytes,メッセージ長: %u バイト
+,20,solana_program_address,Program Address,Адрес программы,프로그램 주소,程序地址,Dirección del programa,Programmadresse,プログラムアドレス
+,20,solana_unknown_program,Unknown Program,Неизвестная программа,알 수 없는 프로그램,未知程序,Programa desconocido,Unbekanntes Programm,不明なプログラム
+,20,solana_unresolved_destination,Unresolved Destination,Неопределённый получатель,확인되지 않은 수신 주소,未解析的收款地址,Destino sin resolver,Nicht aufgelöstes Ziel,未解決の送信先

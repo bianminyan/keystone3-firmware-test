@@ -358,7 +358,7 @@ lv_obj_t * CreateSolanaSquadsProposalOverviewCard(lv_obj_t *parent, PtrString pr
     }
 
     if (strlen(data) > 0) {
-        lv_obj_t *dataLabel = GuiCreateTextLabel(container, "Data");
+        lv_obj_t *dataLabel = GuiCreateTextLabel(container, _("solana_advanced_data"));
         SetTitleLabelStyle(dataLabel);
         if (strlen(memo) != 0) {
             lv_obj_align_to(dataLabel, methodValueLabel, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 100);
@@ -446,7 +446,7 @@ static void GuiShowSolTxTransferOverview(lv_obj_t *parent, PtrT_DisplaySolanaTxO
         SOL_COMPONENT_WIDTH);
     CreateTransactionItemViewWithWidth(
         parent,
-        overviewData->transfer_to_in_lookup_table ? "Unresolved Destination" : _("To"),
+        overviewData->transfer_to_in_lookup_table ? _("solana_unresolved_destination") : _("To"),
         overviewData->transfer_to,
         lastView,
         SOL_COMPONENT_WIDTH);
@@ -977,7 +977,7 @@ static lv_obj_t *GuiShowSolTxGeneralOverview(
             }
             lastView = CreateTransactionItemViewWithWidth(
                 parent,
-                general->data[i].to_in_lookup_table ? "Unresolved Destination" : _("To"),
+                general->data[i].to_in_lookup_table ? _("solana_unresolved_destination") : _("To"),
                 general->data[i].to,
                 lastView,
                 SOL_COMPONENT_WIDTH);
@@ -1053,9 +1053,9 @@ static lv_obj_t *GuiAppendSolTxAdditionalUnknownProgramCards(
         snprintf_s(order, BUFFER_SIZE_16, "#%d", i + 1);
         lv_obj_t *programCard = CreateTransactionOverviewCardWithWidth(
             parent,
+            _("solana_unknown_program"),
             order,
-            "Unknown Program",
-            "Program Address",
+            _("solana_program_address"),
             programs->data[i],
             SOL_COMPONENT_WIDTH);
         if (lastView != NULL) {
@@ -1521,7 +1521,7 @@ static void GuiShowSolTxInstructionsOverview(lv_obj_t *parent, PtrT_DisplaySolan
             lv_label_set_long_mode(account_label, LV_LABEL_LONG_WRAP);
             lv_obj_set_style_border_width(account_label, 0, LV_PART_MAIN);
         }
-        lv_obj_t *dataTitle = GuiCreateIllustrateLabel(container, "Data");
+        lv_obj_t *dataTitle = GuiCreateIllustrateLabel(container, _("solana_advanced_data"));
         lv_obj_set_style_text_opa(dataTitle, LV_OPA_64, LV_PART_MAIN);
         lv_obj_align_to(
             dataTitle,
@@ -1535,7 +1535,7 @@ static void GuiShowSolTxInstructionsOverview(lv_obj_t *parent, PtrT_DisplaySolan
         lv_label_set_long_mode(data_label, LV_LABEL_LONG_WRAP);
         lv_obj_align_to(data_label, dataTitle, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 8);
 
-        lv_obj_t *programTitle = GuiCreateIllustrateLabel(container, "Program Address");
+        lv_obj_t *programTitle = GuiCreateIllustrateLabel(container, _("solana_program_address"));
         lv_obj_set_style_text_opa(programTitle, LV_OPA_64, LV_PART_MAIN);
         lv_obj_align_to(programTitle, data_label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 10);
 
@@ -1566,7 +1566,9 @@ static void GuiShowSolTxOrderedOverview(lv_obj_t *parent, PtrT_DisplaySolanaTxOv
         lv_obj_clear_flag(group, LV_OBJ_FLAG_SCROLLABLE);
         if (action->kind == 0) {
             lv_obj_t *order = GuiCreateNoticeLabel(group, "");
-            lv_label_set_text_fmt(order, "Instruction #%u", (unsigned)action->instruction_index);
+            lv_label_set_text_fmt(order, "%s #%u", _("solana_advanced_instruction"), (unsigned)action->instruction_index);
+            lv_obj_set_width(order, SOL_COMPONENT_WIDTH);
+            lv_label_set_long_mode(order, LV_LABEL_LONG_WRAP);
             lv_obj_update_layout(order);
             lv_obj_t *content = lv_obj_create(group);
             lv_obj_remove_style_all(content);
@@ -1598,7 +1600,7 @@ static void GuiShowSolTxOrderedOverview(lv_obj_t *parent, PtrT_DisplaySolanaTxOv
             char order[BUFFER_SIZE_16] = {0};
             snprintf_s(order, sizeof(order), "#%u", (unsigned)action->instruction_index);
             CreateTransactionOverviewCardWithWidth(
-                group, order, "Unknown Program", "Program Address",
+                group, _("solana_unknown_program"), order, _("solana_program_address"),
                 overviewData->additional_unknown_programs->data[action->index], SOL_COMPONENT_WIDTH);
         }
         lv_obj_update_layout(group);
