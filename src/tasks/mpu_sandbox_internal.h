@@ -16,8 +16,9 @@
 #define MPU_SANDBOX_UR_CHUNK_HEADER_SIZE 4U
 #define MPU_SANDBOX_UR_CHUNK_DATA_SIZE \
     (MPU_SANDBOX_INPUT_SIZE - MPU_SANDBOX_UR_CHUNK_HEADER_SIZE)
-#define MPU_SANDBOX_CBOR_INPUT_MAX_SIZE        11000U
-#define MPU_SANDBOX_EIP712_JSON_INPUT_MAX_SIZE 11000U
+/* Leave room for UR assembly and IPC state in the existing 16 KiB MPU region. */
+#define MPU_SANDBOX_CBOR_INPUT_MAX_SIZE        (14U * 1024U)
+#define MPU_SANDBOX_EIP712_JSON_INPUT_MAX_SIZE MPU_SANDBOX_CBOR_INPUT_MAX_SIZE
 
 typedef struct {
     volatile MpuSandboxRequest_t request;
