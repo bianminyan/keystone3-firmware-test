@@ -1060,6 +1060,10 @@ int32_t AccountPublicInfoSwitch(uint8_t accountIndex, const char *password, bool
 
     if (regeneratePubKey) {
         ret = AccountPublicSavePublicInfo(accountIndex, password, addr);
+        if (ret != SUCCESS_CODE) {
+            FreePublicKeyRam();
+            return ret;
+        }
     }
 
 #ifdef BTC_ONLY
