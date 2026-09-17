@@ -92,7 +92,11 @@ void *GuiGetSolData(void)
         PtrT_TransactionParseResult_DisplaySolanaTx parseResult =
             solana_parse_tx_with_pubkey(data, pubKey);
         free_ptr_string(path);
-        CHECK_CHAIN_BREAK(parseResult);
+        if (parseResult->error_code != 0) {
+            CHECK_CHAIN_PRINT(parseResult);
+            free_TransactionParseResult_DisplaySolanaTx(parseResult);
+            break;
+        }
         g_parseResult = (void *)parseResult;
     } while (0);
     return g_parseResult;
@@ -134,7 +138,11 @@ void *GuiGetSolMessageData(void)
         char *pubKey = GetCurrentAccountPublicKey(pubkeyIndex);
         PtrT_TransactionParseResult_DisplaySolanaMessage parseResult = solana_parse_message(data, pubKey);
         free_ptr_string(path);
-        CHECK_CHAIN_BREAK(parseResult);
+        if (parseResult->error_code != 0) {
+            CHECK_CHAIN_PRINT(parseResult);
+            free_TransactionParseResult_DisplaySolanaMessage(parseResult);
+            break;
+        }
         g_parseResult = (void *)parseResult;
     } while (0);
     return g_parseResult;

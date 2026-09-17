@@ -282,6 +282,26 @@ mod fixture_tests {
                         "fingerprint mismatch {}",
                         fixture["id"]
                     );
+                    let original_path = request.get_derivation_path();
+                    for source in [Some(wrong_fingerprint), None] {
+                        request.set_derivation_path(
+                            ur_registry::crypto_key_path::CryptoKeyPath::new(
+                                original_path.get_components(),
+                                source,
+                                original_path.get_depth(),
+                            ),
+                        );
+                        assert!(matches!(build_sign_result(ptr, &seed),
+                            Err(SolanaError::InvalidData(message)) if message == "master fingerprint mismatch"));
+                    }
+                    request.set_derivation_path(original_path);
+                    assert!(build_sign_result(ptr, &seed).is_ok());
+                    let checked = solana_check(ptr, core::ptr::null_mut(), 4);
+                    assert_eq!(
+                        *(checked as *const u32),
+                        crate::common::errors::ErrorCodes::InvalidMasterFingerprint as u32
+                    );
+                    crate::common::structs::free_TransactionCheckResult(checked);
                     // Changing the host's type hint must not turn a transaction
                     // into a message signature (or plain text into a transaction).
                     request.set_sign_type(if request.get_sign_type() == SignType::Transaction {
@@ -317,6 +337,14 @@ unsafe fn build_sign_result(ptr: PtrUR, seed: &[u8]) -> Result<SolSignature, Sol
             ));
         }
     };
+    // Derive ownership from the seed actually used to sign, not host metadata.
+    let fingerprint = keystore::algorithms::secp256k1::get_master_fingerprint_by_seed(seed)?;
+    if sign_request.get_derivation_path().get_source_fingerprint() != Some(*fingerprint.as_bytes())
+    {
+        return Err(SolanaError::InvalidData(
+            "master fingerprint mismatch".to_string(),
+        ));
+    }
     let path = sign_request
         .get_derivation_path()
         .get_path()
@@ -351,7 +379,7 @@ pub unsafe extern "C" fn solana_check(
     master_fingerprint: PtrBytes,
     length: u32,
 ) -> PtrT<TransactionCheckResult> {
-    if length != 4 {
+    if length != 4 || master_fingerprint.is_null() {
         return TransactionCheckResult::from(RustCError::InvalidMasterFingerprint).c_ptr();
     }
     let sol_sign_request = extract_ptr_with_type!(ptr, SolSignRequest);
