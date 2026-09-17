@@ -9,7 +9,6 @@ static URParseResult *g_urResult = NULL;
 static URParseMultiResult *g_urMultiResult = NULL;
 static ArweaveRequestType g_requestType = ArweaveRequestTypeTransaction;
 static void *g_parseResult = NULL;
-// Address belonging to the currently displayed request, not a reusable public key.
 static char g_messageAddress[44];
 static bool g_isAoTransfer = false;
 

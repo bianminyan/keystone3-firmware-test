@@ -524,9 +524,6 @@ int32_t DS28S60_HmacAuthentication(uint8_t page)
         hmac_sha256(secretKey, 32, msg, 76, hmacCalc);
         //PrintArray("hmacCalc", hmacCalc, 32);
         //PrintArray("hmacCalc", hmacDevice, 32);
-        // memcmp returns at the first differing byte and leaks the matching prefix length
-        // through timing. timingsafe_bcmp compares all 32 bytes unconditionally; it also
-        // returns non-zero on its own constraint errors, so any failure counts as a mismatch.
         if (timingsafe_bcmp(hmacCalc, hmacDevice, 32) != 0) {
             ret = ERR_DS28S60_AUTH;
             break;
@@ -534,8 +531,6 @@ int32_t DS28S60_HmacAuthentication(uint8_t page)
         ret = DS28S60_SUCCESS;
     } while (0);
 
-    // Wipe on every path, including the failure path that an attacker drives (a fake SE
-    // fails auth). The early returns above used to leave secretKey and msg on the stack.
     CLEAR_ARRAY(hmacDevice);
     CLEAR_ARRAY(hmacCalc);
     CLEAR_ARRAY(challenge);
@@ -582,12 +577,6 @@ int32_t DS28S60_HmacEncryptRead(uint8_t *data, uint8_t page)
     return ret;
 }
 
-// Integrity-checked read of a page.  Here we decrypt-read the
-// value and then bind it to the device's TRUE page content via a Compute-and-Read-Page-Authentication
-// (0xA5 CRPA) over a fresh host TRNG nonce, recomputing the HMAC over the value WE decrypted. A
-// tampered/replayed value fails the compare -> ERR_DS28S60_AUTH (caller ASSERTs -> fail-closed).
-// Binding is over the device's stored page bytes on both sides, so it is independent of whether the
-// page is stored as plaintext or ciphertext.
 int32_t DS28S60_HmacAuthenticatedRead(uint8_t *data, uint8_t page)
 {
     uint8_t hmacDevice[32];
@@ -606,20 +595,19 @@ int32_t DS28S60_HmacAuthenticatedRead(uint8_t *data, uint8_t page)
             CHECK_ERRCODE_BREAK("DS28S60_GetInfo", ret);
         }
         challenge[0] = page;
-        challenge[1] = 0x00;            // Secret A (same key CRPA uses in DS28S60_HmacAuthentication)
-        TrngGet(&challenge[2], 32);     // fresh host nonce -> anti-replay
+        challenge[1] = 0x00;
+        TrngGet(&challenge[2], 32);
         ret = DS28S60_SendCmdAndGetResult(DS28S60_CMD_CRPA, challenge, 34, 32, hmacDevice);
         CHECK_ERRCODE_BREAK("DS28S60_CMD_CRPA", ret);
 
         DS28S60_GetHmacKey(secretKey, &g_ds28s60Info, BINDING_DATA_PAGE, DS28S60_CMD_CPT_SECRET);
         memcpy(&msg[0], g_ds28s60Info.ROMID, 8);
-        memcpy(&msg[8], data, 32);      // the value we decrypted, NOT a fresh (also-malleable) read
+        memcpy(&msg[8], data, 32);
         memcpy(&msg[40], &challenge[2], 32);
         msg[72] = page;
         memcpy(&msg[73], g_ds28s60Info.MANID, 2);
         msg[75] = DS28S60_CMD_CRPA;
         hmac_sha256(secretKey, 32, msg, 76, hmacCalc);
-        // constant-time: see DS28S60_HmacAuthentication
         if (timingsafe_bcmp(hmacCalc, hmacDevice, 32) != 0) {
             ret = ERR_DS28S60_AUTH;
             break;
@@ -838,9 +826,6 @@ void DS28S60_Test(int argc, char *argv[])
             printf("hmac auth err=%d\r\n", (int)ret);
         }
     } else if (strcmp(argv[0], "auth_read") == 0) {
-        // Smoke-test for the new CRPA-authenticated read. On an untampered chip it must return
-        // SUCCESS, print the counter value, and match en_read byte-for-byte. err=ERR_DS28S60_AUTH
-        // (the value of that enum) would mean the CRPA MAC compare failed (layout/key/tamper).
         uint8_t authData[32], encData[32];
         VALUE_CHECK(argc, 2);
         sscanf(argv[1], "%d", &page);

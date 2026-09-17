@@ -260,8 +260,6 @@ int GetSuiDetailLen(void *param)
         return 0;
     }
 
-    // Rust creates detail with CString::into_raw(), so this FFI string is NUL-terminated.
-    // strnlen_s is not used because RSIZE_MAX_STR is 4 KB and valid Sui JSON can be larger.
     return strlen(tx->detail) + 1;
 }
 

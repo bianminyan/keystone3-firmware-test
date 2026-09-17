@@ -368,9 +368,6 @@ lv_obj_t *CreateNoticeView(lv_obj_t *parent, uint16_t width, uint16_t height, co
     lv_obj_align(label, LV_ALIGN_DEFAULT, 24, 68);
     lv_obj_set_width(label, width - 48);
 
-    // `height` is a floor, not the final size: grow to fit however many lines
-    // the notice actually wraps to, so the text isn't clipped and callers
-    // reading lv_obj_get_height() to place the next widget get a real number.
     lv_obj_update_layout(label);
     uint16_t needed = 68 + lv_obj_get_self_height(label) + 24;
     if (needed > height) {

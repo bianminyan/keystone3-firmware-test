@@ -305,7 +305,7 @@ mod tests {
                 binary.extend_from_slice(&0u64.to_le_bytes());
                 binary.extend_from_slice(&1u64.to_le_bytes());
                 let header_len = binary.len();
-                binary.push(0); // Empty Avro tags; no data payload.
+                binary.push(0);
 
                 assert!(DataItem::deserialize(&binary).is_ok());
                 for len in 0..header_len {

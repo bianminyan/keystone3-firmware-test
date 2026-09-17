@@ -324,9 +324,6 @@ if(COMPILE_KEYSTONE)
         list(REMOVE_ITEM objsrc ${excluded_files})
     endforeach()
 
-    # Vendored/third-party sources (FreeRTOS, the SoC driver library, USB stack,
-    # LVGL, safeclib, cm_backtrace) are not held to this project's -Werror=format
-    # policy: we don't hand-edit upstream drops to satisfy our own warning settings.
     set_property(SOURCE
         ${MH1903_DRIVER}
         ${FREERTOS}
@@ -340,9 +337,6 @@ if(COMPILE_KEYSTONE)
         -Wno-format-security
     )
 
-    # The legacy debug command harness is only built for non-production
-    # firmware. Keep format diagnostics visible without making its existing
-    # test-only logging mismatches block debug builds.
     if(NOT BUILD_PRODUCTION)
         set_property(SOURCE test/test_cmd.c APPEND PROPERTY COMPILE_OPTIONS
             -Wno-error=format

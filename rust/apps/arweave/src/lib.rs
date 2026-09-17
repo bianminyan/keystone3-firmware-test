@@ -65,7 +65,6 @@ pub fn base64_url(hash: Vec<u8>) -> String {
 }
 
 pub fn generate_public_key_from_primes(p: &[u8], q: &[u8]) -> Result<Vec<u8>> {
-    // Zeroizing wipes d/p/q when the key leaves scope, on the error paths too.
     let key = Zeroizing::new(
         keystore::algorithms::rsa::build_rsa_private_key_from_primes(p, q)
             .map_err(|e| ArweaveError::KeystoreError(e.to_string()))?,
@@ -190,7 +189,6 @@ mod tests {
         assert_eq!(encrypted.len(), 528);
         assert_eq!(aes256_decrypt(&key, &iv, &encrypted).unwrap(), data);
 
-        // CBC: flip the preceding block's last byte so padding ends in 0x00, not 0x10.
         encrypted[511] ^= 0x10;
         let error = aes256_decrypt(&key, &iv, &encrypted).unwrap_err();
         assert!(matches!(error, ArweaveError::KeystoreError(_)));

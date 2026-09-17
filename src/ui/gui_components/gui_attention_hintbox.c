@@ -231,7 +231,6 @@ static lv_obj_t *CreateArPreparationHintbox(AttentionHintboxContext *context)
     lv_obj_set_width(title, 408);
     lv_label_set_long_mode(title, LV_LABEL_LONG_WRAP);
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, y);
-    // Resolve wrapping before placing the next item; LVGL layout is deferred.
     lv_obj_update_layout(title);
     y += lv_obj_get_height(title) + 16;
     for (size_t i = 0; i < 2; i++) {

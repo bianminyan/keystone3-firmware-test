@@ -17,15 +17,13 @@ import sys
 import tempfile
 from pathlib import Path
 
-# Tool resource limits, not claims about the device's flash capacity.
 MAX_IMAGE_SIZE = 64 * 1024 * 1024
-# tools/code/firmware-maker splits firmware into independent 16 KiB chunks.
 CHUNK_SIZE = 16384
 OTA_HEADER = struct.Struct(">8sII32s32sIII")
 
 
 class InvalidFirmware(ValueError):
-    """The OTA image or one of its compressed chunks is invalid."""
+    pass
 
 
 def chunk_header(source):
@@ -35,7 +33,6 @@ def chunk_header(source):
     header_size = 9 if flags & 2 else 3
     if len(source) < header_size:
         raise InvalidFirmware("truncated QuickLZ header")
-    # 01SSLLHC: independent blocks, compression level 3, short/long header.
     if (flags & 0xFC) != 0x4C:
         raise InvalidFirmware("unsupported QuickLZ flags (requires level 3, no streaming)")
     width = 4 if flags & 2 else 1
@@ -51,12 +48,6 @@ def chunk_header(source):
 
 
 def decompress_chunk(chunk):
-    """Decode the level-3 literal/back-reference format; never call native C.
-
-    Wire reference: external/quicklz/quicklz.c, qlz_decompress_core (level 3).
-    Each control word has a high sentinel bit and 31 low-to-high token bits.
-    Back-references may overlap, but must refer to bytes already produced.
-    """
     header_size, compressed, expected = chunk_header(chunk)
     if compressed != len(chunk):
         raise InvalidFirmware("trailing data after QuickLZ chunk")
@@ -101,12 +92,10 @@ def decompress_chunk(chunk):
             distance, length = value >> 15, ((value >> 7) & 255) + 3
         if not 3 <= distance <= len(output):
             raise InvalidFirmware("invalid QuickLZ back-reference")
-        # QuickLZ leaves at least four final literal bytes after a match.
         if len(output) + length > expected - 4:
             raise InvalidFirmware("QuickLZ match exceeds output boundary")
         for _ in range(length):
             output.append(output[-distance])
-    # The reference compressor pads compressed payloads to at least 9 bytes.
     if compressed != max(position, header_size + 9):
         raise InvalidFirmware("unexpected trailing QuickLZ payload")
     return bytes(output)
@@ -156,7 +145,6 @@ def restore_file(src, dst):
     with src.open("rb") as source:
         content = source.read(MAX_IMAGE_SIZE + 1)
     restored = restore(content)
-    # Do not truncate an existing destination on decoding or write failure.
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(

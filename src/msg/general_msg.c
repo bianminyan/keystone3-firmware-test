@@ -81,7 +81,6 @@ uint32_t PubValueMsg(uint32_t messageID, uint32_t value)
                 return MSG_SUCCESS;
             }
         }
-        /* osMessageQueuePut selects the ISR-safe FreeRTOS API when needed. */
         err = osMessageQueuePut(queue, &msg, 0, 0);
         if (err != osOK) {
             return MSG_SEND_ERROR;

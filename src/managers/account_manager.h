@@ -114,8 +114,6 @@ int32_t GetZcashUFVK(uint8_t accountIndex, char* outUFVK);
 int32_t GetZcashSFP(uint8_t accountIndex, uint8_t* outSFP);
 int32_t SetupZcashSFP(uint8_t accountIndex, const char* password);
 #ifdef CYPHERPUNK_VERSION
-/// Load the Zcash runtime cache. prederivedCacheKey is an optional borrowed Zcash-domain key;
-/// when supplied, the caller remains responsible for clearing its buffer.
 int32_t SetupZcashCache(uint8_t accountIndex, const char* password,
                         const uint8_t *prederivedCacheKey);
 #endif

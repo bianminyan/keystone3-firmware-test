@@ -140,7 +140,6 @@ pub fn build_rsa_private_key_from_primes(p: &[u8], q: &[u8]) -> Result<RsaPrivat
     let mut d = d.ok_or_else(|| {
         KeystoreError::GenerateSigningKeyError("failed to calculate rsa private key".to_string())
     })?;
-    // p, q and d are moved into the key, which zeroizes them on drop.
     let private_key = RsaPrivateKey::from_components(n, e, d.clone(), vec![p, q]);
     d.zeroize();
     let private_key = private_key.map_err(|_| {
@@ -152,7 +151,6 @@ pub fn build_rsa_private_key_from_primes(p: &[u8], q: &[u8]) -> Result<RsaPrivat
     Ok(private_key)
 }
 
-// Temporary MCU-only RNG for AR self-tests; never use for key generation.
 #[cfg(target_os = "none")]
 struct ArSelfTestMcuRng;
 
@@ -172,10 +170,6 @@ impl rand_core::RngCore for ArSelfTestMcuRng {
         }
 
         for chunk in dest.chunks_mut(32) {
-            // SAFETY: chunk is a live mutable slice, writable for chunk.len() bytes.
-            // Its length is at most 32, so conversion to u32 cannot truncate.
-            // TrngGet must not write beyond this range or retain the pointer.
-            // TrngGet asserts on hardware failure.
             unsafe { TrngGet(chunk.as_mut_ptr().cast(), chunk.len() as u32) };
         }
     }
@@ -189,7 +183,6 @@ impl rand_core::RngCore for ArSelfTestMcuRng {
 #[cfg(target_os = "none")]
 impl rand_core::CryptoRng for ArSelfTestMcuRng {}
 
-// Operational key-pair check, not a primality proof or a seed-binding check.
 pub fn check_rsa_key_pair(key: &RsaPrivateKey) -> Result<()> {
     #[cfg(target_os = "none")]
     let mut rng = ArSelfTestMcuRng;

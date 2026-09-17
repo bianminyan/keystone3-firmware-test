@@ -264,9 +264,6 @@ impl ParsedCardanoSignCip8Data {
                     Ok(payload) => (payload, false),
                     Err(_) => (hex::encode(raw_payload), true),
                 };
-                // Keep this identical to the bytes transformed by the signer.
-                // With hash_payload enabled the signer hashes the complete
-                // incoming Sig_structure, not only its decoded payload field.
                 let message_hash = if hash_payload {
                     hex::encode(blake2b_224(&sign_data))
                 } else {

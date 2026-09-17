@@ -34,7 +34,7 @@ typedef enum {
     WALLET_LIST_SPARROW,
     WALLET_LIST_UNISAT,
     WALLET_LIST_IMTOKEN,
-    WALLET_LIST_RESERVED_1,    // was WALLET_LIST_CORE (Core Wallet removed) - keep the slot so later values don't renumber
+    WALLET_LIST_RESERVED_1,
     WALLET_LIST_BLOCK_WALLET,
     WALLET_LIST_ZAPPER,
     WALLET_LIST_HELIUM,
@@ -44,7 +44,7 @@ typedef enum {
     WALLET_LIST_KEPLR,
     WALLET_LIST_MINT_SCAN,
     WALLET_LIST_WANDER,
-    WALLET_LIST_RESERVED_2,    // was WALLET_LIST_BEACON - keep the slot so later values don't renumber
+    WALLET_LIST_RESERVED_2,
     WALLET_LIST_VESPR,
     WALLET_LIST_XBULL,
     WALLET_LIST_FEWCHA,

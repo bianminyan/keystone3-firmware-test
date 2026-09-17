@@ -223,7 +223,6 @@ void GuiShowXmrOutputsDetails(lv_obj_t *parent, void *totalData)
     lv_obj_add_flag(infoIcon, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(infoIcon, ShowHintBox, LV_EVENT_CLICKED, NULL);
 
-    // Give the full amount and currency their own row, with room to wrap.
     lv_obj_t *amountLabel = GuiCreateIllustrateLabel(infoContainer, data->total_amount);
     lv_obj_set_width(amountLabel, 360);
     lv_label_set_long_mode(amountLabel, LV_LABEL_LONG_WRAP);

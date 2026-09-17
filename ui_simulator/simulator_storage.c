@@ -16,7 +16,6 @@
 #define SIMULATOR_USER1_SECRET_ADDR                 0x3000
 #define SIMULATOR_USER2_SECRET_ADDR                 0x4000
 #define SIMULATOR_USER3_SECRET_ADDR                 0x5000
-// Keep the legacy JSON field name so existing simulator accounts remain readable.
 #define SIMULATOR_ACCOUNT_BLOB_AUTH_KEY_JSON        "zcash_auth_key"
 
 typedef int32_t (*OperateStorageDataFunc)(uint32_t addr, uint8_t *buffer, uint32_t size);
@@ -277,9 +276,6 @@ static int32_t EnsureSimulatorAccountBlobAuthKey(
         return SUCCESS_CODE;
     }
 
-    // The simulator secret JSON is not a security boundary (it also contains the seed and PIN).
-    // This independent stored value only models the production account-blob auth-key data flow.
-    // It ensures tests never treat the low-entropy PIN itself as the z3 encryption key.
     SE_GetTRng(accountBlobAuthKey, AUTH_KEY_LEN);
     cJSON_DeleteItemFromObject(rootJson, SIMULATOR_ACCOUNT_BLOB_AUTH_KEY_JSON);
     InsertJsonU8Array(rootJson, accountBlobAuthKey, AUTH_KEY_LEN,

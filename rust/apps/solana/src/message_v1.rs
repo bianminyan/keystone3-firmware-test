@@ -107,12 +107,6 @@ impl Message {
         } else {
             0
         };
-        // SIMD-0385 specifies V1 defaults for absent config bits: priority fee,
-        // compute-unit limit and loaded-accounts data limit are 0; heap is 32 KiB.
-        // Do not substitute legacy/v0 defaults. A loaded-accounts limit of 0
-        // reserves one 32 KiB page for cost-model purposes only; the requested
-        // transaction budget remains 0, whether omitted or explicitly encoded.
-        // https://github.com/solana-foundation/solana-improvement-documents/blob/main/proposals/0385-transaction-v1.md#transactionconfigmask-1
         let config = TransactionConfig {
             priority_fee_lamports,
             compute_unit_limit: if mask & 4 != 0 { cursor.u32()? } else { 0 },

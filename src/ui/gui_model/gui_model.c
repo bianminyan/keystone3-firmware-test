@@ -1842,7 +1842,6 @@ int32_t RsaGenerateKeyPair(bool needEmitSignal, bool allowGenerate, SimpleRespon
     do {
         ret = LoadAndValidateArKey(SecretCacheGetPassword(), NULL, &publicKey);
         if (ret == SUCCESS_CODE) {
-            // Existing stored p/q passed decryption and validation.
             break;
         }
         if (!ArKeyNeedsSetup(ret) || !allowGenerate) {
@@ -1893,7 +1892,6 @@ int32_t RsaGenerateKeyPair(bool needEmitSignal, bool allowGenerate, SimpleRespon
     }
     SetLockScreen(lockState);
     ClearLockScreenTime();
-    // Finish cleanup before the UI starts the next page/operation.
     if (needEmitSignal) {
         if (ret == SUCCESS_CODE) {
             GuiApiEmitSignal(SIG_SETUP_RSA_PRIVATE_KEY_WITH_PASSWORD_PASS, address->data, 44);

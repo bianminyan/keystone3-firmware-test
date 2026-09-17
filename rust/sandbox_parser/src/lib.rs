@@ -763,8 +763,6 @@ mod tests {
         let multipart = encode_ur(&[0xa0]).replacen("ur:bytes/", "ur:bytes/1-2/", 1);
         assert_eq!(validate_ur(multipart.as_bytes()), ValidationStatus::Ok);
 
-        // Published keystone-ur vector: bytewords/checksum decode succeeds,
-        // then the four decoded bytes form an intentionally truncated CBOR text.
         assert_eq!(
             validate_ur(b"ur:bytes/iehsjyhspmwfwfia"),
             ValidationStatus::CborUnexpectedEof
