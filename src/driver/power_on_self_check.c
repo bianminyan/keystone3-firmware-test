@@ -67,4 +67,6 @@ void PowerOnSelfCheck(void)
         ErasePublicInfo();
         NVIC_SystemReset();
     }
+    ret = DeviceSettingsRecoverSetupStep();
+    ASSERT(ret == SUCCESS_CODE);
 }

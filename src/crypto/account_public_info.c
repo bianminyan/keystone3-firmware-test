@@ -1495,7 +1495,7 @@ int32_t TempAccountPublicInfo(uint8_t accountIndex, const char *password, bool s
     return ret;
 }
 
-static int32_t DeleteAccountPublicInfoFlash(uint8_t accountIndex)
+int32_t DeleteAccountPublicInfoFlash(uint8_t accountIndex)
 {
     if (accountIndex >= 3) {
         return ERR_GENERAL_FAIL;

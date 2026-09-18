@@ -10,7 +10,17 @@
 #define MIN_BRIGHT                              4
 #define MAX_BRIGHT                              50
 
+typedef enum {
+    SETUP_PAHSE_WELCOME = 0,
+    SETUP_PAHSE_LANGUAGE,
+    SETUP_PAHSE_WEB_AUTH,
+    SETUP_PAHSE_FIRMWARE_UPDATE,
+    SETUP_PAHSE_CREATE_WALLET,
+    SETUP_PAHSE_DONE,
+} SETUP_PHASE_ENUM;
+
 void DeviceSettingsInit(void);
+int32_t DeviceSettingsRecoverSetupStep(void);
 void SaveDeviceSettings(void);
 
 uint32_t GetSetupStep(void);

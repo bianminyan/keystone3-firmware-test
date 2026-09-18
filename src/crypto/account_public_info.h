@@ -296,6 +296,7 @@ int32_t RegenerateZcashUFVKV3(uint8_t accountIndex, const uint8_t *seed, int see
 int32_t AccountPublicInfoSwitch(uint8_t accountIndex, const char *password, bool newKey);
 int32_t TempAccountPublicInfo(uint8_t accountIndex, const char *password, bool set);
 int32_t DeleteAccountPublicInfo(uint8_t accountIndex);
+int32_t DeleteAccountPublicInfoFlash(uint8_t accountIndex);
 char *GetCurrentAccountPublicKey(ChainType chain);
 char *GetCurrentAccountPath(ChainType chain);
 uint8_t SpecifiedXPubExist(const char *xPub);

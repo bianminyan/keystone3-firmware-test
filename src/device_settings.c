@@ -16,6 +16,7 @@
 #include "screen_manager.h"
 #include "power_manager.h"
 #include "account_manager.h"
+#include "account_public_info.h"
 #include "se_manager.h"
 #include "version.h"
 #include "legacy_web_update_pad.h"
@@ -75,7 +76,7 @@ typedef struct {
 } DeviceSettings_t;
 
 static int32_t SaveDeviceSettingsAsyncFunc(const void *inData, uint32_t inDataLen);
-static void SaveDeviceSettingsSync(void);
+static int32_t SaveDeviceSettingsSync(void);
 static bool GetDeviceSettingsFromJsonString(const char *string);
 static char *GetJsonStringFromDeviceSettings(void);
 static void AesEncryptBuffer(uint8_t *cipher, uint32_t sz, uint8_t *plain);
@@ -264,6 +265,32 @@ uint32_t GetSetupStep(void)
 void SetSetupStep(uint32_t setupStep)
 {
     g_deviceSettings.setupStep = setupStep;
+}
+
+int32_t DeviceSettingsRecoverSetupStep(void)
+{
+    if (GetSetupStep() != SETUP_PAHSE_DONE) {
+        return SUCCESS_CODE;
+    }
+    uint8_t accountNum = 0xFF;
+    int32_t ret = GetExistAccountNum(&accountNum);
+    if (ret != SUCCESS_CODE || accountNum != 0) {
+        return ret;
+    }
+    // Keep DONE until stale wallet data is gone, so interrupted cleanup can retry.
+    for (uint8_t index = 0; index < 3; index++) {
+        ret = DeleteAccountPublicInfoFlash(index);
+        if (ret != SUCCESS_CODE) {
+            return ret;
+        }
+    }
+    FpWipeManageInfo();
+    SetSetupStep(SETUP_PAHSE_WELCOME);
+    ret = SaveDeviceSettingsSync();
+    if (ret != SUCCESS_CODE) {
+        SetSetupStep(SETUP_PAHSE_DONE);
+    }
+    return ret;
 }
 
 uint32_t GetBright(void)
@@ -532,23 +559,63 @@ void DeviceSettingsTest(int argc, char *argv[])
 
 static int32_t SaveDeviceSettingsAsyncFunc(const void *inData, uint32_t inDataLen)
 {
-    SaveDeviceSettingsSync();
-    return 0;
+    return SaveDeviceSettingsSync();
 }
 
-static void SaveDeviceSettingsSync(void)
+static int32_t VerifyDeviceSettingsWrite(const char *jsonString, uint32_t size)
+{
+    uint32_t savedSize = 0;
+    uint8_t verifyBuffer[64];
+    int32_t readSize = Gd25FlashReadBuffer(SPI_FLASH_ADDR_NORMAL_PARAM,
+                                           (uint8_t *)&savedSize, sizeof(savedSize));
+    if (readSize != sizeof(savedSize) || savedSize != size) {
+        return ERR_GD25_BAD_PARAM;
+    }
+
+    uint32_t offset = 0;
+    const uint32_t totalSize = size + 1;
+    while (offset < totalSize) {
+        uint32_t chunkSize = totalSize - offset;
+        if (chunkSize > sizeof(verifyBuffer)) {
+            chunkSize = sizeof(verifyBuffer);
+        }
+        readSize = Gd25FlashReadBuffer(SPI_FLASH_ADDR_NORMAL_PARAM + sizeof(savedSize) + offset,
+                                      verifyBuffer, chunkSize);
+        if (readSize != chunkSize || memcmp(verifyBuffer, jsonString + offset, chunkSize) != 0) {
+            return ERR_GD25_BAD_PARAM;
+        }
+        offset += chunkSize;
+    }
+    return SUCCESS_CODE;
+}
+
+static int32_t SaveDeviceSettingsSync(void)
 {
     char *jsonString;
     uint32_t size;
 
     jsonString = GetJsonStringFromDeviceSettings();
+    if (jsonString == NULL) {
+        return ERR_GENERAL_FAIL;
+    }
     printf("jsonString=%s\n", jsonString);
-    Gd25FlashSectorErase(SPI_FLASH_ADDR_NORMAL_PARAM); // Only one sector for device settings.
     size = strnlen_s(jsonString, SPI_FLASH_SIZE_NORMAL_PARAM - 4 - 1);
     ASSERT(size < SPI_FLASH_SIZE_NORMAL_PARAM - 4);
-    Gd25FlashWriteBuffer(SPI_FLASH_ADDR_NORMAL_PARAM, (uint8_t *)&size, 4);
-    Gd25FlashWriteBuffer(SPI_FLASH_ADDR_NORMAL_PARAM + 4, (uint8_t *)jsonString, size + 1);
+    // Only the device-settings sector is rewritten, preserving other Flash data.
+    int32_t ret = Gd25FlashSectorErase(SPI_FLASH_ADDR_NORMAL_PARAM);
+    if (ret == SUCCESS_CODE &&
+            Gd25FlashWriteBuffer(SPI_FLASH_ADDR_NORMAL_PARAM, (uint8_t *)&size, sizeof(size)) != sizeof(size)) {
+        ret = ERR_GD25_BAD_PARAM;
+    }
+    if (ret == SUCCESS_CODE &&
+            Gd25FlashWriteBuffer(SPI_FLASH_ADDR_NORMAL_PARAM + 4, (uint8_t *)jsonString, size + 1) != size + 1) {
+        ret = ERR_GD25_BAD_PARAM;
+    }
+    if (ret == SUCCESS_CODE) {
+        ret = VerifyDeviceSettingsWrite(jsonString, size);
+    }
     EXT_FREE(jsonString);
+    return ret;
 }
 
 static bool GetDeviceSettingsFromJsonString(const char *string)
@@ -593,28 +660,36 @@ static bool GetDeviceSettingsFromJsonString(const char *string)
 
 static char *GetJsonStringFromDeviceSettings(void)
 {
-    cJSON *rootJson;
-    char *retStr;
+    char *retStr = NULL;
+    cJSON *rootJson = cJSON_CreateObject();
+    if (rootJson == NULL) {
+        return NULL;
+    }
 
-    rootJson = cJSON_CreateObject();
-    cJSON_AddItemToObject(rootJson, KEY_VERSION, cJSON_CreateString(g_deviceSettingsVersion));
-    cJSON_AddItemToObject(rootJson, KEY_SETUP_STEP, cJSON_CreateNumber(g_deviceSettings.setupStep));
-    cJSON_AddItemToObject(rootJson, KEY_BRIGHT, cJSON_CreateNumber(g_deviceSettings.bright));
-    cJSON_AddItemToObject(rootJson, KEY_AUTO_LOCK_SCREEN, cJSON_CreateNumber(g_deviceSettings.autoLockScreen));
-    cJSON_AddItemToObject(rootJson, KEY_AUTO_POWER_OFF, cJSON_CreateNumber(g_deviceSettings.autoPowerOff));
-    cJSON_AddItemToObject(rootJson, KEY_VIBRATION, cJSON_CreateNumber(g_deviceSettings.vibration));
-    cJSON_AddItemToObject(rootJson, KEY_RANDOM_PIN_PAD, cJSON_CreateNumber(g_deviceSettings.randomPinPad));
-    cJSON_AddItemToObject(rootJson, KEY_PERMIT_SIGN, cJSON_CreateNumber(g_deviceSettings.permitSign));
-    cJSON_AddItemToObject(rootJson, KEY_DARK_MODE, cJSON_CreateNumber(g_deviceSettings.darkMode));
-    cJSON_AddItemToObject(rootJson, KEY_USB_SWITCH, cJSON_CreateNumber(g_deviceSettings.usbSwitch));
-    cJSON_AddItemToObject(rootJson, KEY_LAST_VERSION, cJSON_CreateNumber(g_deviceSettings.lastVersion));
-    cJSON_AddItemToObject(rootJson, KEY_LANGUAGE, cJSON_CreateNumber(g_deviceSettings.language));
-    cJSON_AddItemToObject(rootJson, KEY_NFT_SCREEN, cJSON_CreateBool(g_deviceSettings.nftEnable));
-    cJSON_AddItemToObject(rootJson, KEY_NFT_VALID, cJSON_CreateBool(g_deviceSettings.nftValid));
-    cJSON_AddItemToObject(rootJson, KEY_ENABLE_BLIND_SIGNING, cJSON_CreateBool(g_deviceSettings.enableBlindSigning));
-    retStr = cJSON_PrintBuffered(rootJson, SPI_FLASH_SIZE_NORMAL_PARAM - 4, false);
-    RemoveFormatChar(retStr);
+    if (cJSON_AddStringToObject(rootJson, KEY_VERSION, g_deviceSettingsVersion) == NULL ||
+            cJSON_AddNumberToObject(rootJson, KEY_SETUP_STEP, g_deviceSettings.setupStep) == NULL ||
+            cJSON_AddNumberToObject(rootJson, KEY_BRIGHT, g_deviceSettings.bright) == NULL ||
+            cJSON_AddNumberToObject(rootJson, KEY_AUTO_LOCK_SCREEN, g_deviceSettings.autoLockScreen) == NULL ||
+            cJSON_AddNumberToObject(rootJson, KEY_AUTO_POWER_OFF, g_deviceSettings.autoPowerOff) == NULL ||
+            cJSON_AddNumberToObject(rootJson, KEY_VIBRATION, g_deviceSettings.vibration) == NULL ||
+            cJSON_AddNumberToObject(rootJson, KEY_RANDOM_PIN_PAD, g_deviceSettings.randomPinPad) == NULL ||
+            cJSON_AddNumberToObject(rootJson, KEY_PERMIT_SIGN, g_deviceSettings.permitSign) == NULL ||
+            cJSON_AddNumberToObject(rootJson, KEY_DARK_MODE, g_deviceSettings.darkMode) == NULL ||
+            cJSON_AddNumberToObject(rootJson, KEY_USB_SWITCH, g_deviceSettings.usbSwitch) == NULL ||
+            cJSON_AddNumberToObject(rootJson, KEY_LAST_VERSION, g_deviceSettings.lastVersion) == NULL ||
+            cJSON_AddNumberToObject(rootJson, KEY_LANGUAGE, g_deviceSettings.language) == NULL ||
+            cJSON_AddBoolToObject(rootJson, KEY_NFT_SCREEN, g_deviceSettings.nftEnable) == NULL ||
+            cJSON_AddBoolToObject(rootJson, KEY_NFT_VALID, g_deviceSettings.nftValid) == NULL ||
+            cJSON_AddBoolToObject(rootJson, KEY_ENABLE_BLIND_SIGNING, g_deviceSettings.enableBlindSigning) == NULL) {
+        cJSON_Delete(rootJson);
+        return NULL;
+    }
+
+    retStr = cJSON_PrintBuffered(rootJson, SPI_FLASH_SIZE_NORMAL_PARAM - sizeof(uint32_t), false);
     cJSON_Delete(rootJson);
+    if (retStr != NULL) {
+        RemoveFormatChar(retStr);
+    }
 
     return retStr;
 }
