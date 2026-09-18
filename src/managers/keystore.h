@@ -52,7 +52,7 @@ int32_t SaveNewSlip39Entropy(uint8_t accountIndex, const uint8_t *ems, const uin
 int32_t GetAccountEntropy(uint8_t accountIndex, uint8_t *entropy, uint8_t *entropyLen, const char *password);
 int32_t GetAccountSeed(uint8_t accountIndex, uint8_t *seed, const char *password);
 int32_t GetAccountSlip39Ems(uint8_t accountIndex, uint8_t *slip39Ems, const char *password);
-int32_t ChangePassword(uint8_t accountIndex, const char *newPassword, const char *password);
+int32_t ChangePassword(uint8_t accountIndex, const char *newPassword, const char *password, bool *modified);
 int32_t FindAccountByPassword(uint8_t *matchedAccountIndex, const char *password);
 int32_t VerifyAccountPassword(uint8_t accountIndex, const char *password);
 /// Verify a password, find the matching account, and derive an account-scoped business subkey.
@@ -100,6 +100,8 @@ char* GetPassphrase(uint8_t accountIndex);
 int32_t CheckPasswordExisted(const char *password, uint8_t excludeIndex);
 
 int32_t SetPassphrase(uint8_t accountIndex, const char *passphrase, const char *password);
+// Setup owns account rollback and reboot on failure; this variant only returns the error.
+int32_t SetSetupPassphrase(uint8_t accountIndex, const char *passphrase, const char *password);
 void ClearAccountPassphrase(uint8_t accountIndex);
 void GetMasterFingerPrint(uint8_t *mfp);
 

@@ -300,6 +300,7 @@ int32_t DeleteAccountPublicInfoFlash(uint8_t accountIndex);
 char *GetCurrentAccountPublicKey(ChainType chain);
 char *GetCurrentAccountPath(ChainType chain);
 uint8_t SpecifiedXPubExist(const char *xPub);
+int32_t FindAccountByXpub(const char *xPub, uint8_t *accountIndex);
 void AccountPublicInfoTest(int argc, char *argv[]);
 bool GetFirstReceive(const char* chainName);
 void SetFirstReceive(const char* chainName, bool isFirst);

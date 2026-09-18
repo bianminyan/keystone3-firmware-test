@@ -26,4 +26,3 @@ uint8_t GuiSetSetupPhase(SETUP_PHASE_ENUM pahaseEnum);
 bool GuiJudgeCurrentPahse(SETUP_PHASE_ENUM pahaseEnum);
 
 #endif /* _GUI_SETUP_WIDGETS_H */
-

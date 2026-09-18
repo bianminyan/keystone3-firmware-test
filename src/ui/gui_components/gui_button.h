@@ -19,6 +19,9 @@ typedef struct GuiButton {
     GuiPosition_t position;
 } GuiButton_t;
 
+// Confirmation buttons have their text label as the first child.
+void GuiSetConfirmButtonEnabled(lv_obj_t *button, bool enabled);
+
 void *GuiCreateButton(lv_obj_t *parent, uint16_t w, uint16_t h, GuiButton_t *member,
                       uint8_t cnt, lv_event_cb_t buttonCb, void *param);
 void *GuiCreateStatusCoinButton(lv_obj_t *parent, const char *text, const void *src);

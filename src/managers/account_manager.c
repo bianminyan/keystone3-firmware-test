@@ -135,15 +135,25 @@ void SetMnemonicType(MnemonicType type)
     SaveCurrentAccountInfo();
 }
 
-int32_t CreateNewAccount(uint8_t accountIndex, const uint8_t *entropy, uint8_t entropyLen, const char *password)
+int32_t CreateNewAccount(uint8_t accountIndex, const uint8_t *entropy, uint8_t entropyLen, const char *password, bool *cleanupRequired)
 {
     ASSERT(accountIndex <= 2);
+    if (cleanupRequired != NULL) {
+        *cleanupRequired = false;
+    }
     int32_t ret = DestroyAccount(accountIndex);
     CHECK_ERRCODE_RETURN_INT(ret);
+    if (cleanupRequired != NULL) {
+        *cleanupRequired = true;
+    }
     CLEAR_OBJECT(g_currentAccountInfo);
     g_currentAccountIndex = accountIndex;
-    SetWalletName(SecretCacheGetWalletName());
-    SetWalletIconIndex(SecretCacheGetWalletIconIndex());
+    ret = SE_SetAccountStatus(accountIndex, ACCOUNT_STATUS_CREATING);
+    CHECK_ERRCODE_RETURN_INT(ret);
+    ret = SetWalletName(SecretCacheGetWalletName());
+    CHECK_ERRCODE_RETURN_INT(ret);
+    ret = SetWalletIconIndex(SecretCacheGetWalletIconIndex());
+    CHECK_ERRCODE_RETURN_INT(ret);
 
     ret = SaveNewBip39Entropy(accountIndex, entropy, entropyLen, password);
     CHECK_ERRCODE_RETURN_INT(ret);
@@ -163,16 +173,26 @@ int32_t CreateNewAccount(uint8_t accountIndex, const uint8_t *entropy, uint8_t e
     return ret;
 }
 
-int32_t CreateNewSlip39Account(uint8_t accountIndex, const uint8_t *ems, const uint8_t *entropy, uint8_t entropyLen, const char *password, uint16_t id, bool eb, uint8_t ie)
+int32_t CreateNewSlip39Account(uint8_t accountIndex, const uint8_t *ems, const uint8_t *entropy, uint8_t entropyLen, const char *password, uint16_t id, bool eb, uint8_t ie, bool *cleanupRequired)
 {
     ASSERT(accountIndex <= 2);
+    if (cleanupRequired != NULL) {
+        *cleanupRequired = false;
+    }
     int32_t ret = DestroyAccount(accountIndex);
     CHECK_ERRCODE_RETURN_INT(ret);
+    if (cleanupRequired != NULL) {
+        *cleanupRequired = true;
+    }
     CLEAR_OBJECT(g_currentAccountInfo);
     g_currentAccountIndex = accountIndex;
     g_currentAccountInfo.isSlip39 = true;
-    SetWalletName(SecretCacheGetWalletName());
-    SetWalletIconIndex(SecretCacheGetWalletIconIndex());
+    ret = SE_SetAccountStatus(accountIndex, ACCOUNT_STATUS_CREATING);
+    CHECK_ERRCODE_RETURN_INT(ret);
+    ret = SetWalletName(SecretCacheGetWalletName());
+    CHECK_ERRCODE_RETURN_INT(ret);
+    ret = SetWalletIconIndex(SecretCacheGetWalletIconIndex());
+    CHECK_ERRCODE_RETURN_INT(ret);
 
     ret = SaveNewSlip39Entropy(accountIndex, ems, entropy, entropyLen, password, id, ie);
     CHECK_ERRCODE_RETURN_INT(ret);
@@ -201,6 +221,7 @@ int32_t VerifyCurrentAccountPassword(const char *password)
 {
     uint8_t accountIndex;
     int32_t ret;
+    uint8_t previousErrorCount = g_publicInfo.currentPasswordErrorCount;
 
     do {
         accountIndex = GetCurrentAccountIndex();
@@ -221,22 +242,35 @@ int32_t VerifyCurrentAccountPassword(const char *password)
         } else {
             break;
         }
-        SE_HmacEncryptWrite((uint8_t *)&g_publicInfo, PAGE_PUBLIC_INFO);
+        int32_t writeRet = SE_HmacEncryptWrite((uint8_t *)&g_publicInfo, PAGE_PUBLIC_INFO);
+        if (writeRet != SUCCESS_CODE) {
+            g_publicInfo.currentPasswordErrorCount = previousErrorCount;
+            ret = writeRet;
+        }
     } while (0);
 
     return ret;
 }
 
-uint8_t RecordCurrentPasswordError(uint8_t maxCount)
+int32_t RecordCurrentPasswordError(uint8_t maxCount, uint8_t *errorCount)
 {
+    uint8_t previousErrorCount = g_publicInfo.currentPasswordErrorCount;
+
     if (g_publicInfo.currentPasswordErrorCount < maxCount) {
         g_publicInfo.currentPasswordErrorCount++;
     } else {
         g_publicInfo.currentPasswordErrorCount = maxCount;
     }
     printf("current password error count=%d\r\n", g_publicInfo.currentPasswordErrorCount);
-    SE_HmacEncryptWrite((uint8_t *)&g_publicInfo, PAGE_PUBLIC_INFO);
-    return g_publicInfo.currentPasswordErrorCount;
+    int32_t ret = SE_HmacEncryptWrite((uint8_t *)&g_publicInfo, PAGE_PUBLIC_INFO);
+    if (ret != SUCCESS_CODE) {
+        g_publicInfo.currentPasswordErrorCount = previousErrorCount;
+        return ret;
+    }
+    if (errorCount != NULL) {
+        *errorCount = g_publicInfo.currentPasswordErrorCount;
+    }
+    return SUCCESS_CODE;
 }
 
 /// @brief Verify ownership against any wallet and tick the LOGIN error counter WITHOUT logging in.
@@ -249,6 +283,7 @@ uint8_t RecordCurrentPasswordError(uint8_t maxCount)
 /// @return err code.
 int32_t VerifyOwnershipPasswordTryAll(uint8_t *accountIndex, const char *password, uint8_t maxCount)
 {
+    uint8_t previousErrorCount = g_publicInfo.loginPasswordErrorCount;
     int32_t ret = FindAccountByPassword(accountIndex, password);
     if (ret == SUCCESS_CODE) {
         g_publicInfo.loginPasswordErrorCount = 0;
@@ -263,17 +298,31 @@ int32_t VerifyOwnershipPasswordTryAll(uint8_t *accountIndex, const char *passwor
     } else {
         return ret;   // transient SE error: don't touch the counter
     }
-    SE_HmacEncryptWrite((uint8_t *)&g_publicInfo, PAGE_PUBLIC_INFO);
+    int32_t writeRet = SE_HmacEncryptWrite((uint8_t *)&g_publicInfo, PAGE_PUBLIC_INFO);
+    if (writeRet != SUCCESS_CODE) {
+        g_publicInfo.loginPasswordErrorCount = previousErrorCount;
+        if (accountIndex != NULL) {
+            *accountIndex = ACCOUNT_INDEX_LOGOUT;
+        }
+        return writeRet;
+    }
     return ret;
 }
 
 int32_t ClearCurrentPasswordErrorCount(void)
 {
+    uint8_t previousLoginErrorCount = g_publicInfo.loginPasswordErrorCount;
+    uint8_t previousCurrentErrorCount = g_publicInfo.currentPasswordErrorCount;
+
     printf("clear current password error count\r\n");
     g_publicInfo.loginPasswordErrorCount = 0;
     g_publicInfo.currentPasswordErrorCount = 0;
-    SE_HmacEncryptWrite((uint8_t *)&g_publicInfo, PAGE_PUBLIC_INFO);
-    return SUCCESS_CODE;
+    int32_t ret = SE_HmacEncryptWrite((uint8_t *)&g_publicInfo, PAGE_PUBLIC_INFO);
+    if (ret != SUCCESS_CODE) {
+        g_publicInfo.loginPasswordErrorCount = previousLoginErrorCount;
+        g_publicInfo.currentPasswordErrorCount = previousCurrentErrorCount;
+    }
+    return ret;
 }
 
 /// @brief Find account by password, if success set current account id. PasswordErrorCount++ if err.
@@ -284,6 +333,10 @@ int32_t VerifyPasswordAndLogin(uint8_t *accountIndex, const char *password)
 {
     int32_t ret;
     uint8_t tempIndex;
+    uint8_t previousLoginErrorCount = g_publicInfo.loginPasswordErrorCount;
+    uint8_t previousCurrentErrorCount = g_publicInfo.currentPasswordErrorCount;
+    bool countersChanged = false;
+    bool countersPersisted = false;
 #ifdef CYPHERPUNK_VERSION
     uint8_t zcashCacheKey[AES_KEY_LEN];
     CLEAR_ARRAY(zcashCacheKey);
@@ -300,8 +353,12 @@ int32_t VerifyPasswordAndLogin(uint8_t *accountIndex, const char *password)
             *accountIndex = tempIndex;
         }
         ret = ReadCurrentAccountInfo();
+        if (ret != SUCCESS_CODE) {
+            goto login_cleanup;
+        }
         g_publicInfo.loginPasswordErrorCount = 0;
         g_publicInfo.currentPasswordErrorCount = 0;
+        countersChanged = true;
 #ifndef BTC_ONLY
         ClearZcashUFVK();
 #endif
@@ -314,28 +371,49 @@ int32_t VerifyPasswordAndLogin(uint8_t *accountIndex, const char *password)
             ret = AccountPublicInfoSwitch(g_currentAccountIndex, password, false);
         }
         if (ret != SUCCESS_CODE) {
-#ifdef CYPHERPUNK_VERSION
-            CLEAR_ARRAY(zcashCacheKey);
-#endif
-            return ret;
+            goto login_cleanup;
         }
 #ifdef CYPHERPUNK_VERSION
         ret = SetupZcashCache(tempIndex, password, zcashCacheKey);
         CLEAR_ARRAY(zcashCacheKey);
-        CHECK_ERRCODE_RETURN_INT(ret);
+        if (ret != SUCCESS_CODE) {
+            goto login_cleanup;
+        }
 #endif
 #ifdef WEB3_VERSION
         ret = SetupZcashSFP(tempIndex, password);
-        CHECK_ERRCODE_RETURN_INT(ret);
+        if (ret != SUCCESS_CODE) {
+            goto login_cleanup;
+        }
 #endif
-    } else {
+    } else if (ret == ERR_KEYSTORE_PASSWORD_ERR) {
         g_publicInfo.loginPasswordErrorCount++;
+        countersChanged = true;
+    } else {
+        goto login_cleanup;
     }
+    {
+        int32_t writeRet = SE_HmacEncryptWrite((uint8_t *)&g_publicInfo, PAGE_PUBLIC_INFO);
+        if (writeRet != SUCCESS_CODE) {
+            ret = writeRet;
+        } else {
+            countersPersisted = true;
+        }
+    }
+login_cleanup:
 #ifdef CYPHERPUNK_VERSION
     CLEAR_ARRAY(zcashCacheKey);
 #endif
-    SE_HmacEncryptWrite((uint8_t *)&g_publicInfo, PAGE_PUBLIC_INFO);
-
+    if (ret != SUCCESS_CODE) {
+        if (countersChanged && !countersPersisted) {
+            g_publicInfo.loginPasswordErrorCount = previousLoginErrorCount;
+            g_publicInfo.currentPasswordErrorCount = previousCurrentErrorCount;
+        }
+        LogoutCurrentAccount();
+        if (accountIndex != NULL) {
+            *accountIndex = ACCOUNT_INDEX_LOGOUT;
+        }
+    }
     return ret;
 }
 
@@ -493,41 +571,78 @@ char *GetWalletName(void)
     return g_currentAccountInfo.walletName;
 }
 
+/// @brief Update and persist the wallet name and icon in one account-info write.
+/// @param[in] walletName Wallet name.
+/// @param[in] iconIndex Wallet icon index.
+/// @return err code.
+int32_t SetWalletDesc(const char *walletName, uint8_t iconIndex)
+{
+    if (walletName == NULL || strnlen_s(walletName, WALLET_NAME_MAX_LEN + 1) > WALLET_NAME_MAX_LEN) {
+        return ERR_GENERAL_FAIL;
+    }
+    AccountInfo_t previous = g_currentAccountInfo;
+    memset_s(g_currentAccountInfo.walletName, sizeof(g_currentAccountInfo.walletName), 0,
+             sizeof(g_currentAccountInfo.walletName));
+    strcpy_s(g_currentAccountInfo.walletName, WALLET_NAME_MAX_LEN + 1, walletName);
+    g_currentAccountInfo.iconIndex = iconIndex;
+
+    int32_t ret = SaveCurrentAccountInfo();
+    if (ret != SUCCESS_CODE) {
+        g_currentAccountInfo = previous;
+    }
+    CLEAR_OBJECT(previous);
+    return ret;
+}
+
 /// @brief Set passphrase quick access enable for the current account.
 /// @param[in] enable Quick access enable.
-void SetPassphraseQuickAccess(bool enable)
+int32_t SetPassphraseQuickAccess(bool enable)
 {
+    uint8_t previousQuickAccess = g_currentAccountInfo.passphraseQuickAccess;
+    uint8_t previousMark = g_currentAccountInfo.passphraseMark;
+
     g_currentAccountInfo.passphraseQuickAccess = enable ? 1 : 0;
     // should only show quick access after restart.
     if (PassphraseExist(GetCurrentAccountIndex()) == true) {
-        SetPassphraseMark(true);
+        g_currentAccountInfo.passphraseMark = true;
     }
-    SaveCurrentAccountInfo();
+    int32_t ret = SaveCurrentAccountInfo();
+    if (ret != SUCCESS_CODE) {
+        g_currentAccountInfo.passphraseQuickAccess = previousQuickAccess;
+        g_currentAccountInfo.passphraseMark = previousMark;
+    }
+    return ret;
 }
 
 /// @brief Set passphrase mark enable for the current account.
 /// @param[in] enable Mark enable.
-void SetPassphraseMark(bool enable)
+int32_t SetPassphraseMark(bool enable)
 {
+    uint8_t previousMark = g_currentAccountInfo.passphraseMark;
+
     g_currentAccountInfo.passphraseMark = enable ? 1 : 0;
-    SaveCurrentAccountInfo();
+    int32_t ret = SaveCurrentAccountInfo();
+    if (ret != SUCCESS_CODE) {
+        g_currentAccountInfo.passphraseMark = previousMark;
+    }
+    return ret;
 }
 
 /// @brief Set wallet icon index for the current account.
 /// @param[in] iconIndex
-void SetWalletIconIndex(uint8_t iconIndex)
+int32_t SetWalletIconIndex(uint8_t iconIndex)
 {
     g_currentAccountInfo.iconIndex = iconIndex;
-    SaveCurrentAccountInfo();
+    return SaveCurrentAccountInfo();
 }
 
 /// @brief Set wallet name for the current account.
 /// @param[in] walletName
-void SetWalletName(const char *walletName)
+int32_t SetWalletName(const char *walletName)
 {
     memset_s(g_currentAccountInfo.walletName, sizeof(g_currentAccountInfo.walletName), 0, sizeof(g_currentAccountInfo.walletName));
     strcpy_s(g_currentAccountInfo.walletName, WALLET_NAME_MAX_LEN + 1, walletName);
-    SaveCurrentAccountInfo();
+    return SaveCurrentAccountInfo();
 }
 
 /// @brief Get password err count for login.
@@ -692,9 +807,9 @@ int32_t DestroyAccount(uint8_t accountIndex)
 }
 // wipe device may power lose, check the account status.
 // check whether the account data is valid, if not, erase the account data.
-void AccountsDataCheck(void)
+int32_t AccountsDataCheck(void)
 {
-    int32_t ret;
+    int32_t ret = SUCCESS_CODE;
     uint8_t data[32], accountIndex, validCount;
 
     for (accountIndex = 0; accountIndex < 3; accountIndex++) {
@@ -702,11 +817,14 @@ void AccountsDataCheck(void)
         // inconsistent -> erase it. delete -> finishes the deletion; change-PIN -> user restores from seed;
         // create -> drops the partial wallet. A valid CREATED account skips the coarse heuristic below.
         AccountStatus_t status = ACCOUNT_STATUS_UNKNOWN;
-        if (SE_GetAccountStatus(accountIndex, &status) == SUCCESS_CODE) {
+        ret = SE_GetAccountStatus(accountIndex, &status);
+        CHECK_ERRCODE_BREAK("read account status", ret);
+        if (ret == SUCCESS_CODE) {
             if (status == ACCOUNT_STATUS_CREATING || status == ACCOUNT_STATUS_CHANGING_PIN ||
                     status == ACCOUNT_STATUS_DELETING) {
                 printf("incomplete op on account %d (status=%d) -> erase\n", accountIndex, status);
-                DestroyAccount(accountIndex);
+                ret = DestroyAccount(accountIndex);
+                CHECK_ERRCODE_BREAK("finish interrupted account operation", ret);
                 continue;
             }
             if (status == ACCOUNT_STATUS_CREATED) {
@@ -730,19 +848,25 @@ void AccountsDataCheck(void)
         // if start disconsistent with keypieces, consider the account data is illegal, erase the account data.
         if (validCount == 1) {
             printf("illegal data:%d\n", accountIndex);
-            DestroyAccount(accountIndex);
+            ret = DestroyAccount(accountIndex);
+            CHECK_ERRCODE_BREAK("erase inconsistent account", ret);
         }
     }
     CLEAR_ARRAY(data);
+    return ret;
 }
 
 #ifndef BTC_ONLY
 bool IsZcashSupportedForCurrentMnemonic(void)
 {
     MnemonicType type = GetMnemonicType();
-    if (type == MNEMONIC_TYPE_BIP39) return true;
+    if (type == MNEMONIC_TYPE_BIP39) {
+        return true;
+    }
 #ifdef CYPHERPUNK_VERSION
-    if (type == MNEMONIC_TYPE_SLIP39) return GetCurrentAccountEntropyLen() >= 32;
+    if (type == MNEMONIC_TYPE_SLIP39) {
+        return GetCurrentAccountEntropyLen() >= 32;
+    }
 #endif
     return false;
 }

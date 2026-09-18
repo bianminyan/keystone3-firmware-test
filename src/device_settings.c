@@ -257,6 +257,17 @@ void SaveDeviceSettings(void)
     AsyncExecute(SaveDeviceSettingsAsyncFunc, NULL, 0);
 }
 
+int32_t SaveSetupCheckpoint(uint32_t setupStep)
+{
+    uint32_t previous = g_deviceSettings.setupStep;
+    g_deviceSettings.setupStep = setupStep;
+    int32_t ret = SaveDeviceSettingsSync();
+    if (ret != SUCCESS_CODE) {
+        g_deviceSettings.setupStep = previous;
+    }
+    return ret;
+}
+
 uint32_t GetSetupStep(void)
 {
     return g_deviceSettings.setupStep;
@@ -269,7 +280,7 @@ void SetSetupStep(uint32_t setupStep)
 
 int32_t DeviceSettingsRecoverSetupStep(void)
 {
-    if (GetSetupStep() != SETUP_PAHSE_DONE) {
+    if (GetSetupStep() != SETUP_PHASE_DONE) {
         return SUCCESS_CODE;
     }
     uint8_t accountNum = 0xFF;
@@ -285,10 +296,10 @@ int32_t DeviceSettingsRecoverSetupStep(void)
         }
     }
     FpClearManageInfo();
-    SetSetupStep(SETUP_PAHSE_WELCOME);
+    SetSetupStep(SETUP_PHASE_WELCOME);
     ret = SaveDeviceSettingsSync();
     if (ret != SUCCESS_CODE) {
-        SetSetupStep(SETUP_PAHSE_DONE);
+        SetSetupStep(SETUP_PHASE_DONE);
     }
     return ret;
 }
@@ -483,7 +494,7 @@ void SetLanguage(uint32_t language)
 }
 
 /// @brief Wipe device.
-void WipeDevice(void)
+int32_t WipeDevice(void)
 {
     // reset all account address index in receive page
     {
@@ -498,25 +509,26 @@ void WipeDevice(void)
     }
 
     uint32_t wipeFlag = DEVICE_WIPE_FLAG_MAGIC_NUM;
-    Gd25FlashWriteBuffer(SPI_FLASH_ADDR_PROTECT_PARAM, (uint8_t *)&wipeFlag, sizeof(wipeFlag));
+    if (Gd25FlashWriteBuffer(SPI_FLASH_ADDR_PROTECT_PARAM, (uint8_t *)&wipeFlag, sizeof(wipeFlag)) != sizeof(wipeFlag)) {
+        return ERR_GENERAL_FAIL;
+    }
     SetShowPowerOffPage(false);
     FpWipeManageInfo();
-    ErasePublicInfo();
-    // gen-2: also wipe the SE-side secrets (gen-1 no-op). Best-effort — the blobs are already wiped + flash
-    // erased below.
-    SE_WipeAll();
-    DestroyAccount(0);
-    DestroyAccount(1);
-    DestroyAccount(2);
-    // Clear the external per-account status pages (36/37/38). DestroyAccount above already clears each, but do
-    // it explicitly so the in-app wipe sweeps them like the bootloader's full-range wipe does.
-    SE_SetAccountStatus(0, ACCOUNT_STATUS_UNKNOWN);
-    SE_SetAccountStatus(1, ACCOUNT_STATUS_UNKNOWN);
-    SE_SetAccountStatus(2, ACCOUNT_STATUS_UNKNOWN);
+    int32_t ret = ErasePublicInfo();
+    CHECK_ERRCODE_RETURN_INT(ret);
+    ret = SE_WipeAll();
+    CHECK_ERRCODE_RETURN_INT(ret);
+    for (uint8_t index = 0; index < 3; index++) {
+        ret = DestroyAccount(index);
+        CHECK_ERRCODE_RETURN_INT(ret);
+    }
+    // Leave the wipe marker and DELETING markers intact if any SE cleanup failed.
     for (uint32_t addr = 0; addr < GD25QXX_FLASH_SIZE; addr += 1024 * 64) {
-        Gd25FlashBlockErase(addr);
+        ret = Gd25FlashBlockErase(addr);
+        CHECK_ERRCODE_RETURN_INT(ret);
         printf("flash erase address: %#x\n", (unsigned int)addr);
     }
+    return SUCCESS_CODE;
 }
 
 /// @brief Device settings test.
@@ -524,7 +536,9 @@ void WipeDevice(void)
 /// @param argv Test arg values.
 void DeviceSettingsTest(int argc, char *argv[])
 {
-    if (strcmp(argv[0], "wipe") == 0) {
+    if (argc <= 0 || argv == NULL) {
+        printf("device settings test arg err\n");
+    } else if (strcmp(argv[0], "wipe") == 0) {
         printf("start wipe\n");
         WipeDevice();
         printf("wipe over\n");
@@ -588,7 +602,6 @@ static int32_t VerifyDeviceSettingsWrite(const char *jsonString, uint32_t size)
     }
     return SUCCESS_CODE;
 }
-
 static int32_t SaveDeviceSettingsSync(void)
 {
     char *jsonString;

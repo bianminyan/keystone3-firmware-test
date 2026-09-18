@@ -48,6 +48,9 @@ void PrintHeapInfo(void);
 #ifndef strcmp_s
 #define strcmp_s(s, slen, dest, result_p)   (*(result_p) = strcmp((s), (dest)), EOK)
 #endif
+#ifndef timingsafe_bcmp
+#define timingsafe_bcmp(p1, p2, n)          memcmp(p1, p2, n)
+#endif
 
 #ifndef EOK
 #define EOK                                 (0)

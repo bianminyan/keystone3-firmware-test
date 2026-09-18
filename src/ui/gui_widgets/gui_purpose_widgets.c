@@ -79,9 +79,17 @@ void GuiPurposeAreaRefresh()
 {
     SetNavBarLeftBtn(g_pageWidget->navBarWidget, NVS_BAR_RETURN, CloseCurrentViewHandler, NULL);
 
-    GuiSetSetupPhase(SETUP_PAHSE_CREATE_WALLET);
+    GuiSetSetupPhase(SETUP_PHASE_CREATE_WALLET);
     if (g_reboot) {
-        if (!GuiJudgeCurrentPahse(SETUP_PAHSE_CREATE_WALLET)) {
+        if (GuiJudgeCurrentPahse(SETUP_PHASE_WALLET_WRITE_PENDING)) {
+            g_reboot = false;
+            // No saved PIN or mnemonic is resumed. The user must choose create/import again.
+            static lv_obj_t *notice;
+            notice = GuiCreateConfirmHintBox(&imgWarn, _("single_backup_notice_page_title"),
+                _("wallet_setup_interrupted_desc"),
+                NULL, _("wallet_setting_add_wallet_confirm"), ORANGE_COLOR);
+            lv_obj_add_event_cb(GuiGetHintBoxRightBtn(notice), CloseHintBoxHandler, LV_EVENT_CLICKED, &notice);
+        } else if (!GuiJudgeCurrentPahse(SETUP_PHASE_CREATE_WALLET)) {
             GuiFrameOpenView(&g_homeView);
         } else {
             g_reboot = false;

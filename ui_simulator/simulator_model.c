@@ -431,6 +431,7 @@ bool GetDBContract(const char *address, const char *selector, const uint32_t cha
 
 void SystemReboot(void)
 {
+    g_reboot = true;
 }
 
 void SetPageLockScreen(bool enable)

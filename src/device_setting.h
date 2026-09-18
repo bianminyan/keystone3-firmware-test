@@ -10,18 +10,22 @@
 #define MIN_BRIGHT                              4
 #define MAX_BRIGHT                              50
 
+// Persisted in DeviceSettings_t.setupStep; keep the order and numeric values stable.
 typedef enum {
-    SETUP_PAHSE_WELCOME = 0,
-    SETUP_PAHSE_LANGUAGE,
-    SETUP_PAHSE_WEB_AUTH,
-    SETUP_PAHSE_FIRMWARE_UPDATE,
-    SETUP_PAHSE_CREATE_WALLET,
-    SETUP_PAHSE_DONE,
+    SETUP_PHASE_WELCOME = 0,           // Initial setup welcome page.
+    SETUP_PHASE_LANGUAGE,              // Language selection page.
+    SETUP_PHASE_WEB_AUTH,              // Web authorization page.
+    SETUP_PHASE_FIRMWARE_UPDATE,      // Firmware update page.
+    SETUP_PHASE_CREATE_WALLET,         // Wallet creation/import page.
+    SETUP_PHASE_DONE,                  // Setup completed; normal wallet flow.
+    // A wallet write has started but has not reached the completed checkpoint.
+    SETUP_PHASE_WALLET_WRITE_PENDING,
 } SETUP_PHASE_ENUM;
 
 void DeviceSettingsInit(void);
 int32_t DeviceSettingsRecoverSetupStep(void);
 void SaveDeviceSettings(void);
+int32_t SaveSetupCheckpoint(uint32_t setupStep);
 
 uint32_t GetSetupStep(void);
 void SetSetupStep(uint32_t setupStep);
@@ -59,7 +63,7 @@ bool IsNftScreenValid(void);
 void SetNftBinValid(bool en);
 
 bool IsUpdateSuccess(void);
-void WipeDevice(void);
+int32_t WipeDevice(void);
 void DeviceSettingsTest(int argc, char *argv[]);
 
 bool GetEnableBlindSigning(void);
