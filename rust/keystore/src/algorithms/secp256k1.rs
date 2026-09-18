@@ -219,7 +219,10 @@ mod tests {
         for len in [0usize, 15, 17, 31, 33, 63, 65] {
             let seed: alloc::vec::Vec<u8> = (0..len).map(|i| (i as u8).wrapping_add(1)).collect();
             let result = get_master_fingerprint_by_seed(&seed);
-            assert!(matches!(result, Err(KeystoreError::SeedError(_))), "len {len}");
+            assert!(
+                matches!(result, Err(KeystoreError::SeedError(_))),
+                "len {len}"
+            );
         }
     }
 
