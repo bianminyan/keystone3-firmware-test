@@ -284,7 +284,7 @@ int32_t DeviceSettingsRecoverSetupStep(void)
             return ret;
         }
     }
-    FpWipeManageInfo();
+    FpClearManageInfo();
     SetSetupStep(SETUP_PAHSE_WELCOME);
     ret = SaveDeviceSettingsSync();
     if (ret != SUCCESS_CODE) {

@@ -55,7 +55,7 @@ void PowerOnSelfCheck(void)
         DrawStringOnLcd(190, 408, "Loading...", 0xFFFF, &openSans_24);
         uint32_t c = 0x666666;
         DrawStringOnLcd(170, 456, "About 1 minute", (uint16_t)(((c & 0xF80000) >> 16) | ((c & 0xFC00) >> 13) | ((c & 0x1C00) << 3) | ((c & 0xF8) << 5)), &openSans_20);
-        FpWipeManageInfo();
+        FpClearManageInfo();
         SE_WipeAll();
         DestroyAccount(0);
         DestroyAccount(1);

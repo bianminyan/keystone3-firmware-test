@@ -133,6 +133,10 @@ void SetShowPowerOffPage(bool isShow)
 {
 }
 
+void FpClearManageInfo(void)
+{
+}
+
 void FpWipeManageInfo(void)
 {
 }
