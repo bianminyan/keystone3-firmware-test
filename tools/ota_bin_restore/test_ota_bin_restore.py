@@ -55,6 +55,7 @@ class DecodeTests(unittest.TestCase):
         self.assertEqual(ota.decompress_chunk(raw_chunk(b'x', True)), b'x')
 
     def test_all_five_back_reference_forms_and_overlap(self):
+        # Three literals followed by an offset-3 match, then four literals.
         tokens = [(bytes([3 << 2]), 3),
                   (struct.pack('<H', (3 << 2) | 1), 3),
                   (struct.pack('<H', (3 << 6) | ((6 - 3) << 2) | 2), 6),
@@ -87,6 +88,7 @@ class DecodeTests(unittest.TestCase):
         cases = [compressed_chunk(b'\0' * 9, 10),
                  compressed_chunk(struct.pack('<I', 0x80000000) + b'12345', 20),
                  compressed_chunk(struct.pack('<I', 0x80000000) + b'12345EXTRA', 5)]
+        # A valid header cannot conceal a truncated four-byte match token.
         cases.append(b'\x4f' + struct.pack('<II', 17, 20)
                      + struct.pack('<I', 0x80000008) + b'abc\x03')
         for case in cases:

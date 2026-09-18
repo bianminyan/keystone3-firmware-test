@@ -1009,6 +1009,8 @@ pub unsafe extern "C" fn rust_encrypt_ufvk_blob(
     SimpleResponse::success(convert_c_char(value)).simple_c_ptr()
 }
 
+/// Account-auth-key-encrypted UFVK cache. The layout matches z2, but the z3 magic records that
+/// the caller supplied the account-scoped cache key rather than the legacy seed-derived key.
 #[no_mangle]
 pub unsafe extern "C" fn rust_encrypt_ufvk_blob_v3(
     data: PtrString,

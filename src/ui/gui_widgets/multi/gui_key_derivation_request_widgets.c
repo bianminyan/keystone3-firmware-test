@@ -595,6 +595,9 @@ static UREncodeResult *ModelGenerateSyncUR(void)
         GetAccountSeed(GetCurrentAccountIndex(), seed, password);
         ExtendedPublicKey xpubs[MAX_KEY_DERIVATION_SCHEMAS] = {0};
         SimpleResponse_c_char *pubkey[MAX_KEY_DERIVATION_SCHEMAS] = {0};
+        // Icarus master key derivation (PBKDF2, ~11s on this MCU) only depends on
+        // entropy/passphrase, not on the per-schema path, so compute it once and
+        // reuse it across all schemas instead of redoing it schemaCount times.
         char *icarusMasterKey = NULL;
         SimpleResponse_c_char *icarusMasterKeyResponse = NULL;
         for (size_t i = 0; i < schemaCount; i++) {

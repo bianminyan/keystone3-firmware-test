@@ -23,7 +23,12 @@ bool CheckAllZero(const uint8_t *array, uint32_t len);
 /// @brief Check whether value is an even-length hexadecimal string.
 /// @param expectedLen Required length, or zero to accept any supported length.
 bool IsHexStringWithLen(const char *value, size_t expectedLen);
+/// @brief Clear an explicitly sized sensitive buffer.
+/// @param value Writable buffer to clear. NULL is accepted.
+/// @param valueLen Exact number of bytes to clear.
 void ClearSensitiveBuffer(void *value, size_t valueLen);
+/// @brief Clear the contents of a sensitive null-terminated string.
+/// @param value Writable, null-terminated string to clear. NULL is accepted.
 void ClearSensitiveCString(char *value);
 void RemoveFormatChar(char *str);
 void ArrayRandom(char *words, char *out, int count);

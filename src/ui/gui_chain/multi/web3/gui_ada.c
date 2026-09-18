@@ -1516,14 +1516,14 @@ void GuiShowAdaTx(lv_obj_t *parent, void *totalData)
                              ? lv_tabview_add_tab(tabview, "Advanced")
                              : NULL;
     lv_obj_t *raw = lv_tabview_add_tab(tabview, "Raw");
-    lv_btnmatrix_set_btn_width(tabButtons, 0, 7);
-    lv_btnmatrix_set_btn_width(tabButtons, 1, 5);
-    lv_btnmatrix_set_btn_width(tabButtons, 2, 6);
+    lv_btnmatrix_set_btn_width(tabButtons, 0, 7); // Overview
+    lv_btnmatrix_set_btn_width(tabButtons, 1, 5); // Inputs
+    lv_btnmatrix_set_btn_width(tabButtons, 2, 6); // Outputs
     if (hasAdvanced) {
-        lv_btnmatrix_set_btn_width(tabButtons, 3, 7);
-        lv_btnmatrix_set_btn_width(tabButtons, 4, 3);
+        lv_btnmatrix_set_btn_width(tabButtons, 3, 7); // Advanced
+        lv_btnmatrix_set_btn_width(tabButtons, 4, 3); // Raw
     } else {
-        lv_btnmatrix_set_btn_width(tabButtons, 3, 3);
+        lv_btnmatrix_set_btn_width(tabButtons, 3, 3); // Raw
     }
     GuiAdaStyleTab(overview);
     GuiAdaStyleTab(inputs);
@@ -2084,6 +2084,7 @@ void GuiShowAdaSignTxHashDetails(lv_obj_t *parent, void *totalData)
     lv_obj_align_to(tx_hash_value, tx_hash_label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 8);
     lv_label_set_long_mode(tx_hash_value, LV_LABEL_LONG_WRAP);
 
+    // Blind-signing notice content
     lv_obj_t *tx_hash_notice_content = GuiCreateIllustrateLabel(
         tx_hash_card,
         "Blind signing: verify this hash with the software wallet before signing.");

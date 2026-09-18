@@ -21,6 +21,11 @@ use sui_transaction_types_core::{
     Argument, CallArg, Command, ProgrammableMoveCall, TransactionData, TransactionKind,
 };
 
+/// Object ID of the IOTA/Sui system package, in the same lowercase-hex form
+/// produced by `hex::encode`. Used to make sure a recognised stake call is
+/// really calling the system package and not an attacker-published module
+/// that merely reuses the `iota_system` name.
+/// https://github.com/iotaledger/iota/blob/a19d5701153d149eb06c076ed0828b4699b0dfa5/crates/iota-framework/packages/iota-system/Move.toml
 const IOTA_SYSTEM_PACKAGE_HEX: &str =
     "0000000000000000000000000000000000000000000000000000000000000003";
 
@@ -81,12 +86,17 @@ impl DisplayIotaIntentData {
     }
 
     pub fn with_personal_message_bytes(mut self, message: &[u8]) -> Self {
+        // These are the decoded BCS message bytes. Do not decode
+        // representations such as Base64 without an explicit protocol marker.
+        // Only printable ASCII is guaranteed to render unambiguously with the
+        // confirmation UI fonts; everything else is shown as raw hex.
         let display_message = core::str::from_utf8(message).ok().filter(|_| {
             message
                 .iter()
                 .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
         });
 
+        // SAFETY: `self.message` is null or was allocated by `convert_c_char` in `From<Intent>`.
         unsafe {
             free_ptr_string(self.message);
             free_ptr_string(self.details);
@@ -149,6 +159,20 @@ impl From<Intent> for DisplayIotaIntentData {
     }
 }
 
+/// Derives the Overview method/amount/recipient strictly from the `Command`
+/// graph — never from a guess about argument byte lengths. Only the two
+/// shapes IOTA's Overview screen actually supports are decoded:
+///   - Transfer: one `SplitCoins` off the gas coin feeding one
+///     `TransferObjects`, or a `TransferObjects([GasCoin], ..)` sending the
+///     whole gas balance.
+///   - Stake: a call to the real system package's `request_add_stake` (single
+///     coin, via `SplitCoins`) or `request_add_stake_mul_coin` (pre-owned
+///     coins, via `MakeMoveVec`) — the validator address is read from the
+///     call's own arguments, never guessed from unrelated inputs.
+/// Anything else (bridge, unrecognised MoveCalls, multi-leg transfers) leaves
+/// method null so the UI falls back to the Raw Data tab labelled as an
+/// unknown transaction, matching the Sui reference implementation's "never
+/// fabricate a summary" behaviour.
 fn extract_transaction_params(
     inputs: &Vec<CallArg>,
     commands: &Vec<Command>,
@@ -165,6 +189,8 @@ fn extract_transaction_params(
     let is_split_result = |arg: &Argument| {
         matches!(arg, Argument::Result(0)) || matches!(arg, Argument::NestedResult(0, 0))
     };
+    // Module name per `module iota_system::iota_system;`:
+    // https://github.com/iotaledger/iota/blob/a19d5701153d149eb06c076ed0828b4699b0dfa5/crates/iota-framework/packages/iota-system/sources/iota_system.move#L42
     let is_system_call = |call: &ProgrammableMoveCall, function: &str| {
         hex::encode(call.package.as_slice()) == IOTA_SYSTEM_PACKAGE_HEX
             && call.module.to_string() == "iota_system"
@@ -191,6 +217,8 @@ fn extract_transaction_params(
         }
     }
 
+    // A max transfer must be the entire PTB: transfer the gas coin itself to
+    // one address. Extra commands or an unreadable recipient make it unknown.
     if let [Command::TransferObjects(objects, target)] = commands.as_slice() {
         if matches!(objects.as_slice(), [Argument::GasCoin]) {
             if let Some(recipient_bytes) = pure_at(target, 32) {
@@ -204,6 +232,8 @@ fn extract_transaction_params(
         }
     }
 
+    // Stake, single coin: SplitCoins(GasCoin, [amount]) -> request_add_stake(state, coin, validator)
+    // https://github.com/iotaledger/iota/blob/a19d5701153d149eb06c076ed0828b4699b0dfa5/crates/iota-framework/packages/iota-system/sources/iota_system.move#L219-L227
     if let [Command::SplitCoins(Argument::GasCoin, split_amounts), Command::MoveCall(call)] =
         commands.as_slice()
     {
@@ -230,6 +260,19 @@ fn extract_transaction_params(
         }
     }
 
+    // Stake, multiple pre-owned coins: MakeMoveVec(coins) -> request_add_stake_mul_coin(state, coins, amount, validator).
+    // https://github.com/iotaledger/iota/blob/a19d5701153d149eb06c076ed0828b4699b0dfa5/crates/iota-framework/packages/iota-system/sources/iota_system.move#L241-L251
+    // The staked coins are existing owned objects, not `Pure` bytes, so their
+    // face value never appears in the transaction -- but `amount` is itself a
+    // Move-call argument, BCS-encoded as `Option<u64>` (1-byte tag, then the
+    // value if Some). `Some(n)` stakes exactly `n` and refunds the rest of
+    // the merged coins to the sender. `None` stakes their full combined
+    // balance, which cannot be determined from the object references, so it
+    // is left unrecognised rather than presenting a Stake overview without
+    // an amount. An invalid tag/length is likewise left unrecognised.
+    // Semantics per
+    // `extract_coin_balance`:
+    // https://github.com/iotaledger/iota/blob/a19d5701153d149eb06c076ed0828b4699b0dfa5/crates/iota-framework/packages/iota-system/sources/iota_system_state_inner.move#L1065-L1089
     if let [Command::MakeMoveVec(_, _), Command::MoveCall(call)] = commands.as_slice() {
         if is_system_call(call, "request_add_stake_mul_coin") {
             if let [_state, coins_arg, amount_arg, validator_arg] = call.arguments.as_slice() {
@@ -391,6 +434,7 @@ mod tests {
 
     #[test]
     fn parse_entry_passes_device_keys_and_returns_display_or_error() {
+        // Inspect the public repr(C) response layout just as the GUI caller does.
         #[repr(C)]
         struct ParseResponse {
             data: *mut DisplayIotaIntentData,
@@ -494,7 +538,7 @@ mod tests {
             "030000016162",
             "030000810061",
             "03000080",
-            "030000610062",
+            "030000610062", // A raw-format NUL message must not reach the display.
         ] {
             let fixture = RequestFixture::new(hex::decode(bytes).unwrap());
             unsafe {
@@ -551,7 +595,7 @@ mod tests {
                 CryptoKeyPath::from_path(path, Some([1, 2, 3, 4])).unwrap()
             ]);
         unsafe {
-            assert!(fixture.parse().is_err());
+            assert!(fixture.parse().is_err()); // The supplied address still belongs to account 0.
             fixture
                 .request
                 .set_addresses(Some(vec![hex::decode(&address[2..]).unwrap()]));
@@ -667,6 +711,12 @@ mod tests {
         }
     }
 
+    // `crate::bindings::GenerateTRNGRandomness` is only implemented in the
+    // firmware/simulator C sources, which `cargo test` never links against;
+    // without a definition, running these tests standalone fails to link.
+    // `#[no_mangle]` symbols are resolved globally by the linker regardless
+    // of which file defines them, so providing it here (test-only) is enough
+    // to satisfy the reference in `trng.rs` -- no other file needs to change.
     #[no_mangle]
     extern "C" fn GenerateTRNGRandomness(randomness: *mut u8, len: u8) -> i32 {
         unsafe {
@@ -675,6 +725,8 @@ mod tests {
         0
     }
 
+    /// The real IOTA/Sui system state object is a well-known shared object at
+    /// address 0x5, referenced the same way any other shared object is.
     fn system_state_object() -> CallArg {
         let mut id = [0u8; 32];
         id[31] = 5;
@@ -685,6 +737,7 @@ mod tests {
         })
     }
 
+    /// A real staked coin is an owned object reference, not raw `Pure` bytes.
     fn owned_coin_object(id_byte: u8) -> CallArg {
         let mut id = [0u8; 32];
         id[31] = id_byte;
@@ -878,9 +931,9 @@ mod tests {
     fn recognises_single_coin_stake() {
         let package = iota_system_package();
         let inputs = vec![
-            CallArg::Pure(Vec::new()),
-            CallArg::Pure(2_000_000_000u64.to_le_bytes().to_vec()),
-            CallArg::Pure([0xcc; 32].to_vec()),
+            CallArg::Pure(Vec::new()), // Input(0): unused system-state placeholder
+            CallArg::Pure(2_000_000_000u64.to_le_bytes().to_vec()), // Input(1): amount
+            CallArg::Pure([0xcc; 32].to_vec()), // Input(2): validator
         ];
         let commands = vec![
             Command::SplitCoins(Argument::GasCoin, vec![Argument::Input(1)]),
@@ -908,10 +961,10 @@ mod tests {
         let mut amount_bytes = vec![1u8];
         amount_bytes.extend_from_slice(&3_000_000_000u64.to_le_bytes());
         let inputs = vec![
-            system_state_object(),
-            owned_coin_object(0x01),
-            CallArg::Pure(amount_bytes),
-            CallArg::Pure([0xdd; 32].to_vec()),
+            system_state_object(),              // Input(0): system state (shared object)
+            owned_coin_object(0x01),            // Input(1): one of the coins being merged
+            CallArg::Pure(amount_bytes),        // Input(2): Some(3 IOTA)
+            CallArg::Pure([0xdd; 32].to_vec()), // Input(3): validator
         ];
         let commands = vec![
             Command::MakeMoveVec(None, vec![Argument::Input(1)]),
@@ -940,11 +993,14 @@ mod tests {
 
     #[test]
     fn rejects_multi_coin_stake_with_none_amount() {
+        // `None` means "stake the coins' full combined balance". Since the
+        // transaction only contains object references, the device cannot
+        // determine that balance and must fall back to Unknown/Raw Data.
         let package = iota_system_package();
         let inputs = vec![
             system_state_object(),
             owned_coin_object(0x02),
-            CallArg::Pure(vec![0u8]),
+            CallArg::Pure(vec![0u8]), // BCS None
             CallArg::Pure([0xee; 32].to_vec()),
         ];
         let commands = vec![
@@ -969,11 +1025,15 @@ mod tests {
 
     #[test]
     fn rejects_multi_coin_stake_with_malformed_amount_option() {
+        // Neither a valid BCS `Some(u64)` (9 bytes, tag 1) nor a valid `None`
+        // (1 byte, tag 0) -- e.g. a corrupted or attacker-crafted encoding.
+        // We can't tell what it means, so the whole call must be left
+        // unrecognised rather than shown as a Stake with a blank amount.
         let package = iota_system_package();
         let inputs = vec![
             system_state_object(),
             owned_coin_object(0x03),
-            CallArg::Pure(vec![7u8]),
+            CallArg::Pure(vec![7u8]), // invalid tag, not 0 or 1
             CallArg::Pure([0xff; 32].to_vec()),
         ];
         let commands = vec![
@@ -1040,7 +1100,7 @@ mod tests {
     fn rejects_transfer_target_that_is_not_a_32_byte_pure() {
         let inputs = vec![
             CallArg::Pure(1_000_000_000u64.to_le_bytes().to_vec()),
-            CallArg::Pure(vec![0xaa; 20]),
+            CallArg::Pure(vec![0xaa; 20]), // wrong length -- not a valid address
         ];
         let commands = vec![
             Command::SplitCoins(Argument::GasCoin, vec![Argument::Input(0)]),

@@ -84,6 +84,7 @@ static void AesDecryptBuffer(uint8_t *plain, uint32_t sz, uint8_t *cipher);
 static void InitBootParam(void);
 
 typedef struct {
+    // Reserved to preserve the encrypted boot-parameter layout.
     uint8_t reserve[16];
 
     // recovery mode switch

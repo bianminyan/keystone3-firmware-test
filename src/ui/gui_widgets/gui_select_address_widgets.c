@@ -92,6 +92,7 @@ static void ModelGetAddress(uint32_t index, AddressDataItem_t *item)
     switch (g_chainCoinType) {
 #ifdef WEB3_VERSION
     case CHAIN_XRP:
+        // The XRP getter takes a uint16_t; validate before conversion.
         if (index <= 200) {
             address = GuiGetXrpAddressByIndex(index);
         }
@@ -104,6 +105,7 @@ static void ModelGetAddress(uint32_t index, AddressDataItem_t *item)
         }
         break;
     case CHAIN_ATOM:
+        // Only the account index is displayed for Cosmos.
         valid = index <= GENERAL_ADDRESS_INDEX_MAX;
         break;
 #endif

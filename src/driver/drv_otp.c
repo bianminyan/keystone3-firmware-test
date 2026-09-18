@@ -11,7 +11,10 @@ void ReadOtpData(uint32_t addr, uint8_t *data, uint32_t len) PRIVILEGED_FUNCTION
 
 const uint32_t g_tamperFlag = 0x1234ABCD;
 
+/// @brief Read data from the MCU OTP/system-key window.
 /// @param[in] addr OTP address.
+/// @param[out] data Output buffer.
+/// @param[in] len Number of bytes to read.
 void ReadOtpData(uint32_t addr, uint8_t *data, uint32_t len)
 {
     uint32_t end = addr + len;

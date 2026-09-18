@@ -512,6 +512,7 @@ bool MpuSandboxGetEapduResult(uint32_t request_id, MpuSandboxEapduResult_t *resu
 
     memcpy(result, g_mpuSandboxRw.output.output, sizeof(*result));
     if (!IsEapduResultValid(result)) {
+        /* Keep the parser stopped; the caller handles this as a fail-closed fault. */
         return false;
     }
     if (result->payload_length > 0U) {

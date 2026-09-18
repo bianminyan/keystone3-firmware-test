@@ -111,6 +111,8 @@ def parse_command_line(command_line="cmd_tool --bpp 8 --size 12 --font Arial.ttf
         # font for U+0020, and a missing space is rendered as the missing-glyph
         # box between translated words.
         symbols_for_generation = unique_characters + " "
+        # Generate beside the destination and copy it only after conversion
+        # succeeds, so a missing or failing tool cannot destroy the current font.
         with tempfile.TemporaryDirectory(dir=output_file.parent) as temp_dir:
             temp_output = Path(temp_dir) / output_file.name
             build_command = build_lv_font_conv_command(

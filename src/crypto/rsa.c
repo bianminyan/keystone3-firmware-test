@@ -99,6 +99,7 @@ int32_t LoadAndValidateArKey(const char *password, Rsa_primes_t **out, SimpleRes
             break;
         }
         if (CheckAllFF(seHash, sizeof(seHash)) || CheckAllZero(seHash, sizeof(seHash))) {
+            // Register legacy records only after decryption, Flash hash and RSA checks pass.
             if (SetRsaPrimesHash(GetCurrentAccountIndex(), hash) != SUCCESS_CODE ||
                     GetRsaPrimesHash(GetCurrentAccountIndex(), seHash) != SUCCESS_CODE ||
                     timingsafe_bcmp(hash, seHash, sizeof(hash)) != 0) {

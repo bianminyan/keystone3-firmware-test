@@ -1,0 +1,3 @@
+# No third-party dependencies. The restore tool uses Python's standard library.
+# pyquicklz 1.4.1 was removed: its bundled QuickLZ 1.4.1 native decoder has
+# QLZ_MEMORY_SAFE disabled and is unsuitable for untrusted OTA input.

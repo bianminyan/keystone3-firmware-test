@@ -11,6 +11,7 @@ __FLASH_segment_end__ = 0x02000000;
 __SRAM_segment_start__ = ORIGIN(SRAM);
 __SRAM_segment_end__ = ORIGIN(SRAM) + LENGTH(SRAM);
 
+/* ARMv7-M MPU regions require power-of-two sizes and matching alignment. */
 __privileged_functions_start__ = 0x01080000;
 __privileged_functions_end__ = 0x010A0000;
 __privileged_data_start__ = ORIGIN(SRAM);

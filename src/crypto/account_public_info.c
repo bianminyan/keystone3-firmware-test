@@ -1173,6 +1173,8 @@ int32_t VerifyAccountPasswordAndDeriveZcashCacheKey(
 }
 
 /// @brief Check a stored Zcash UFVK blob has an acceptable layout.
+///        z2/z3 use magic || hex(IV_16) || hex(ciphertext); legacy blobs are pure hex and are
+///        accepted too so they flow into the compatibility path.
 /// @param[in] value Stored value, may be NULL.
 /// @return true if the blob layout is valid.
 static bool IsValidZcashUfvkBlob(const char *value)
@@ -1183,13 +1185,17 @@ static bool IsValidZcashUfvkBlob(const char *value)
     if (value[0] == 'z' && (value[1] == '2' || value[1] == '3')) {
         return IsHexStringWithLen(value + 2, 0);
     }
+    // Legacy pure-hex blob (accepted as a one-time migration marker).
     return IsHexStringWithLen(value, 0);
 }
 
+/// @brief Derive the Zcash UFVK from seed and encrypt it as z3 with a caller-provided cache key.
 /// @param[in] seed Wallet seed.
 /// @param[in] seedLen Seed length.
+/// @param[in] cacheKey Account-scoped key obtained only after successful PIN verification.
 /// @param[out] ufvkOut Optional, receives the plaintext UFVK. Can be NULL if not needed.
 /// @param[in] ufvkOutLen Size of ufvkOut.
+/// @return Encrypted z3 UFVK response, or a response carrying
 ///         the derivation/encryption error. Caller frees.
 static SimpleResponse_c_char *DeriveEncryptedZcashUFVKV3WithCacheKey(
     const uint8_t *seed, int seedLen, const uint8_t *cacheKey, char *ufvkOut,
@@ -1216,6 +1222,8 @@ static SimpleResponse_c_char *DeriveEncryptedZcashUFVKV3WithCacheKey(
     return encryptResult;
 }
 
+/// @brief Derive and encrypt the UFVK with the account-scoped key produced by a successful PIN
+///        verification. z3 can therefore be loaded without decrypting AccountSecret_t.
 static SimpleResponse_c_char *DeriveEncryptedZcashUFVKV3(
     uint8_t accountIndex, const uint8_t *seed, int seedLen, const char *password,
     char *ufvkOut, uint32_t ufvkOutLen)
@@ -1261,6 +1269,8 @@ static int32_t ReplaceStoredZcashUFVK(uint8_t accountIndex, const SimpleResponse
     return SUCCESS_CODE;
 }
 
+/// @brief One-time migration of a base wallet's legacy Zcash public info to z3 + SFP.
+///        The caller has already verified the PIN and loaded seed for this migration.
 int32_t MigrateLegacyZcashPublicInfoToV3(uint8_t accountIndex, uint8_t *seed, int seedLen,
                                         const uint8_t *cacheKey, char *ufvkOut,
                                         uint32_t ufvkOutLen)
@@ -1276,6 +1286,7 @@ int32_t MigrateLegacyZcashPublicInfoToV3(uint8_t accountIndex, uint8_t *seed, in
     if (encryptResult != NULL && encryptResult->error_code == 0) {
         ret = CalculateAndStoreZcashSFP(seed, seedLen);
         if (ret == SUCCESS_CODE) {
+            // ReplaceStoredZcashUFVK serializes the updated z3 and SFP together.
             ret = ReplaceStoredZcashUFVK(accountIndex, encryptResult);
         }
     } else if (encryptResult != NULL) {
@@ -1287,6 +1298,8 @@ int32_t MigrateLegacyZcashPublicInfoToV3(uint8_t accountIndex, uint8_t *seed, in
     return ret;
 }
 
+/// @brief Re-derive the Zcash UFVK after an account-key rotation, encrypt it as z3 with the
+///        newly verified account key, and persist it before the change-PIN transaction commits.
 int32_t RegenerateZcashUFVKV3(uint8_t accountIndex, const uint8_t *seed, int seedLen,
                               const char *password)
 {
@@ -1306,6 +1319,8 @@ int32_t RegenerateZcashUFVKV3(uint8_t accountIndex, const uint8_t *seed, int see
 #endif
 
 #ifndef BTC_ONLY
+/// @brief Recalculate the SFP for the loaded public info. Base-wallet public info is persisted;
+///        passphrase public info remains RAM-only.
 int32_t RegenerateAndStoreCurrentZcashSFP(uint8_t accountIndex, uint8_t *seed, int seedLen)
 {
     ASSERT(accountIndex <= 2);
@@ -2058,6 +2073,7 @@ int32_t MultiSigWalletGet(uint8_t accountIndex, const char *password, MultiSigWa
     return ret;
 }
 
+// recvIndex is an address index, not necessarily a cached account index (e.g. ADA).
 static bool IsReceiveIndexValid(const char *chainName, uint32_t index)
 {
 #ifdef WEB3_VERSION
@@ -2278,6 +2294,12 @@ uint32_t GetConnectWalletPathIndex(const char* walletName)
     char name[BUFFER_SIZE_32];
     strncpy_s(name, BUFFER_SIZE_32, walletName, BUFFER_SIZE_32);
     RemoveFormatChar(name);
+    // Only Solflare and Helium actually show the SOL derivation path picker
+    // (Jupiter/NuFi connect over USB with a fixed path, not this picker), so
+    // only they get the new default of the change/single-address path
+    // (SOLBip44Change = 2); every other wallet keeps its original default of
+    // 0. GetWalletNameByIndex(WALLET_LIST_HELIUM) returns "Helium", not the
+    // display table's "Helium Wallet" - that's the string that reaches here.
     int cmpResult = -1;
     uint32_t defaultIndex = 0;
     if ((strcmp_s(name, sizeof(name), "Solflare", &cmpResult) == EOK && cmpResult == 0) ||

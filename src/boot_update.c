@@ -57,6 +57,7 @@ static void Delay(uint32_t ms)
 int32_t UpdateBootFromFlash(void)
 {
     osKernelLock();
+    // Scheduling is locked: service the watchdog here only as upgrade work advances.
     WDT_ReloadCounter();
     int num = BinarySearchBootHead();
     printf("num = %d\n", num);

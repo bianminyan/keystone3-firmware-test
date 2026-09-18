@@ -913,6 +913,8 @@ int32_t SetupZcashCache(uint8_t accountIndex, const char* password,
                 }
             }
         } else {
+            // z2 and pure-hex legacy blobs are migration markers only. Seed is authoritative;
+            // rebuild once and persist z3 + SFP together instead of decrypting or rewriting z2.
             if (GetIsTempAccount()) {
                 ret = ERR_GENERAL_FAIL;
                 break;

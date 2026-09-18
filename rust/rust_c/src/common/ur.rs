@@ -911,6 +911,9 @@ fn sandbox_cbor_error(status: sandbox_parser::ValidationStatus) -> URError {
 }
 
 fn validate_single_part_cbor(value: &str) -> Result<(), URError> {
+    // Defense in depth after the production ingress has validated the complete
+    // UR in the MPU sandbox. Do not re-enter the single-slot sandbox here: the
+    // USB EAPDU result remains owned until its business handler returns.
     let (kind, cbor) =
         ur::decode(value).map_err(|error| URError::UrDecodeError(error.to_string()))?;
     if kind != ur::ur::Kind::SinglePart {

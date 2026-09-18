@@ -97,6 +97,12 @@ LINKER_BOUNDARY_SYMBOLS = {
 
 
 def read_syscall_symbols(objdump: str, elf: Path) -> dict[int, list[str]]:
+    """Map syscall-section addresses to real symbol names.
+
+    objdump -d annotates a call with the nearest preceding symbol, which can
+    resolve to a linker boundary symbol sharing the veneer address. The symbol
+    table lists every symbol, so exact-address lookups stay accurate.
+    """
     output = run_objdump(objdump, "-t", str(elf))
     symbols: dict[int, list[str]] = {}
     for line in output.splitlines():

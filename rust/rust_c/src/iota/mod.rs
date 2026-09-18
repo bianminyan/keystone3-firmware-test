@@ -34,6 +34,8 @@ fn extract_personal_message_bytes(intent: &[u8]) -> Result<Vec<u8>, SuiError> {
             "Invalid personal message intent".to_string(),
         ));
     }
+    // The official IOTA SDK and Keystone signer encode the body as a BCS byte vector.
+    // A decoding failure must never switch to a different interpretation of the bytes.
     bcs::from_bytes::<IntentMessage<PersonalMessage>>(intent)
         .map(|message| message.value.message)
         .map_err(SuiError::from)
@@ -103,6 +105,7 @@ unsafe fn parse_iota_request(
     if sign_data.first() == Some(&3) {
         let message = extract_personal_message_bytes(&sign_data)?;
         let path = signing_path(sign_request)?;
+        // Keys and paths come from the device account table, never from the QR request.
         let key = keys
             .iter()
             .find(|key| {

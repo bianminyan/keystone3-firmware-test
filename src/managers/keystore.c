@@ -298,6 +298,9 @@ int32_t ChangePassword(uint8_t accountIndex, const char *newPassword, const char
     AccountSecret_t accountSecret;
 
     ASSERT(accountIndex <= 2);
+    // ChangePassword updates the persistent base-account public-info record. A temp/passphrase
+    // record, or a non-current account, cannot be updated safely through the current in-memory view.
+    // Reject before changing any SE state so an existing z3 blob can never be stranded under the old key.
     if (accountIndex != GetCurrentAccountIndex() || GetIsTempAccount()) {
         printf("change pin requires the current base account\r\n");
         return ERR_GENERAL_FAIL;
@@ -317,13 +320,16 @@ int32_t ChangePassword(uint8_t accountIndex, const char *newPassword, const char
         ret = SaveAccountSecret(accountIndex, &accountSecret, newPassword, false);
         CHECK_ERRCODE_BREAK("save account secret", ret);   // on failure: status stays CHANGING_PIN -> boot erases
 #ifdef CYPHERPUNK_VERSION
+        // Re-provisioning rotates the account blob auth key on both SE generations. Re-encrypt z3 with
+        // the new key before committing CREATED; failure leaves CHANGING_PIN so boot never accepts an
+        // account whose public cache is still bound to the old key.
         if (IsZcashSupportedForCurrentMnemonic()) {
             int seedLen = GetMnemonicType() == MNEMONIC_TYPE_SLIP39 ? accountSecret.entropyLen : sizeof(accountSecret.seed);
             ret = RegenerateZcashUFVKV3(accountIndex, accountSecret.seed, seedLen, newPassword);
             CHECK_ERRCODE_BREAK("regenerate zcash z3 ufvk", ret);
         }
 #endif
-        ret = SE_SetAccountStatus(accountIndex, ACCOUNT_STATUS_CREATED);
+        ret = SE_SetAccountStatus(accountIndex, ACCOUNT_STATUS_CREATED);   // seed re-wrap + z3 committed
         CHECK_ERRCODE_BREAK("set created status", ret);
     } while (0);
     // SetNewKeyPieceToSE consumes the arm on the normal path; disarm here too so a change-PIN never
@@ -571,6 +577,10 @@ int32_t SetPassphrase(uint8_t accountIndex, const char *passphrase, const char *
     CLEAR_ARRAY(newMfp);
 
     if (ret != SUCCESS_CODE) {
+        // Passphrase public info and Zcash runtime state are RAM-only. Do not try to repair a
+        // partially changed session in place: erase all passphrase inputs, make the session
+        // unusable, and reboot. SetPassphraseMark() is the commit point above, so persistent
+        // state still describes the previous wallet when any earlier step fails.
         ClearAccountPassphrase(accountIndex);
         ClearSecretCache();
         LogoutCurrentAccount();
@@ -763,8 +773,13 @@ static int32_t SaveAccountSecret(uint8_t accountIndex, const AccountSecret_t *ac
 }
 
 #ifndef COMPILE_SIMULATOR
+/// @brief Verify the PIN-gated account blob without decrypting its secret fields.
 /// @param[in] accountIndex Account index, 0~2.
 /// @param[in] password Password string.
+/// @param[out] verified Authenticated ciphertext for a subsequent explicit decrypt or immediate clear.
+/// @param[in] subkeyDomain Optional fixed-size business-key domain; NULL when no subkey is needed.
+/// @param[out] derivedKeyOut Optional derived business key; the raw accountBlobAuthKey never leaves
+///             this function.
 /// @return err code.
 static int32_t VerifyAccountBlobFromSE(uint8_t accountIndex, const char *password,
                                        VerifiedAccountBlob_t *verified,
@@ -822,6 +837,8 @@ static int32_t VerifyAccountBlobFromSE(uint8_t accountIndex, const char *passwor
                     ACCOUNT_TOTAL_LEN - HMAC_LEN, hmacCalc);
         KEYSTORE_PRINT_ARRAY("accountEncryptData", accountEncryptData, ACCOUNT_TOTAL_LEN);
         KEYSTORE_PRINT_ARRAY("accountBlobAuthKey", accountBlobAuthKey, AUTH_KEY_LEN);
+        // constant-time compare: memcmp exits at the first differing byte and leaks how many
+        // leading bytes of the stored HMAC a wrong-password attempt matched.
         ret = ((timingsafe_bcmp(hmacCalc, hmac, HMAC_LEN) == 0) ? SUCCESS_CODE : ERR_KEYSTORE_AUTH);
         CHECK_ERRCODE_BREAK("check hmac", ret);
         // PIN proven correct here -> notify the SE backend of a successful unlock (gen-1: no-op).
@@ -847,6 +864,7 @@ static int32_t VerifyAccountBlobFromSE(uint8_t accountIndex, const char *passwor
     return ret;
 }
 
+/// @brief Decrypt a blob whose PIN and HMAC were already verified.
 static int32_t DecryptAccountBlob(const VerifiedAccountBlob_t *verified, AccountSecret_t *accountSecret)
 {
     uint8_t encryptKey[AES_KEY_LEN];

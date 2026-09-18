@@ -359,6 +359,8 @@ static int32_t SetSeHash(uint8_t page, const uint8_t *info)
     return ret;
 }
 
+// A blank SE page cannot authenticate Flash data. Verification must not
+// establish a baseline from unverified Flash content.
 static bool VerifySeHash(uint8_t page, uint8_t *info)
 {
     uint8_t data[SE_HASH_LEN] = {0};

@@ -115,6 +115,8 @@ static void LockScreen(void)
     }
 
     // Session boundary: the device is locking (inactivity timer or power button both reach here).
+    // Disarm any pending provision recovery, and wipe the transient secret cache (PIN / passphrase /
+    // mnemonic entry buffers) so no plaintext secret survives across the lock screen.
     SE_DisarmProvisionRecovery();
     ClearSecretCache();
 
