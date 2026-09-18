@@ -1,0 +1,87 @@
+steps:
+  - input: "Select Build Variants"
+    if: build.message == "build-firmware" || build.message == "build-firmware-with-boot"
+    key: "select_build_variants"
+    fields:
+      - select: "Environment"
+        key: "environment"
+        options:
+          - label: "Dev(with dev log)"
+            value: "dev"
+          - label: "Production(no dev log)"
+            value: "production"
+
+  - input: "Select Firmware Variants"
+    if: build.message == "build-firmware" || build.message == "build-firmware-with-boot"
+    depends_on: "select_build_variants"
+    key: "select_firmware_variants"
+    fields:
+      - select: "Firmware Variants"
+        key: "firmware_variants"
+        multiple: true
+        options:
+          - label: "Web3"
+            value: "web3"
+          - label: "BTC Only"
+            value: "btc_only"
+          - label: "Cypherpunk"
+            value: "cypherpunk"
+
+  - input: "Select CI Debug Firmware Variants"
+    if: build.message == "build-firmware-ci-debug"
+    key: "select_ci_debug_firmware_variants"
+    fields:
+      - select: "Firmware Variants"
+        key: "firmware_variants"
+        multiple: true
+        options:
+          - label: "Web3"
+            value: "web3"
+          - label: "BTC Only"
+            value: "btc_only"
+          - label: "Cypherpunk"
+            value: "cypherpunk"
+
+  - input: "With Boot"
+    if: build.message == "build-firmware-with-boot"
+    depends_on: "select_firmware_variants"
+    key: "select_build_boot"
+    fields:
+      - select: "With Boot"
+        key: "build_boot"
+        options:
+          - label: "Yes"
+            value: "true"
+          - label: "No"
+            value: "false"
+
+  - input: "Authorize Firmware Build"
+    if: build.message == "build-firmware" || build.message == "build-firmware-with-boot"
+    key: "authorize_firmware_build"
+    depends_on:
+      - "select_firmware_variants"
+      - "select_build_boot"
+    prompt: |
+      Sign this exact message with an authorized P-256 private key:
+
+      "keystone3-firmware-build:v2:p256:${BUILDKITE_PIPELINE_SLUG}:${BUILDKITE_BUILD_ID}:${BUILDKITE_COMMIT}:arn:aws:kms:eu-central-1:623147552995:key/4860713c-69a4-4ee1-8e85-fd09a7d1e3a5:arn:aws:iam::623147552995:role/buildkite_agent_keystone3_production_test_build_role"
+    fields:
+      - text: "Base64 Signature"
+        key: "build_approval_signature"
+        hint: "Use the P-256 build-approval private key to sign this message"
+        format: "[A-Za-z0-9+/]+={0,2}"
+
+  - label: "Authorize and prepare firmware build"
+    if: build.message == "build-firmware" || build.message == "build-firmware-with-boot"
+    key: "grant_kms_signing_access"
+    depends_on: "authorize_firmware_build"
+    command: "bash ci/ci/authorize-and-prepare-build.sh"
+    agents:
+      queue: keystone-g3/production-test-build
+
+  - label: "Prepare CI debug build"
+    if: build.message == "build-firmware-ci-debug"
+    depends_on: "select_ci_debug_firmware_variants"
+    command: "ci/ci/prepare-build.sh"
+    agents:
+      queue: keystone-g3/production-test-build
