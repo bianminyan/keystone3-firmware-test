@@ -52,6 +52,7 @@
 #define SLIP39_NEED_COMPARE_HEAD_LEN            (3 * sizeof(uint16_t))
 
 int Slip39OneSliceCheck(char *wordsList, uint8_t wordCnt, uint16_t id, uint8_t eb, uint8_t ie, uint8_t *threshold);
+// Returns SLIP39_OK on success or a negative error code; threshold is set only on success.
 int Slip39CheckFirstWordList(char *wordsList, uint8_t wordCnt, uint8_t *threshold);
 int GetSlip39MnemonicsWords(uint8_t *masterSecret, uint8_t *ems, uint8_t wordCnt, uint8_t memberCnt, uint8_t memberThreshold,
                             char *wordsList[], uint16_t *id, bool *eb, uint8_t *ie);
