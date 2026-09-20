@@ -728,11 +728,18 @@ impl ParsedSolanaTx {
         display_type: &SolanaTxDisplayType,
         details: &[SolanaDetail],
     ) -> Result<Vec<ProgramOverviewGeneral>> {
-        if matches!(
-            display_type,
-            SolanaTxDisplayType::General | SolanaTxDisplayType::Unknown
-        ) {
+        if matches!(display_type, SolanaTxDisplayType::General) {
             return Ok(Vec::new());
+        }
+        if matches!(display_type, SolanaTxDisplayType::Unknown) {
+            // Raw instruction review already includes every instruction, but
+            // V1 message configuration is metadata and needs its own card.
+            let config = details
+                .iter()
+                .filter(|detail| detail.common.program == "TransactionConfig")
+                .cloned()
+                .collect::<Vec<_>>();
+            return Self::build_general_items(&config, None);
         }
         Self::build_general_items(details, Some(display_type))
     }

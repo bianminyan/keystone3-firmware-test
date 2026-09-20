@@ -213,6 +213,61 @@ mod tests {
     }
 
     #[test]
+    fn raw_squads_review_preserves_message_config() {
+        use crate::parser::overview::SolanaOverview;
+        let squads: [u8; 32] =
+            bitcoin::base58::decode("SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf")
+                .unwrap()
+                .try_into()
+                .unwrap();
+        let activate = Instruction {
+            program_index: 3,
+            account_indexes: vec![],
+            data: hex::decode("0b225cf89a1b336a").unwrap(),
+        };
+        for mask in [0u32, 31] {
+            let mut config = Vec::new();
+            if mask != 0 {
+                config.extend(123456789u64.to_le_bytes());
+                config.extend(200000u32.to_le_bytes());
+                config.extend(65536u32.to_le_bytes());
+                config.extend(65536u32.to_le_bytes());
+            }
+            let instructions = [activate.clone(), transfer()];
+            let raw = encode(
+                mask,
+                &config,
+                &[[1; 32], [2; 32], [0; 32], squads],
+                &instructions,
+            );
+            let parsed = parse(&raw).unwrap();
+            let SolanaOverview::Instructions(overview) = &parsed.overview else {
+                panic!("Squads with a transfer must retain raw review");
+            };
+            assert_eq!(overview.overview_instructions.len(), instructions.len());
+            for (shown, original) in overview.overview_instructions.iter().zip(&instructions) {
+                assert_eq!(shown.data, bitcoin::base58::encode(&original.data));
+            }
+            assert!(parsed.overview_order.is_empty());
+            assert_eq!(parsed.additional_overviews.len(), 1);
+            let metadata = &parsed.additional_overviews[0];
+            assert_eq!(metadata.program, "TransactionConfig");
+            assert_eq!(metadata.instruction_index, 0);
+            let expected = if mask == 0 {
+                "Priority Fee: 0 lamports"
+            } else {
+                "Priority Fee: 123456789 lamports"
+            };
+            assert!(metadata.memo.contains(expected));
+            if mask != 0 {
+                assert!(metadata.memo.contains("200000"));
+                assert!(metadata.memo.contains("65536"));
+            }
+            crate::message_json::tests::assert_json_roundtrip(&raw, &parsed.detail);
+        }
+    }
+
+    #[test]
     fn transfer_and_defaults_are_reviewed() {
         let raw = sample();
         assert_eq!(classify_payload(&raw), SolanaPayloadType::Transaction);

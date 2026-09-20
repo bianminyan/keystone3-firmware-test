@@ -1456,9 +1456,10 @@ static void GuiShowSolTxInstructionsOverview(lv_obj_t *parent, PtrT_DisplaySolan
     lv_obj_set_style_text_opa(noticeContent, 144, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_align_to(noticeContent, iconNoticeContainer, LV_ALIGN_OUT_BOTTOM_LEFT, 24, 10);
 
-    // get the height of the notice container
-    lv_obj_update_layout(noticeContainer);
-    int containerYOffset = lv_obj_get_height(noticeContainer) + 16; // set padding between containers
+    // Keep message-level configuration above the raw instructions.
+    lv_obj_t *lastView = GuiShowSolTxGeneralOverview(parent, overviewData, noticeContainer);
+    lv_obj_update_layout(parent);
+    int containerYOffset = lv_obj_get_y(lastView) + lv_obj_get_height(lastView) + 16;
     for (int i = 0; i < overview_instructions->size; i++) {
         // container will auto adjust height
         lv_obj_t *container = GuiCreateContainerWithParent(parent, SOL_COMPONENT_WIDTH, LV_SIZE_CONTENT);
