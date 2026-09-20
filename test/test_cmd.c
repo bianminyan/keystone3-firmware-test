@@ -54,6 +54,7 @@
 #include "presetting.h"
 #include "usb_task.h"
 #include "device_setting.h"
+#include "gui_model.h"
 
 #define CMD_MAX_ARGC                                16
 #define DEFAULT_TEST_BUFF_LEN                       1024
@@ -103,6 +104,7 @@ static void ETHDBContractsTest(int argc, char *argv[]);
 static void BackgroundTestFunc(int argc, char *argv[]);
 static void GetReceiveAddress(int argc, char *argv[]);
 static void AccountPublicInfoTestFunc(int argc, char *argv[]);
+static void MigrationTestFunc(int argc, char *argv[]);
 static void FingerTestFunc(int argc, char *argv[]);
 static void MotorTestFunc(int argc, char *argv[]);
 static void LcdTestFunc(int argc, char *argv[]);
@@ -243,6 +245,7 @@ const static UartTestCmdItem_t g_uartTestCmdTable[] = {
     {"background test:", BackgroundTestFunc},
     {"get receive address:", GetReceiveAddress},
     {"account public info test:", AccountPublicInfoTestFunc},
+    {"migration test:", MigrationTestFunc},
     {"finger test:", FingerTestFunc},
     {"motor:", MotorTestFunc},
     {"lcd:", LcdTestFunc},
@@ -913,6 +916,34 @@ static void GetReceiveAddress(int argc, char *argv[])
 static void AccountPublicInfoTestFunc(int argc, char *argv[])
 {
     AccountPublicInfoTest(argc, argv);
+}
+
+
+static void MigrationTestFunc(int argc, char *argv[])
+{
+    if (argc < 1) {
+        printf("input err!\r\n");
+        return;
+    }
+    if (strcmp(argv[0], "ar_setup") == 0) {
+#ifdef WEB3_VERSION
+        VALUE_CHECK(argc, 2);
+        uint8_t accountIndex = 0;
+        int32_t ret = VerifyPasswordAndLogin(&accountIndex, argv[1]);
+        if (ret == SUCCESS_CODE) {
+            SecretCacheSetPassword(argv[1]);
+            ret = RsaGenerateKeyPair(false);
+        }
+        printf("MigrationArSetup=%d,accountIndex=%d\r\n", ret, accountIndex);
+#else
+        printf("MigrationArSetup=-1,accountIndex=0\r\n");
+#endif
+    } else if (strcmp(argv[0], "reboot") == 0) {
+        printf("MigrationReboot=0\r\n");
+        SystemReboot();
+    } else {
+        printf("unsupported migration test: %s\r\n", argv[0]);
+    }
 }
 
 static void FingerTestFunc(int argc, char *argv[])
