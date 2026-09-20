@@ -39,6 +39,51 @@ mod fixture_tests {
     use super::*;
 
     #[test]
+    fn squads_no_argument_trailing_bytes_rejected_at_final_signing() {
+        let seed = hex::decode("5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4").unwrap();
+        let path = "m/44'/501'/0'";
+        let signer = app_solana::get_public_key(&seed, &path.to_string()).unwrap();
+        let program =
+            bitcoin::base58::decode("SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf").unwrap();
+        for discriminator in ["0b225cf89a1b336a", "c208a15799a419ab"] {
+            for suffix in [&[][..], &[0][..], &[1, 2, 3][..]] {
+                let mut data = hex::decode(discriminator).unwrap();
+                data.extend(suffix);
+                let mut raw = alloc::vec![1, 0, 1, 2];
+                raw.extend(&signer);
+                raw.extend(&program);
+                raw.extend([7; 32]);
+                raw.extend([1, 1, 0, data.len() as u8]);
+                raw.extend(data);
+                // Valid framing ensures rejection is caused by instruction
+                // semantics, not by a truncated transaction or wrong signer.
+                assert!(app_solana::message::Message::read_exact(&mut raw.clone()).is_ok());
+                let mut request = SolSignRequest::new(
+                    None,
+                    raw.clone(),
+                    ur_registry::crypto_key_path::CryptoKeyPath::from_path(
+                        path.to_string(),
+                        Some([0x73, 0xc5, 0xda, 0x0a]),
+                    )
+                    .unwrap(),
+                    None,
+                    None,
+                    SignType::Transaction,
+                );
+                assert_eq!(app_solana::parse(&raw).is_ok(), suffix.is_empty());
+                unsafe {
+                    let result = build_sign_result(&mut request as *mut _ as PtrUR, &seed);
+                    if suffix.is_empty() {
+                        assert!(result.is_ok());
+                    } else {
+                        assert!(matches!(result, Err(SolanaError::ProgramError(_))));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn v1_security_checks_apply_at_final_signing() {
         let seed = hex::decode("5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4").unwrap();
         let dataset: serde_json::Value =

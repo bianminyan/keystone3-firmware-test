@@ -125,6 +125,9 @@ impl Dispatch for SquadsInstructions {
             }
             "0b225cf89a1b336a" => {
                 // sighash(SIGHASH_GLOBAL_NAMESPACE, "proposal_activate")
+                if !ix_data.is_empty() {
+                    return Err(SquadsV4Error::InvalidInstruction.into());
+                }
                 Ok(SquadsInstructions::ProposalActivate)
             }
             "9025a488bcd82af8" => {
@@ -158,6 +161,9 @@ impl Dispatch for SquadsInstructions {
             }
             "c208a15799a419ab" => {
                 // sighash(SIGHASH_GLOBAL_NAMESPACE,VaultTransactionExecute)
+                if !ix_data.is_empty() {
+                    return Err(SquadsV4Error::InvalidInstruction.into());
+                }
                 Ok(SquadsInstructions::VaultTransactionExecute)
             }
             _ => Err(SquadsV4Error::UnknownSquadV4Instruction.into()),
@@ -171,6 +177,22 @@ mod tests {
     use crate::solana_lib::utils::{sighash, SIGHASH_GLOBAL_NAMESPACE};
 
     use super::*;
+
+    #[test]
+    fn no_argument_instructions_reject_trailing_bytes() {
+        for discriminator in ["0b225cf89a1b336a", "c208a15799a419ab"] {
+            let data = hex::decode(discriminator).unwrap();
+            assert!(SquadsInstructions::dispatch(&data).is_ok());
+            for length in 0..8 {
+                assert!(SquadsInstructions::dispatch(&data[..length]).is_err());
+            }
+            for suffix in [&[0][..], &[1, 2, 3][..]] {
+                let mut malformed = data.clone();
+                malformed.extend(suffix);
+                assert!(SquadsInstructions::dispatch(&malformed).is_err());
+            }
+        }
+    }
 
     #[test]
     fn test_parse_instruction_data() {
