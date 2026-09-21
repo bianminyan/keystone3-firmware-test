@@ -32,6 +32,7 @@ class TronAttachedAssetTests(unittest.TestCase):
                     self.assertTrue({"GetTrxValue", "GetTrxValueRaw"} & getters)
                     self.assertEqual(tab["children"][0]["exist_func"], "GetTrxContractWarningExist")
                     if tab["tab_name"] == "Details":
+                        self.assertIn("GetTrxRefBlockNum", getters)
                         data = next(n for n in items if n.get("text_func") == "GetTrxCallData")
                         self.assertEqual(data["type"], "paged_text")
                         self.assertEqual(data["text_len_func"], "GetTrxCallDataLen")
@@ -115,6 +116,12 @@ int main(void) {
         end = source.index("\nvoid TrxCheckVault", start)
         getters = source[start:end]
         fields = re.findall(r"DEFINE_TRX_DETAIL_GETTER\(\w+, (\w+)\)", getters)
+        mapping_source = (ROOT / "src/ui/gui_analyze/multi/web3/gui_general_analyze.c").read_text()
+        mapping = re.search(r"static GetLabelDataFunc GuiTrxTextFuncGet\(char \*type\)\n\{.*?\n\}",
+                            mapping_source, re.S)[0]
+        implemented = set(re.findall(r"DEFINE_TRX_DETAIL_GETTER\((\w+),", getters))
+        stubs = "\n".join("static void " + name + "(void *out, void *data, uint32_t len) {}"
+                          for name in sorted(set(re.findall(r"return (Get\w+);", mapping)) - implemented))
         harness = r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -123,18 +130,20 @@ int main(void) {
 #include <string.h>
 typedef struct { FIELDS } DisplayTronDetail;
 typedef struct { DisplayTronDetail *detail; } DisplayTron;
+typedef void (*GetLabelDataFunc)(void *, void *, uint32_t);
 static void strcpy_s(char *dest, size_t size, const char *source) {
     assert(strlen(source) < size);
     memcpy(dest, source, strlen(source) + 1);
 }
-'''.replace("FIELDS", "".join("const char *" + f + ";" for f in fields)) + getters + r'''
+'''.replace("FIELDS", "".join("const char *" + f + ";" for f in fields)) + getters + stubs + mapping + r'''
 int main(void) {
     char data[8195];
     memset(data, 'a', sizeof(data) - 1);
     data[0] = '0'; data[1] = 'x'; data[sizeof(data) - 1] = 0;
     DisplayTronDetail detail = {
         .call_value = "1000000 TRX", .call_token_value = "9223372036854775807",
-        .token_id = "1000001", .call_data = data, .contract_warning = "Unknown call"
+        .token_id = "1000001", .call_data = data, .contract_warning = "Unknown call",
+        .ref_block_num = "9223372036854775807", .ref_block_bytes = "0001"
     };
     DisplayTron tx = {&detail};
     char text[64];
@@ -144,6 +153,10 @@ int main(void) {
     assert(strcmp(text, detail.call_token_value) == 0);
     GetTrxTokenId(text, &tx, sizeof(text));
     assert(strcmp(text, detail.token_id) == 0);
+    GuiTrxTextFuncGet("GetTrxRefBlockNum")(text, &tx, sizeof(text));
+    assert(strcmp(text, detail.ref_block_num) == 0);
+    GuiTrxTextFuncGet("GetTrxRefBlockBytes")(text, &tx, sizeof(text));
+    assert(strcmp(text, detail.ref_block_bytes) == 0);
     assert(GetTrxAttachedTokenExist(NULL, &tx));
     assert(GetTrxContractWarningExist(NULL, &tx));
     int size = GetTrxCallDataLen(&tx);

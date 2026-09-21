@@ -27,6 +27,7 @@ int GetTrxMemoHexLen(void *param);
 void GetTrxMemoHash(void *indata, void *param, uint32_t maxLen);
 void GetTrxFeeLimit(void *indata, void *param, uint32_t maxLen);
 void GetTrxTimestamp(void *indata, void *param, uint32_t maxLen);
+void GetTrxRefBlockNum(void *indata, void *param, uint32_t maxLen);
 void GetTrxRefBlockBytes(void *indata, void *param, uint32_t maxLen);
 void GetTrxRefBlockHash(void *indata, void *param, uint32_t maxLen);
 void GetTrxPermissionId(void *indata, void *param, uint32_t maxLen);

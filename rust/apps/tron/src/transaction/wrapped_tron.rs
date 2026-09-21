@@ -42,6 +42,7 @@ pub struct WrappedTron {
     pub(crate) memo_hash: String,
     pub(crate) timestamp: String,
     pub(crate) expiration: String,
+    pub(crate) ref_block_num: String,
     pub(crate) ref_block_bytes: String,
     pub(crate) ref_block_hash: String,
     pub(crate) permission_id: String,
@@ -131,6 +132,15 @@ fn format_decimal_units(raw: &str, decimals: u8) -> Result<String> {
 
 impl WrappedTron {
     pub fn from_raw_transaction(raw_tx: Transaction, path: String) -> Result<Self> {
+        if let Some(raw) = raw_tx.raw_data.as_ref() {
+            crate::validate_sign_data_len(raw.encoded_len())?;
+            if !raw.auths.is_empty() || !raw.scripts.is_empty() {
+                return Err(invalid_raw("unsupported TRON auths or scripts"));
+            }
+            if raw.ref_block_num < 0 {
+                return Err(invalid_raw("negative ref block number"));
+            }
+        }
         let path_parts = path.split('/').collect::<Vec<&str>>();
         crate::check_hd_path!(path_parts)?;
         let mut instance = Self {
@@ -152,6 +162,7 @@ impl WrappedTron {
             memo_hash: String::new(),
             timestamp: String::new(),
             expiration: String::new(),
+            ref_block_num: String::new(),
             ref_block_bytes: String::new(),
             ref_block_hash: String::new(),
             permission_id: String::new(),
@@ -187,6 +198,7 @@ impl WrappedTron {
         instance.memo_hash = hex::encode(hashing::sha256(&raw.data));
         instance.timestamp = raw.timestamp.to_string();
         instance.expiration = raw.expiration.to_string();
+        instance.ref_block_num = raw.ref_block_num.to_string();
         instance.ref_block_bytes = hex::encode(&raw.ref_block_bytes);
         instance.ref_block_hash = hex::encode(&raw.ref_block_hash);
         let raw_bytes = raw.encode_to_vec();
@@ -557,6 +569,7 @@ impl WrappedTron {
         }
         match tx {
             TronTx(tx) => {
+                crate::validate_sign_data_len(tx.encoded_len())?;
                 let mut tron_tx = if tx.contract_address.is_empty() {
                     Self::build_transfer_tx(tx)
                 } else {
@@ -656,6 +669,93 @@ mod tests {
         data
     }
 
+    fn review_limit_raw(data_len: usize, memo_len: usize) -> transaction::Raw {
+        let mut tx = valid_trigger_transaction(vec![0xab; data_len]);
+        let raw = tx.raw_data.as_mut().unwrap();
+        raw.data = vec![b'a'; memo_len];
+        let param = raw.contract[0].parameter.as_mut().unwrap();
+        let mut ct = TriggerSmartContract::decode(param.value.as_slice()).unwrap();
+        ct.owner_address =
+            bitcoin::base58::decode_check("TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH").unwrap();
+        param.value = ct.encode_to_vec();
+        tx.raw_data.unwrap()
+    }
+
+    fn assert_raw_rejected(raw: transaction::Raw, reason: &str) {
+        let bytes = raw.encode_to_vec();
+        let path = "m/44'/195'/0'/0/0".to_string();
+        let xpub = "xpub6D1AabNHCupeiLM65ZR9UStMhJ1vCpyV4XbZdyhMZBiJXALQtmn9p42VTQckoHVn8WNqS7dqnJokZHAHcHGoaQgmv8D45oNUKx6DZMNZBCd";
+        let seed = hex::decode("5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4").unwrap();
+        assert!(crate::parse_tx_request(&bytes, &path)
+            .unwrap_err()
+            .to_string()
+            .contains(reason));
+        assert!(crate::check_tx_request(&bytes, &path, xpub)
+            .unwrap_err()
+            .to_string()
+            .contains(reason));
+        assert!(crate::sign_tx_request(&bytes, &path, &seed)
+            .unwrap_err()
+            .to_string()
+            .contains(reason));
+    }
+
+    #[test]
+    fn bounds_total_raw_bytes_including_memo_and_calldata() {
+        let path = "m/44'/195'/0'/0/0".to_string();
+        // Large memo and calldata share one total budget.
+        let raw = review_limit_raw(9 * 1024, 2 * 1024);
+        let parsed = crate::parse_tx_request(&raw.encode_to_vec(), &path).unwrap();
+        assert_eq!(parsed.detail.memo_hex.len(), 4 * 1024);
+        assert_eq!(parsed.detail.call_data.len(), 2 + 18 * 1024);
+        // Find an exactly 16 KiB canonical transaction, including protobuf overhead.
+        let mut raw = review_limit_raw(4, crate::MAX_SIGN_DATA_LEN - 256);
+        while raw.encoded_len() < crate::MAX_SIGN_DATA_LEN {
+            raw.data.push(b'a');
+        }
+        assert_eq!(raw.encoded_len(), crate::MAX_SIGN_DATA_LEN);
+        assert!(crate::parse_tx_request(&raw.encode_to_vec(), &path).is_ok());
+        let xpub = "xpub6D1AabNHCupeiLM65ZR9UStMhJ1vCpyV4XbZdyhMZBiJXALQtmn9p42VTQckoHVn8WNqS7dqnJokZHAHcHGoaQgmv8D45oNUKx6DZMNZBCd";
+        let seed = hex::decode("5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4").unwrap();
+        crate::check_tx_request(&raw.encode_to_vec(), &path, xpub).unwrap();
+        crate::sign_tx_request(&raw.encode_to_vec(), &path, &seed).unwrap();
+        raw.data.push(b'a');
+        assert_raw_rejected(raw, "request exceeds");
+        assert_raw_rejected(
+            review_limit_raw(crate::MAX_SIGN_DATA_LEN, 0),
+            "request exceeds",
+        );
+    }
+
+    #[test]
+    fn rejects_unreviewed_raw_auths_and_scripts() {
+        let mut raw = review_limit_raw(4, 0);
+        raw.auths.push(Default::default());
+        assert_raw_rejected(raw, "unsupported TRON auths or scripts");
+        let mut raw = review_limit_raw(4, 0);
+        raw.scripts.push(1);
+        assert_raw_rejected(raw, "unsupported TRON auths or scripts");
+        let mut raw = review_limit_raw(4, 0);
+        raw.ref_block_num = -1;
+        assert_raw_rejected(raw, "negative ref block number");
+    }
+
+    #[test]
+    fn displays_signed_ref_block_number_without_precision_loss() {
+        let mut raw = review_limit_raw(4, 0);
+        raw.ref_block_num = i64::MAX;
+        let bytes = raw.encode_to_vec();
+        let path = "m/44'/195'/0'/0/0".to_string();
+        let parsed = crate::parse_tx_request(&bytes, &path).unwrap();
+        assert_eq!(parsed.detail.ref_block_num, "9223372036854775807");
+        assert_eq!(
+            parsed.detail.raw_data_hash,
+            hex::encode(hashing::sha256(&bytes))
+        );
+        let seed = hex::decode("5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4").unwrap();
+        assert!(crate::sign_tx_request(&bytes, &path, &seed).is_ok());
+    }
+
     #[test]
     fn test_from_raw_transaction_decode_failures() {
         let mut tron_tx = Transaction::default();
@@ -714,6 +814,7 @@ mod tests {
             memo_hash: String::new(),
             timestamp: String::new(),
             expiration: String::new(),
+            ref_block_num: String::new(),
             ref_block_bytes: String::new(),
             ref_block_hash: String::new(),
             permission_id: String::new(),
@@ -780,6 +881,7 @@ mod tests {
             memo_hash: String::new(),
             timestamp: String::new(),
             expiration: String::new(),
+            ref_block_num: String::new(),
             ref_block_bytes: String::new(),
             ref_block_hash: String::new(),
             permission_id: String::new(),

@@ -42,6 +42,7 @@ pub struct DisplayTronDetail {
     pub fee_limit: PtrString,
     pub timestamp: PtrString,
     pub expiration: PtrString,
+    pub ref_block_num: PtrString,
     pub ref_block_bytes: PtrString,
     pub ref_block_hash: PtrString,
     pub permission_id: PtrString,
@@ -85,6 +86,7 @@ impl From<DetailTx> for DisplayTronDetail {
             fee_limit: convert_c_char(value.fee_limit),
             timestamp: convert_c_char(value.timestamp),
             expiration: convert_c_char(value.expiration),
+            ref_block_num: convert_c_char(value.ref_block_num),
             ref_block_bytes: convert_c_char(value.ref_block_bytes),
             ref_block_hash: convert_c_char(value.ref_block_hash),
             permission_id: convert_c_char(value.permission_id),
@@ -133,6 +135,7 @@ impl Free for DisplayTronDetail {
         free_str_ptr!(self.fee_limit);
         free_str_ptr!(self.timestamp);
         free_str_ptr!(self.expiration);
+        free_str_ptr!(self.ref_block_num);
         free_str_ptr!(self.ref_block_bytes);
         free_str_ptr!(self.ref_block_hash);
         free_str_ptr!(self.permission_id);

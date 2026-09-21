@@ -1,4 +1,5 @@
 pub mod structs;
+pub(crate) mod ur_limits;
 
 use crate::common::errors::{KeystoneError, RustCError};
 use crate::common::keystone;
@@ -59,6 +60,9 @@ pub unsafe extern "C" fn tron_check_sign_request(
     let x_pub_recovered = recover_c_char(x_pub);
     let xpub_str = x_pub_recovered.as_str();
     let sign_data = req.get_sign_data();
+    if let Err(e) = app_tron::validate_sign_data_len(sign_data.len()) {
+        return TransactionCheckResult::from(e).c_ptr();
+    }
     let path = match request_path(req) {
         Some(p) => p,
         None => return TransactionCheckResult::from(RustCError::InvalidHDPath).c_ptr(),
@@ -112,6 +116,8 @@ pub unsafe extern "C" fn tron_sign_request(
 
     let sign_res = (|| -> Result<Vec<u8>, KeystoneError> {
         let sign_data = req.get_sign_data();
+        app_tron::validate_sign_data_len(sign_data.len())
+            .map_err(|e| KeystoneError::SignTxFailed(e.to_string()))?;
         let request_id = req.get_request_id();
         let path = request_path(req).ok_or(KeystoneError::SignTxFailed(
             "invalid or missing TRON derivation path".to_string(),
@@ -350,6 +356,18 @@ mod tests {
                 .unwrap()
                 .get_signature()
         })
+    }
+
+    #[test]
+    fn final_signing_rejects_requests_over_16_kib_and_clears_seed() {
+        for data_type in [DataType::Transaction, DataType::PersonalMessage] {
+            let mut req = signable_request(data_type, Some([0x73, 0xc5, 0xda, 0x0a]));
+            req.set_sign_data(alloc::vec![b'a'; app_tron::MAX_SIGN_DATA_LEN + 1]);
+            assert!(sign_via_ffi(&mut req, &mut test_seed()).is_none());
+        }
+        let mut req = signable_request(DataType::PersonalMessage, Some([0x73, 0xc5, 0xda, 0x0a]));
+        req.set_sign_data(alloc::vec![b'a'; app_tron::MAX_SIGN_DATA_LEN]);
+        assert!(sign_via_ffi(&mut req, &mut test_seed()).is_some());
     }
 
     #[test]

@@ -30,6 +30,18 @@ use bitcoin::secp256k1::PublicKey;
 use transaction::checker::TxChecker;
 use transaction::signer::Signer;
 
+// Bound allocations before decoding and before expanding data for review.
+pub const MAX_SIGN_DATA_LEN: usize = 16 * 1024;
+
+pub fn validate_sign_data_len(len: usize) -> Result<()> {
+    if len > MAX_SIGN_DATA_LEN {
+        return Err(TronError::InvalidRawTxCryptoBytes(
+            "TRON request exceeds 16 KiB".into(),
+        ));
+    }
+    Ok(())
+}
+
 pub fn sign_raw_tx(
     raw_tx: protoc::Payload,
     context: keystone::ParseContext,
@@ -55,6 +67,7 @@ fn decode_to_wrapped(sign_data: &[u8], path: String) -> Result<WrappedTron> {
     use crate::pb::protocol::Transaction;
     use prost::Message;
 
+    validate_sign_data_len(sign_data.len())?;
     let raw_content = RawData::decode(sign_data)
         .map_err(|_| TronError::InvalidRawTxCryptoBytes("RawData decode failed".to_string()))?;
     if raw_content.encode_to_vec() != sign_data {
@@ -100,6 +113,7 @@ pub fn sign_personal_message(
     seed: &[u8],
 ) -> errors::Result<String> {
     validate_derivation_path(path)?;
+    validate_sign_data_len(sign_data.len())?;
     let prefix = b"\x19TRON Signed Message:\n";
     let len_str = sign_data.len().to_string();
 
@@ -127,6 +141,7 @@ pub fn parse_personal_message(
     tx_hex: &[u8],
     from_key: Option<PublicKey>,
 ) -> Result<PersonalMessage> {
+    validate_sign_data_len(tx_hex.len())?;
     let raw_message = hex::encode(tx_hex);
     let utf8_message = match String::from_utf8(tx_hex.to_vec()) {
         Ok(utf8_message) => {
@@ -160,6 +175,26 @@ mod test {
         let unzip_data = unzip(bytes.clone()).unwrap();
         let base: Base = parse_protobuf(unzip_data).unwrap();
         base.data.unwrap()
+    }
+
+    #[test]
+    fn rejects_oversized_sign_data_before_decoding_or_signing() {
+        assert!(validate_sign_data_len(MAX_SIGN_DATA_LEN).is_ok());
+        let data = vec![0xff; MAX_SIGN_DATA_LEN + 1];
+        let path = "m/44'/195'/0'/0/0".to_string();
+        assert!(parse_tx_request(&data, &path)
+            .unwrap_err()
+            .to_string()
+            .contains("request exceeds"));
+        assert!(parse_personal_message(&data, None)
+            .unwrap_err()
+            .to_string()
+            .contains("request exceeds"));
+        assert!(sign_personal_message(&data, &path, &[0; 64])
+            .unwrap_err()
+            .to_string()
+            .contains("request exceeds"));
+        assert!(parse_personal_message(&data[..MAX_SIGN_DATA_LEN], None).is_ok());
     }
 
     #[test]

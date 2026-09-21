@@ -88,18 +88,36 @@ unsafe extern "C" {
 
 struct KeystoneURDecoder {
     decoder: ur::Decoder,
+    #[cfg(feature = "tron")]
+    tron_budget: Option<crate::tron::ur_limits::FragmentBudget>,
 }
 
 impl KeystoneURDecoder {
     fn from_first_part(part: &str) -> Result<Self, URError> {
-        let mut decoder = ur::Decoder::default();
-        decoder
-            .receive(part)
-            .map_err(|error| URError::UrDecodeError(error.to_string()))?;
-        Ok(Self { decoder })
+        let mut decoder = Self {
+            decoder: ur::Decoder::default(),
+            #[cfg(feature = "tron")]
+            tron_budget: crate::tron::ur_limits::is_tron(part).then(Default::default),
+        };
+        decoder.receive(part)?;
+        Ok(decoder)
     }
 
     fn receive(&mut self, part: &str) -> Result<(), URError> {
+        #[cfg(feature = "tron")]
+        {
+            let result = match self.tron_budget.as_mut() {
+                Some(budget) => budget.receive(part),
+                None if crate::tron::ur_limits::is_tron(part) => Err(URError::UrDecodeError(
+                    "TRON fragment cannot change the active UR type".into(),
+                )),
+                None => Ok(()),
+            };
+            if let Err(error) = result {
+                self.decoder = ur::Decoder::default();
+                return Err(error);
+            }
+        }
         self.decoder
             .receive(part)
             .map_err(|error| URError::UrDecodeError(error.to_string()))
@@ -993,6 +1011,8 @@ fn sandbox_cbor_error(status: sandbox_parser::ValidationStatus) -> URError {
 }
 
 fn validate_single_part_cbor(value: &str) -> Result<(), URError> {
+    #[cfg(feature = "tron")]
+    crate::tron::ur_limits::validate_text_len(value)?;
     // Defense in depth after the production ingress has validated the complete
     // UR in the MPU sandbox. Do not re-enter the single-slot sandbox here: the
     // USB EAPDU result remains owned until its business handler returns.
@@ -1000,6 +1020,10 @@ fn validate_single_part_cbor(value: &str) -> Result<(), URError> {
         ur::decode(value).map_err(|error| URError::UrDecodeError(error.to_string()))?;
     if kind != ur::ur::Kind::SinglePart {
         return Ok(());
+    }
+    #[cfg(feature = "tron")]
+    if crate::tron::ur_limits::is_tron(value) {
+        crate::tron::ur_limits::validate_single_len(cbor.len())?;
     }
 
     let status = sandbox_parser::validate_cbor(&cbor);
@@ -1299,4 +1323,107 @@ pub unsafe extern "C" fn receive(ur: PtrString, decoder: PtrDecoder) -> *mut URP
     }
     let decoder = extract_ptr_with_type!(decoder, KeystoneURDecoder);
     receive_ur(ur, decoder).c_ptr()
+}
+
+#[cfg(all(test, feature = "tron"))]
+mod tron_limit_tests {
+    use super::*;
+    use crate::tron::ur_limits::MAX_UR_BYTES;
+    use alloc::vec;
+
+    fn fragment(parts: u32, message_len: u32, data: &[u8]) -> String {
+        let mut e = minicbor::Encoder::new(Vec::new());
+        e.array(5)
+            .unwrap()
+            .u32(1)
+            .unwrap()
+            .u32(parts)
+            .unwrap()
+            .u32(message_len)
+            .unwrap()
+            .u32(0)
+            .unwrap()
+            .bytes(data)
+            .unwrap();
+        ur::encode(&e.into_writer(), "tron-sign-request").replacen(
+            "tron-sign-request/",
+            &format!("tron-sign-request/1-{parts}/"),
+            1,
+        )
+    }
+
+    #[test]
+    fn tron_limits_reject_oversized_single_and_fountain_metadata() {
+        assert!(crate::tron::ur_limits::validate_single_len(MAX_UR_BYTES).is_ok());
+        let too_big = ur::encode(&vec![0; MAX_UR_BYTES + 1], "tron-sign-request");
+        assert!(validate_single_part_cbor(&too_big)
+            .unwrap_err()
+            .to_string()
+            .contains("TRON UR"));
+        for bad in [
+            fragment(100, MAX_UR_BYTES as u32 + 1, &[0; 200]),
+            fragment(129, 129, &[0]),
+            fragment(u32::MAX, 1, &[0]),
+            fragment(0, 1, &[0]),
+            fragment(2, 1, &[0]),
+            fragment(2, 3, &[0]),
+        ] {
+            assert!(KeystoneURDecoder::from_first_part(&bad).is_err());
+        }
+    }
+
+    #[test]
+    fn tron_limits_reassemble_full_size_request_with_reordered_parts() {
+        use ur_registry::crypto_key_path::CryptoKeyPath;
+        use ur_registry::tron::tron_sign_request::DataType;
+        let req = TronSignRequest::new(
+            None,
+            vec![b'a'; app_tron::MAX_SIGN_DATA_LEN],
+            DataType::PersonalMessage,
+            CryptoKeyPath::from_path("m/44'/195'/0'/0/0".into(), Some([0x73, 0xc5, 0xda, 0x0a]))
+                .unwrap(),
+            None,
+            None,
+        );
+        let cbor = minicbor::to_vec(req).unwrap();
+        let mut encoder = ur::Encoder::new(&cbor, 200, "tron-sign-request").unwrap();
+        let mut parts: Vec<String> = (0..encoder.fragment_count())
+            .map(|_| encoder.next_part().unwrap())
+            .collect();
+        parts.reverse();
+        // Include mixed fountain parts as well as out-of-order original parts.
+        let first = encoder.next_part().unwrap();
+        let mut decoder = KeystoneURDecoder::from_first_part(&first).unwrap();
+        for part in parts {
+            decoder.receive(&part).unwrap();
+        }
+        assert!(decoder.complete());
+        assert_eq!(decoder.message().unwrap(), cbor);
+        let decoded = TronSignRequest::try_from(decoder.message().unwrap()).unwrap();
+        assert_eq!(decoded.get_sign_data().len(), app_tron::MAX_SIGN_DATA_LEN);
+        assert!(validate_single_part_cbor(&ur::encode(&cbor, "tron-sign-request")).is_ok());
+    }
+
+    #[test]
+    fn tron_limits_bound_redundant_fragments_and_prevent_type_switching() {
+        let cbor = vec![0; 1024];
+        let mut encoder = ur::Encoder::new(&cbor, 200, "tron-sign-request").unwrap();
+        let part = encoder.next_part().unwrap();
+        let mut decoder = KeystoneURDecoder::from_first_part(&part).unwrap();
+        let mut rejected = false;
+        for _ in 0..2000 {
+            if decoder.receive(&part).is_err() {
+                rejected = true;
+                break;
+            }
+        }
+        assert!(rejected);
+        assert!(!decoder.complete());
+        assert!(decoder.message().is_err());
+        let other = part.replacen("tron-sign-request", "bytes", 1);
+        let mut decoder = KeystoneURDecoder::from_first_part(&other).unwrap();
+        assert!(decoder.receive(&part).is_err());
+        let mut decoder = KeystoneURDecoder::from_first_part(&part).unwrap();
+        assert!(decoder.receive(&other).is_err());
+    }
 }

@@ -464,6 +464,8 @@ static GetLabelDataFunc GuiTrxTextFuncGet(char *type)
         return GetTrxFeeLimit;
     } else if (!strcmp(type, "GetTrxTimestamp")) {
         return GetTrxTimestamp;
+    } else if (!strcmp(type, "GetTrxRefBlockNum")) {
+        return GetTrxRefBlockNum;
     } else if (!strcmp(type, "GetTrxRefBlockBytes")) {
         return GetTrxRefBlockBytes;
     } else if (!strcmp(type, "GetTrxRefBlockHash")) {

@@ -67,8 +67,11 @@ UR `CryptoKeyPath` 不携带文本根前缀，FFI 的 `request_path` 补上 `m/`
 
 ### 交易结构与金额合法性
 
+- 待签名 raw transaction 和 PersonalMessage 最多 16 KiB（16,384 字节）；raw 在 protobuf 解码前校验，消息在转 hex 或签名前校验。Memo、calldata 计入总量，不设独立的 1 KiB／8 KiB 子上限。超限返回错误，不能截断后签名。
+- Legacy 的 `TronTx` 序列化输入及构造出的 raw transaction 同样不得超过 16 KiB，检查在生成展示字符串前完成。
 - raw transaction 必须包含且只包含一个 contract。
 - `ref_block_bytes` 长度为 2，`ref_block_hash` 长度为 8。
+- `ref_block_num` 必须非负，按整数原样展示；非空 `auths` 或 `scripts` 尚不支持，解析、检查及最终签名均拒绝。
 - timestamp 必须大于 0，expiration 必须大于 timestamp，fee limit 不得为负。
 - owner、收款人及合约地址按对应合约类型校验：21 字节且前缀为 `0x41`。
 - 合约类型必须与 `Any.type_url` 一致，参数解码后重新编码必须与输入一致。
@@ -76,6 +79,8 @@ UR `CryptoKeyPath` 不携带文本根前缀，FFI 的 `request_path` 补上 `m/`
 - 普通转账及合约附带资产的金额不得为负。
 
 这些是本地结构及一致性检查，不验证引用区块是否存在，也不表示设备已确认交易相对于当前链上时间仍未过期。
+
+16 KiB 是设备支持范围，不是 TRON 网络上限。TRON 专用 `tron-sign-request` UR 最多允许 17 KiB CBOR（包含请求元数据），在单片解码及首片／后续分片进入 fountain 解码器前检查。分片声明最多 128 片，长度关系必须一致；累计工作预算按每片 `数据字节数 + 分片数 × 8 + 128` 计数，最多 192 KiB，包括重复片，超限释放重组状态并返回错误。该计数用于限制重复／混合片累积，不表示实测峰值内存。超出预算需要重新扫描；其他 UR 类型不应用 TRON 专用限制。Legacy 共用封装的解压与其他币种共用，以上 UR 限制不应用于通用 `bytes`／`keystone-sign-request`。
 
 ### 合约调用与附带资产
 
@@ -145,11 +150,11 @@ Memo 同时保留：
 普通 TRON 详情保留金额、方法、地址、合约、token、原始数量和网络，并补充：
 
 - Fee Limit（sun）、Timestamp / Expiration（ms）。
-- Permission ID、Ref Block Bytes / Hash。
+- Permission ID、Ref Block Number / Bytes / Hash。
 - Memo 文本、Memo Hex、Memo SHA-256。
 - Raw Data SHA-256。
 
-普通 TRON 和 Swap 的 Details 均包含附带资产、接收合约、未知调用警告，以及可分页的 Call Data（hex）。Swap 保留其原有专用详情；不能声称其已经具有普通 TRON 的全部交易头卡片。
+普通 TRON 和 Swap 的 Details 均包含 Ref Block Number、附带资产、接收合约、未知调用警告，以及可分页的 Call Data（hex）。Swap 保留其原有专用详情；不能声称其已经具有普通 TRON 的全部交易头卡片。
 
 Raw Data SHA-256 对应交易 raw_data 的哈希，不是 calldata 或整个签名封装的哈希。它不能替代金额、地址和调用数据展示。
 
@@ -174,6 +179,9 @@ Raw Data SHA-256 对应交易 raw_data 的哈希，不是 calldata 或整个签�
 | 负数附带金额／token ID，或非零 TRC-10 数量缺少 ID | 拒绝 |
 | 多 contract、错误 type_url、非规范 protobuf | 解析、检查和最终交易签名路径拒绝 |
 | 请求 fingerprint 缺失或与实际 seed 不一致 | 最终 UR 签名拒绝，清零传入的 seed |
+| raw／消息恰好 16,384 字节或超过 1 字节 | 前者可继续验证，后者拒绝；最终签名仍清零 seed |
+| 非零非负 ref_block_num | 详情页完整展示并保留在签名数据中 |
+| 非空 auths／scripts 或负数 ref_block_num | 拒绝，不静默签署 |
 | PersonalMessage 的 coin type、account、change 或路径层级错误 | 检查、解析及最终签名拒绝 |
 | PersonalMessage 无法从当前 xpub 派生公钥 | 检查和解析返回错误，不隐藏 From 后继续 |
 | 交易 owner 与实际 seed 派生地址不一致 | 最终交易签名拒绝 |
@@ -200,6 +208,7 @@ Raw Data SHA-256 对应交易 raw_data 的哈希，不是 calldata 或整个签�
 | `rust/apps/tron/src/transaction/parser.rs` | Overview / Detail 展示数据 |
 | `rust/apps/tron/src/transaction/signer.rs` | seed 指纹、owner 校验及交易签名 |
 | `rust/rust_c/src/tron/mod.rs`、`structs.rs` | UR 路径／指纹处理、FFI 数据转换和释放 |
+| `rust/rust_c/src/tron/ur_limits.rs`、`common/ur.rs` | TRON UR 封装及 fountain 重组资源限制 |
 | `src/ui/gui_chain/multi/web3/gui_trx.c`、`gui_trx.h` | 字段 getter、显示条件、长数据长度 |
 | `src/ui/gui_analyze/multi/web3/gui_general_analyze.c`、`gui_general_analyze.h`、`gui_trx_template.h` | 回调映射及固件／模拟器共用的 TRON 模板 |
 | `src/ui/gui_analyze/gui_analyze.c` | 显式启用的动态布局、分页控件及源内存生命周期 |
@@ -220,7 +229,8 @@ Raw Data SHA-256 对应交易 raw_data 的哈希，不是 calldata 或整个签�
 
 ```sh
 cargo test --manifest-path rust/Cargo.toml -p app_tron --lib
-cargo test --manifest-path rust/Cargo.toml -p rust_c --no-default-features --features simulator-multi-coins --lib tron::tests
+cargo test --manifest-path rust/Cargo.toml -p rust_c --no-default-features --features simulator-multi-coins --lib tron
+cargo test --manifest-path rust/Cargo.toml -p rust_c --no-default-features --features simulator-multi-coins --lib common::ur
 cargo check --manifest-path rust/Cargo.toml -p rust_c --no-default-features --features simulator-multi-coins
 python3 -m unittest discover -s tools/tests -p test_tron_attached_assets.py
 git diff --check
@@ -234,9 +244,13 @@ git diff --check
 - `rejects_non_canonical_trc20_calldata`：已识别指令的尾随数据及非法 padding。
 - `formats_u256_amount_without_float_rounding`、`preserves_non_text_memo_as_hex_and_hash`：金额精度及二进制 Memo。
 - `personal_message_rejects_invalid_derivation_paths`、`personal_message_display_matches_recovered_signer`：拒绝错误消息签名路径，并核对正常路径的展示地址与恢复出的签名公钥一致。
+- `bounds_total_raw_bytes_including_memo_and_calldata`、`rejects_oversized_sign_data_before_decoding_or_signing`：16 KiB 边界和不截断的拒绝行为。
+- `rejects_unreviewed_raw_auths_and_scripts`、`displays_signed_ref_block_number_without_precision_loss`：未支持字段拒绝、引用区块数值完整展示。
+- `legacy_trx_trc10_trc20_signatures_match_txid_and_owner`：公开测试钱包的三类 legacy 正例通过解析／检查／签名，核对固定 txid、raw 哈希、恢复公钥，并与 raw 入口的签名结果比对；原有 owner／fingerprint 负例保留。
+- `common::ur::tron_limit_tests`：超限单片／恶意分片元数据、16 KiB 请求乱序及混合片重组、重复片预算及类型切换。
 - `rust_c::tron::tests`：交易／消息请求的路径校验、UR 根前缀恢复和公钥派生错误；直接调用最终 FFI 签名入口验证缺失／错误 fingerprint 被拒绝，正确 fingerprint 保持原签名结果，并检查成功、路径错误、seed 错误、交易解析和 owner 错误后的 seed 清零。
 - `test_tron_attached_assets.py`：两个模板的 Overview / Details 资产字段、警告顺序、calldata 分页配置、实际 C getter 对长数据的完整复制，以及模拟器无需外部文件即可加载共用模板。
 
-当前已通过 73 项 TRON Rust 单测、6 项 TRON FFI 单测、3 项 UI 回归检查、FFI 编译，以及相关 C 文件的语法检查。C 检查使用生成后的 multi-coins Rust 绑定头和模拟器编译参数，不等于完整固件链接或实机运行。
+当前已通过 79 项 TRON Rust 单测、7 项 TRON FFI 单测、3 项 TRON UR 限制测试、3 项 UI 回归检查、FFI 编译，以及相关 C 文件的语法检查。C 检查使用生成后的 multi-coins Rust 绑定头和模拟器编译参数，不等于完整固件链接或实机运行。
 
 尚未完成实机视觉及交互验收。QA 应扫描普通合约、transfer、approve 的附带资产请求，核对概览、详情、末页 calldata 和最终确认流程；也应回归普通 TRX / TRC-10 转账、Swap 与 PersonalMessage，确认新增卡片的隐藏和显示条件。
