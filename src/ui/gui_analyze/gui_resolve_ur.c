@@ -101,15 +101,18 @@ void handleURResult(URParseResult *urResult, URParseMultiResult *urMultiResult, 
     case ZcashAddressCheck: {
         ZcashAddressScanResult_t message = {.viewType = urViewType};
         const char *address = zcash_address_qr_text(urResult->data);
-        if (address != NULL) {
-            strncpy(message.address, address, sizeof(message.address) - 1);
+        if (address == NULL || strcpy_s(message.address, sizeof(message.address), address) != EOK) {
+            free_ur_parse_result(urResult);
+            return;
         }
         // The decoder retains sole ownership of the Rust result. The UI queue
         // copies only address bytes, so closing the page cannot race its release.
         free_ur_parse_result(urResult);
-        StopQrDecode();
-        UserDelay(500);
-        GuiApiEmitSignal(SIG_QRCODE_VIEW_SCAN_PASS, &message, sizeof(message));
+        // Leave decoding enabled if delivery fails. Do not enqueue a restart,
+        // which could override a user-requested stop while the message was sent.
+        if (GuiApiEmitSignal(SIG_QRCODE_VIEW_SCAN_PASS, &message, sizeof(message)) == SUCCESS_CODE) {
+            StopQrDecode();
+        }
         return;
     }
     case ZcashBatchTx:

@@ -94,14 +94,23 @@ typedef struct { char *data; } URParseResult;
 enum { ZcashAddressCheck = 42, SIG_QRCODE_VIEW_SCAN_PASS = 99 };
 ''' + payload + r'''
 static ZcashAddressScanResult_t queued;
-static int freed, reject_message;
+static int freed, reject_message, stopped, sent;
+#define EOK 0
+#define SUCCESS_CODE 0
+static int strcpy_s(char *dest, size_t size, const char *source) {
+    size_t length = strlen(source);
+    if (length >= size) { dest[0] = 0; return 1; }
+    memcpy(dest, source, length + 1);
+    return EOK;
+}
 static const char *zcash_address_qr_text(char *data) { return data; }
 static void free_ur_parse_result(URParseResult *result) {
     free(result->data); free(result); freed++;
 }
-static void StopQrDecode(void) {}
-static void UserDelay(int ms) {}
+static void StopQrDecode(void) { stopped++; }
 static int GuiApiEmitSignal(int signal, void *data, unsigned size) {
+    sent++;
+    assert(stopped == 0);
     assert(freed == 1);
     assert(signal == SIG_QRCODE_VIEW_SCAN_PASS);
     assert(size == sizeof(queued));
@@ -117,15 +126,17 @@ static void handle(URParseResult *urResult, UrViewType_t urViewType) {
 int main(void) {
     for (int reject = 0; reject <= 1; reject++) {
         reject_message = reject;
-        for (int length = 2; length <= 1024; length++) {
+        for (int length = 2; length <= 1026; length++) {
             URParseResult *result = malloc(sizeof(*result));
             result->data = malloc(length + 1);
             memset(result->data, 'Q', length);
             result->data[0] = 'U'; result->data[1] = '1'; result->data[length] = 0;
-            freed = 0;
+            freed = stopped = sent = 0;
             handle(result, (UrViewType_t){ZcashAddressCheck, 7});
             assert(freed == 1);
-            if (!reject) {
+            assert(sent == (length <= 1024));
+            assert(stopped == (!reject && length <= 1024));
+            if (!reject && length <= 1024) {
                 assert(queued.viewType.viewType == ZcashAddressCheck);
                 assert(strlen(queued.address) == length);
                 assert(queued.address[0] == 'U' && queued.address[1] == '1');
@@ -133,6 +144,11 @@ int main(void) {
             }
         }
     }
+    URParseResult *missing = malloc(sizeof(*missing));
+    missing->data = NULL;
+    freed = stopped = sent = 0;
+    handle(missing, (UrViewType_t){ZcashAddressCheck, 7});
+    assert(freed == 1 && stopped == 0 && sent == 0);
 }
 ''')
 

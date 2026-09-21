@@ -85,7 +85,8 @@ UI 先读取一次当前设备钱包槽位，仅允许 0、1、2；未登录（2
 
 - `verify_zcash_address` 将 Rust 结果映射为 C 枚举，空 UFVK 指针返回 KeyUnavailable，空地址指针返回 InvalidAddress。
 - `URParseResult` 拥有地址 CString；`zcash_address_qr_text` 只借用该文本，调用方不得单独释放。
-- 解码任务将地址复制到 `ZcashAddressScanResult_t` 后释放 Rust QR payload；UI 消息只包含地址字节，不传递 Rust 指针。
+- 解码任务使用 `strcpy_s` 将地址复制到栈上的 `ZcashAddressScanResult_t`，检查返回值；空指针或超限输入释放 Rust QR payload 后返回，不发送截断地址。成功复制后也由解码任务释放 Rust QR payload，UI 消息只包含地址字节。
+- 仅在 UI 消息发送成功后请求停止扫码；发送失败保持扫描，不发送可能覆盖用户退出操作的重启请求。
 - UI 消息队列复制整个结果结构，LVGL 在消息释放前复制显示文本。即使页面关闭、消息被丢弃或发送失败，也不存在跨任务共享 QR 指针或重复释放。
 - UFVK 使用局部缓冲区，完成验证后调用 `CLEAR_ARRAY` 清理；不把 UFVK 显示在页面上。
 
@@ -220,7 +221,7 @@ git diff --check
 - `invalid_encoding_network_and_viewing_key_are_rejected`：坏编码、错误网络及无效 UFVK。
 - `zcash_address_text_qr_owns_and_releases_its_payload`：扫码文本到 FFI 验证、重复释放流程、URI／超长输入及空指针分类。
 
-- `tools/tests/test_zcash_address_scan.py`：编译实际扫码函数的账户检查部分，遍历所有 uint8_t 槽位及助记词／密钥可用状态，验证无效槽位不访问密钥；另覆盖地址消息在 Rust 结果释放后仍有效、发送失败路径，以及可选弹窗标签的所有组合。后两项启用 AddressSanitizer 和 UndefinedBehaviorSanitizer。
+- `tools/tests/test_zcash_address_scan.py`：编译实际扫码函数的账户检查部分，遍历所有 uint8_t 槽位及助记词／密钥可用状态，验证无效槽位不访问密钥；另覆盖地址消息在 Rust 结果释放后仍有效、发送失败时不停止扫码、1024 字节边界／超限／空指针，以及可选弹窗标签的所有组合。后两项启用 AddressSanitizer 和 UndefinedBehaviorSanitizer。
 
 Review 修复后通过 8 项算法单测、1 项扫码 FFI 单测、3 项 C 回归测试，以及相关 C 文件和生成字体的语法检查。没有为弹窗交互新增自动化测试，语法检查不等于完整固件构建或视觉验收。
 
