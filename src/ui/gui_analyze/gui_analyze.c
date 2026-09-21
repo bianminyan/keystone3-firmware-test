@@ -1073,6 +1073,30 @@ void SetParseTransactionResult(void* result)
     g_totalData = ((TransactionParseResult_DisplayTx *)result)->data;
 }
 
+static cJSON *ParseTransactionTemplate(const char *config)
+{
+#ifdef COMPILE_SIMULATOR
+    // TRON shares the firmware's embedded JSON; other simulator pages use files.
+    if (config[0] != '{') {
+        lv_fs_file_t fd;
+        uint32_t size = 0;
+        char buf[JSON_MAX_LEN];
+        if (LV_FS_RES_OK != lv_fs_open(&fd, config, LV_FS_MODE_RD)) {
+            printf("lv_fs_open failed %s\n", config);
+            return NULL;
+        }
+        lv_fs_res_t result = lv_fs_read(&fd, buf, sizeof(buf), &size);
+        lv_fs_close(&fd);
+        if (result != LV_FS_RES_OK || size >= sizeof(buf)) {
+            return NULL;
+        }
+        buf[size] = '\0';
+        return cJSON_Parse(buf);
+    }
+#endif
+    return cJSON_Parse(config);
+}
+
 static void* CreateTransactionDetailWidgets()
 {
     int index = -1;
@@ -1085,36 +1109,12 @@ static void* CreateTransactionDetailWidgets()
     if (index == -1) {
         return NULL;
     }
-#ifdef COMPILE_SIMULATOR
-    lv_fs_file_t fd;
-    uint32_t size;
-#define JSON_MAX_LEN (1024 * 100)
-    char buf[JSON_MAX_LEN];
-    if (LV_FS_RES_OK != lv_fs_open(&fd, g_analyzeArray[index].config, LV_FS_MODE_RD)) {
-        printf("lv_fs_open failed %s\n", g_analyzeArray[index].config);
-        return NULL;
-    }
-
-    lv_fs_read(&fd, buf, JSON_MAX_LEN, &size);
-    buf[size] = '\0';
-#endif
-
-#ifdef COMPILE_SIMULATOR
-    cJSON *paramJson = cJSON_Parse(buf);
-#else
-    cJSON *paramJson = cJSON_Parse(g_analyzeArray[index].config);
-#endif
+    cJSON *paramJson = ParseTransactionTemplate(g_analyzeArray[index].config);
     if (paramJson == NULL) {
         printf("cJSON_Parse failed\n");
-#ifdef COMPILE_SIMULATOR
-        lv_fs_close(&fd);
-#endif
         return NULL;
     }
     lv_obj_t *obj = GuiWidgetFactoryCreate(g_templateContainer, paramJson);
-#ifdef COMPILE_SIMULATOR
-    lv_fs_close(&fd);
-#endif
     cJSON_Delete(paramJson);
     return obj;
 }

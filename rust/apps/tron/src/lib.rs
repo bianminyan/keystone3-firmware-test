@@ -19,7 +19,7 @@ pub mod structs;
 mod transaction;
 mod utils;
 
-pub use crate::address::get_address;
+pub use crate::address::{get_address, get_public_key, validate_derivation_path};
 use crate::structs::PersonalMessage;
 pub use crate::transaction::parser::{DetailTx, OverviewTx, ParsedTx, TxParser};
 use crate::transaction::wrapped_tron::WrappedTron;
@@ -99,6 +99,7 @@ pub fn sign_personal_message(
     path: &String,
     seed: &[u8],
 ) -> errors::Result<String> {
+    validate_derivation_path(path)?;
     let prefix = b"\x19TRON Signed Message:\n";
     let len_str = sign_data.len().to_string();
 
@@ -278,6 +279,67 @@ mod test {
         let result = check_tx_request(&sign_data, &path, xpub);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), TronError::NoMyInputs));
+    }
+
+    #[test]
+    fn personal_message_rejects_invalid_derivation_paths() {
+        let seed = hex::decode("5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4").unwrap();
+        for path in [
+            "m/44'/194'/0'/0/0",
+            "m/44'/60'/0'/0/0",
+            "m/44'/195'/1'/0/0",
+            "m/44'/195'/0'/1/0",
+            "m/44'/195'/0'/0",
+            "m/44'/195'/0'/0/0/0",
+            "m/44'/195'/0'/0/0'",
+            "m/44'/195'/0'/0/2147483648",
+        ] {
+            assert!(
+                matches!(
+                    sign_personal_message(b"Hello TRON", &path.to_string(), &seed),
+                    Err(TronError::InvalidHDPath(_))
+                ),
+                "accepted {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn personal_message_display_matches_recovered_signer() {
+        use bitcoin::bip32::{DerivationPath, Xpriv, Xpub};
+        use bitcoin::secp256k1::{
+            ecdsa::{RecoverableSignature, RecoveryId},
+            Message, Secp256k1,
+        };
+
+        let seed = hex::decode("5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4").unwrap();
+        let secp = Secp256k1::new();
+        let account = Xpriv::new_master(bitcoin::Network::Bitcoin, &seed)
+            .unwrap()
+            .derive_priv(&secp, &DerivationPath::from_str("m/44'/195'/0'").unwrap())
+            .unwrap();
+        let xpub = Xpub::from_priv(&secp, &account).to_string();
+        for index in [0, 1, 2147483647] {
+            let path = alloc::format!("m/44'/195'/0'/0/{index}");
+            let displayed_key = get_public_key(&path, &xpub).unwrap();
+            let parsed = parse_personal_message(b"Hello TRON", Some(displayed_key)).unwrap();
+            let signature =
+                hex::decode(sign_personal_message(b"Hello TRON", &path, &seed).unwrap()).unwrap();
+            let signature = RecoverableSignature::from_compact(
+                &signature[..64],
+                RecoveryId::from_i32((signature[64] - 27) as i32).unwrap(),
+            )
+            .unwrap();
+            let digest = hashing::keccak256(b"\x19TRON Signed Message:\n10Hello TRON");
+            let recovered = secp
+                .recover_ecdsa(&Message::from_digest_slice(&digest).unwrap(), &signature)
+                .unwrap();
+            assert_eq!(displayed_key, recovered);
+            assert_eq!(
+                parsed.from,
+                Some(crate::address::public_key_to_address(&recovered))
+            );
+        }
     }
 
     #[test]

@@ -53,9 +53,9 @@ TRON 交易请求来自不可信主机或二维码。`TriggerSmartContract` 除 
 
 ### 路径、钱包归属与签名人
 
-交易路径形态为 `m/44'/195'/0'/0/index`，根标记也接受 `M`。account 固定为 `0'`，change 固定为 `0`，index 必须能解析为小于 `2^31` 的非 hardened `u32`；缺失、额外层级及错误 coin type 拒绝。
+交易和 PersonalMessage 的路径形态均为 `m/44'/195'/0'/0/index`，根标记也接受 `M`。account 固定为 `0'`，change 固定为 `0`，index 必须能解析为小于 `2^31` 的非 hardened `u32`；缺失、额外层级及错误 coin type 拒绝。
 
-UR `CryptoKeyPath` 不携带文本根前缀，FFI 的 `request_path` 补上 `m/`，再交给交易路径校验。缺失路径不再回退默认路径。
+UR `CryptoKeyPath` 不携带文本根前缀，FFI 的 `request_path` 补上 `m/` 并执行公共路径校验，覆盖检查、解析和签名入口。缺失路径不再回退默认路径。PersonalMessage 的 From 与交易地址共用公钥派生逻辑；派生失败直接返回错误，不再隐藏 From 后继续。直接调用消息签名函数也必须通过路径校验。
 
 - 扫描检查要求 master fingerprint 长度为 4，并与请求 source fingerprint 匹配。
 - 最终 UR 签名从实际 seed 计算 fingerprint，缺失或不匹配拒绝；该检查同时覆盖交易和 PersonalMessage 分支。
@@ -156,6 +156,8 @@ Raw Data SHA-256 对应交易 raw_data 的哈希，不是 calldata 或整个签�
 
 模板通过 `dynamic` 显式启用纵向内容布局，并使用 `paged_text` 展示长 Memo 和 calldata。此公共能力由 TRON 模板使用，本次未替换其他链的页面模板。
 
+固件和模拟器共用 `gui_trx_template.h` 中的交易、Swap 和 PersonalMessage 模板，TRON 页面不再依赖本地未跟踪的 `page_trx*.json`。模拟器仍支持其他链原有的外部模板文件。
+
 新增标签及未知调用警告当前为英文，本次没有完成新的多语言词条和字体生成。已经通过的结构及 getter 测试不等于在每个语言、字体和实机分辨率下完成视觉验收。
 
 ## 场景与预期
@@ -171,6 +173,8 @@ Raw Data SHA-256 对应交易 raw_data 的哈希，不是 calldata 或整个签�
 | 负数附带金额／token ID，或非零 TRC-10 数量缺少 ID | 拒绝 |
 | 多 contract、错误 type_url、非规范 protobuf | 解析、检查和最终交易签名路径拒绝 |
 | 请求 fingerprint 与实际 seed 不一致 | 最终 UR 签名拒绝 |
+| PersonalMessage 的 coin type、account、change 或路径层级错误 | 检查、解析及最终签名拒绝 |
+| PersonalMessage 无法从当前 xpub 派生公钥 | 检查和解析返回错误，不隐藏 From 后继续 |
 | 交易 owner 与实际 seed 派生地址不一致 | 最终交易签名拒绝 |
 | 非 UTF-8 或包含 NUL 的 Memo | 文本隐藏，hex 和哈希保留 |
 | 超过固定标签缓冲区的 calldata | 完整分配、复制并分页展示，末尾字节不丢失 |
@@ -196,7 +200,7 @@ Raw Data SHA-256 对应交易 raw_data 的哈希，不是 calldata 或整个签�
 | `rust/apps/tron/src/transaction/signer.rs` | seed 指纹、owner 校验及交易签名 |
 | `rust/rust_c/src/tron/mod.rs`、`structs.rs` | UR 路径／指纹处理、FFI 数据转换和释放 |
 | `src/ui/gui_chain/multi/web3/gui_trx.c`、`gui_trx.h` | 字段 getter、显示条件、长数据长度 |
-| `src/ui/gui_analyze/multi/web3/gui_general_analyze.c`、`gui_general_analyze.h` | 回调映射和 TRON / Swap 模板 |
+| `src/ui/gui_analyze/multi/web3/gui_general_analyze.c`、`gui_general_analyze.h`、`gui_trx_template.h` | 回调映射及固件／模拟器共用的 TRON 模板 |
 | `src/ui/gui_analyze/gui_analyze.c` | 显式启用的动态布局、分页控件及源内存生命周期 |
 | `tools/tests/test_tron_attached_assets.py` | 页面字段和 C getter 回归检查 |
 
@@ -215,6 +219,7 @@ Raw Data SHA-256 对应交易 raw_data 的哈希，不是 calldata 或整个签�
 
 ```sh
 cargo test --manifest-path rust/Cargo.toml -p app_tron --lib
+cargo test --manifest-path rust/Cargo.toml -p rust_c --no-default-features --features simulator-multi-coins --lib tron::tests
 cargo check --manifest-path rust/Cargo.toml -p rust_c --no-default-features --features simulator-multi-coins
 python3 -m unittest discover -s tools/tests -p test_tron_attached_assets.py
 git diff --check
@@ -227,8 +232,10 @@ git diff --check
 - `rejects_negative_or_unidentified_attached_assets`：负数字段和缺少 ID 的附带 TRC-10。
 - `rejects_non_canonical_trc20_calldata`：已识别指令的尾随数据及非法 padding。
 - `formats_u256_amount_without_float_rounding`、`preserves_non_text_memo_as_hex_and_hash`：金额精度及二进制 Memo。
-- `test_tron_attached_assets.py`：两个模板的 Overview / Details 资产字段、警告顺序、calldata 分页配置，以及实际 C getter 对长数据的完整复制。
+- `personal_message_rejects_invalid_derivation_paths`、`personal_message_display_matches_recovered_signer`：拒绝错误消息签名路径，并核对正常路径的展示地址与恢复出的签名公钥一致。
+- `rust_c::tron::tests`：交易／消息请求的路径校验、UR 根前缀恢复和公钥派生错误。
+- `test_tron_attached_assets.py`：两个模板的 Overview / Details 资产字段、警告顺序、calldata 分页配置、实际 C getter 对长数据的完整复制，以及模拟器无需外部文件即可加载共用模板。
 
-当前已通过 71 项 Rust 单测、2 项 UI 回归检查、FFI 编译，以及相关 C 文件的语法检查。C 检查使用生成后的 multi-coins Rust 绑定头和模拟器编译参数，不等于完整固件链接或实机运行。
+当前已通过 73 项 TRON Rust 单测、2 项 TRON FFI 单测、3 项 UI 回归检查、FFI 编译，以及相关 C 文件的语法检查。C 检查使用生成后的 multi-coins Rust 绑定头和模拟器编译参数，不等于完整固件链接或实机运行。
 
 尚未完成实机视觉及交互验收。QA 应扫描普通合约、transfer、approve 的附带资产请求，核对概览、详情、末页 calldata 和最终确认流程；也应回归普通 TRX / TRC-10 转账、Swap 与 PersonalMessage，确认新增卡片的隐藏和显示条件。

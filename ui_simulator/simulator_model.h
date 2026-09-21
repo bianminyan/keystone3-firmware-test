@@ -76,6 +76,7 @@ extern bool g_reboot;
 #endif
 
 #ifdef WEB3_VERSION
+#include "multi/web3/gui_trx_template.h"
 #define GUI_ANALYZE_OBJ_SURPLUS           \
     { \
         REMAPVIEW_ETH, \
@@ -100,21 +101,21 @@ extern bool g_reboot;
     }, \
     { \
         REMAPVIEW_TRX, \
-        PC_SIMULATOR_PATH "/page_trx.json", \
+        GUI_TRX_PAGE_TEMPLATE, \
         GuiGetTrxData, \
         NULL, \
         FreeTrxMemory, \
     }, \
     { \
         REMAPVIEW_TRX_PERSONAL_MESSAGE, \
-        PC_SIMULATOR_PATH "/page_trx_person.json", \
+        GUI_TRX_PERSONAL_MESSAGE_TEMPLATE, \
         GuiGetTrxPersonalMessage, \
         GetTrxPersonalMessageType, \
         FreeTrxMemory, \
     }, \
     { \
         REMAPVIEW_TRX_SWAP, \
-        PC_SIMULATOR_PATH "/page_trx_swap.json", \
+        GUI_TRX_SWAP_TEMPLATE, \
         GuiGetTrxData, \
         NULL, \
         FreeTrxMemory, \
