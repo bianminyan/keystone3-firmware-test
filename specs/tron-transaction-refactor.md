@@ -59,6 +59,7 @@ UR `CryptoKeyPath` 不携带文本根前缀，FFI 的 `request_path` 补上 `m/`
 
 - 扫描检查要求 master fingerprint 长度为 4，并与请求 source fingerprint 匹配。
 - 最终 UR 签名从实际 seed 计算 fingerprint，缺失或不匹配拒绝；该检查同时覆盖交易和 PersonalMessage 分支。
+- `tron_sign_request` 在签名闭包结束后、构造返回结果前统一清零调用方传入的 seed 缓冲区，覆盖成功和错误返回；C 调用方原有的清理仍保留。
 - 交易签名从 seed 和路径派生公钥，计算 TRON 地址并核对交易 owner。fingerprint 不能替代发送者地址校验。
 - Legacy payload 还核对请求 xfp 与解析上下文，最终交易签名同样核对 seed 对应地址。
 
@@ -172,7 +173,7 @@ Raw Data SHA-256 对应交易 raw_data 的哈希，不是 calldata 或整个签�
 | 已识别 selector 的 calldata 截断、超长或 padding 非零 | 拒绝，不降级 |
 | 负数附带金额／token ID，或非零 TRC-10 数量缺少 ID | 拒绝 |
 | 多 contract、错误 type_url、非规范 protobuf | 解析、检查和最终交易签名路径拒绝 |
-| 请求 fingerprint 与实际 seed 不一致 | 最终 UR 签名拒绝 |
+| 请求 fingerprint 缺失或与实际 seed 不一致 | 最终 UR 签名拒绝，清零传入的 seed |
 | PersonalMessage 的 coin type、account、change 或路径层级错误 | 检查、解析及最终签名拒绝 |
 | PersonalMessage 无法从当前 xpub 派生公钥 | 检查和解析返回错误，不隐藏 From 后继续 |
 | 交易 owner 与实际 seed 派生地址不一致 | 最终交易签名拒绝 |
@@ -233,9 +234,9 @@ git diff --check
 - `rejects_non_canonical_trc20_calldata`：已识别指令的尾随数据及非法 padding。
 - `formats_u256_amount_without_float_rounding`、`preserves_non_text_memo_as_hex_and_hash`：金额精度及二进制 Memo。
 - `personal_message_rejects_invalid_derivation_paths`、`personal_message_display_matches_recovered_signer`：拒绝错误消息签名路径，并核对正常路径的展示地址与恢复出的签名公钥一致。
-- `rust_c::tron::tests`：交易／消息请求的路径校验、UR 根前缀恢复和公钥派生错误。
+- `rust_c::tron::tests`：交易／消息请求的路径校验、UR 根前缀恢复和公钥派生错误；直接调用最终 FFI 签名入口验证缺失／错误 fingerprint 被拒绝，正确 fingerprint 保持原签名结果，并检查成功、路径错误、seed 错误、交易解析和 owner 错误后的 seed 清零。
 - `test_tron_attached_assets.py`：两个模板的 Overview / Details 资产字段、警告顺序、calldata 分页配置、实际 C getter 对长数据的完整复制，以及模拟器无需外部文件即可加载共用模板。
 
-当前已通过 73 项 TRON Rust 单测、2 项 TRON FFI 单测、3 项 UI 回归检查、FFI 编译，以及相关 C 文件的语法检查。C 检查使用生成后的 multi-coins Rust 绑定头和模拟器编译参数，不等于完整固件链接或实机运行。
+当前已通过 73 项 TRON Rust 单测、6 项 TRON FFI 单测、3 项 UI 回归检查、FFI 编译，以及相关 C 文件的语法检查。C 检查使用生成后的 multi-coins Rust 绑定头和模拟器编译参数，不等于完整固件链接或实机运行。
 
 尚未完成实机视觉及交互验收。QA 应扫描普通合约、transfer、approve 的附带资产请求，核对概览、详情、末页 calldata 和最终确认流程；也应回归普通 TRX / TRC-10 转账、Swap 与 PersonalMessage，确认新增卡片的隐藏和显示条件。

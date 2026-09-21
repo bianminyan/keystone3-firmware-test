@@ -6,7 +6,7 @@ use crate::common::structs::{SimpleResponse, TransactionCheckResult, Transaction
 use crate::common::types::{PtrBytes, PtrString, PtrT, PtrUR};
 use crate::common::ur::{QRCodeType, UREncodeResult};
 use crate::common::utils::{convert_c_char, recover_c_char};
-use crate::extract_array;
+use crate::{extract_array, extract_array_mut};
 use alloc::boxed::Box;
 use alloc::slice;
 use alloc::string::{String, ToString};
@@ -20,6 +20,7 @@ use structs::DisplayTRONPersonalMessage;
 use ur_registry::traits::{RegistryItem, To};
 use ur_registry::tron::tron_sign_request::TronSignRequest;
 use ur_registry::tron::tron_signature::TronSignature;
+use zeroize::Zeroize;
 
 // CryptoKeyPath serializes path components, never the textual master prefix.
 // Restore the prefix and enforce the same policy for transactions and messages.
@@ -107,7 +108,7 @@ pub unsafe extern "C" fn tron_sign_request(
     fragment_len: usize,
 ) -> *mut UREncodeResult {
     let req = extract_ptr_with_type!(ptr, TronSignRequest);
-    let seed_slice = extract_array!(seed, u8, seed_len as usize);
+    let seed_slice = extract_array_mut!(seed, u8, seed_len as usize);
 
     let sign_res = (|| -> Result<Vec<u8>, KeystoneError> {
         let sign_data = req.get_sign_data();
@@ -145,6 +146,9 @@ pub unsafe extern "C" fn tron_sign_request(
             .to_bytes()
             .map_err(|e| KeystoneError::SignTxFailed(e.to_string()))
     })();
+
+    // Clear the caller's seed on every Result path, before encoding the response.
+    seed_slice.zeroize();
 
     match sign_res {
         Ok(data) => UREncodeResult::encode(
@@ -279,6 +283,8 @@ pub unsafe extern "C" fn tron_parse_personal_message(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::common::free::free_ur_encode_result;
+    use crate::common::ur::FRAGMENT_UNLIMITED_LENGTH;
     use ur_registry::crypto_key_path::CryptoKeyPath;
     use ur_registry::tron::tron_sign_request::DataType;
 
@@ -291,6 +297,128 @@ mod tests {
             None,
             None,
         )
+    }
+
+    fn test_seed() -> Vec<u8> {
+        // Public BIP39 vector: eleven "abandon" words followed by "about".
+        hex::decode("5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4").unwrap()
+    }
+
+    fn signable_request(data_type: DataType, fingerprint: Option<[u8; 4]>) -> TronSignRequest {
+        let mut req = request("m/44'/195'/0'/0/0", data_type.clone());
+        req.set_derivation_path(
+            CryptoKeyPath::from_path("m/44'/195'/0'/0/0".into(), fingerprint).unwrap(),
+        );
+        if data_type == DataType::Transaction {
+            // Canonical TransferContract: the public test wallet sends 1 sun.
+            req.set_sign_data(hex::decode(concat!(
+                "0a0200012208020202020202020240d00f5a65080112610a2d",
+                "747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e",
+                "5472616e73666572436f6e747261637412300a1541c8599111f29c1e1e061265b4af93ea1f274ad78a",
+                "121541b6e708a39781c96bd399c7657780ff9fe9f052a8180170e807",
+            )).unwrap());
+        }
+        req
+    }
+
+    fn sign_via_ffi(req: &mut TronSignRequest, seed: &mut [u8]) -> Option<Vec<u8>> {
+        assert!(seed.iter().any(|byte| *byte != 0));
+        // Invoke the exported signing function directly, without scan-time checks.
+        let encoded = unsafe {
+            let result = tron_sign_request(
+                req as *mut TronSignRequest as PtrUR,
+                seed.as_mut_ptr(),
+                seed.len() as u32,
+                FRAGMENT_UNLIMITED_LENGTH,
+            );
+            assert!(!result.is_null());
+            let encoded = if (*result).data.is_null() {
+                None
+            } else {
+                Some(recover_c_char((*result).data))
+            };
+            free_ur_encode_result(result);
+            encoded
+        };
+        assert!(
+            seed.iter().all(|byte| *byte == 0),
+            "FFI retained seed bytes"
+        );
+        encoded.map(|encoded| {
+            let (_, cbor) = ur::decode(&encoded.to_lowercase()).unwrap();
+            minicbor::decode::<TronSignature>(&cbor)
+                .unwrap()
+                .get_signature()
+        })
+    }
+
+    #[test]
+    fn final_signing_rejects_missing_or_wrong_fingerprint_and_clears_seed() {
+        for data_type in [DataType::Transaction, DataType::PersonalMessage] {
+            for fingerprint in [None, Some([0xde, 0xad, 0xbe, 0xef])] {
+                let mut req = signable_request(data_type.clone(), fingerprint);
+                assert!(
+                    sign_via_ffi(&mut req, &mut test_seed()).is_none(),
+                    "accepted {data_type:?} with fingerprint {fingerprint:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn final_signing_succeeds_with_matching_fingerprint_and_clears_seed() {
+        for data_type in [DataType::Transaction, DataType::PersonalMessage] {
+            let mut seed = test_seed();
+            let fingerprint =
+                keystore::algorithms::secp256k1::get_master_fingerprint_by_seed(&seed).unwrap();
+            let mut req = signable_request(data_type.clone(), Some(*fingerprint.as_bytes()));
+            let path = request_path(&req).unwrap();
+            let expected = match data_type {
+                DataType::Transaction => {
+                    app_tron::sign_tx_request(&req.get_sign_data(), &path, &seed)
+                }
+                DataType::PersonalMessage => {
+                    app_tron::sign_personal_message(&req.get_sign_data(), &path, &seed)
+                }
+            }
+            .unwrap();
+            assert_eq!(
+                sign_via_ffi(&mut req, &mut seed).unwrap(),
+                hex::decode(expected).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn final_signing_clears_seed_on_invalid_paths_and_seed_errors() {
+        for data_type in [DataType::Transaction, DataType::PersonalMessage] {
+            let mut req = signable_request(data_type.clone(), Some([0x73, 0xc5, 0xda, 0x0a]));
+            let mut invalid_seed = [0x42; 1];
+            assert!(sign_via_ffi(&mut req, &mut invalid_seed).is_none());
+            for path in [
+                "m/44'/194'/0'/0/0",
+                "m/44'/195'/0'/0",
+                "m/44'/195'/0'/0/0/0",
+            ] {
+                req.set_derivation_path(
+                    CryptoKeyPath::from_path(path.into(), Some([0x73, 0xc5, 0xda, 0x0a])).unwrap(),
+                );
+                assert!(sign_via_ffi(&mut req, &mut test_seed()).is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn final_signing_clears_seed_on_transaction_parse_and_owner_errors() {
+        let mut req = signable_request(DataType::Transaction, Some([0x73, 0xc5, 0xda, 0x0a]));
+        // Valid path and fingerprint, but a different signing address than the owner.
+        req.set_derivation_path(
+            CryptoKeyPath::from_path("m/44'/195'/0'/0/1".into(), Some([0x73, 0xc5, 0xda, 0x0a]))
+                .unwrap(),
+        );
+        assert!(sign_via_ffi(&mut req, &mut test_seed()).is_none());
+        req.set_sign_data(alloc::vec![0xff]);
+        assert!(sign_via_ffi(&mut req, &mut test_seed()).is_none());
     }
 
     #[test]
