@@ -304,6 +304,30 @@ DEFINE_TRX_DETAIL_GETTER(GetTrxRefBlockHash, ref_block_hash)
 DEFINE_TRX_DETAIL_GETTER(GetTrxPermissionId, permission_id)
 DEFINE_TRX_DETAIL_GETTER(GetTrxRawDataHash, raw_data_hash)
 
+DEFINE_TRX_DETAIL_GETTER(GetTrxCallValue, call_value)
+DEFINE_TRX_DETAIL_GETTER(GetTrxCallTokenValue, call_token_value)
+DEFINE_TRX_DETAIL_GETTER(GetTrxTokenId, token_id)
+DEFINE_TRX_DETAIL_GETTER(GetTrxCallData, call_data)
+DEFINE_TRX_DETAIL_GETTER(GetTrxContractWarning, contract_warning)
+
+bool GetTrxAttachedTokenExist(void *indata, void *param)
+{
+    DisplayTron *trx = (DisplayTron *)param;
+    return trx->detail->token_id != NULL && trx->detail->token_id[0] != '\0';
+}
+
+bool GetTrxContractWarningExist(void *indata, void *param)
+{
+    DisplayTron *trx = (DisplayTron *)param;
+    return trx->detail->contract_warning != NULL && trx->detail->contract_warning[0] != '\0';
+}
+
+int GetTrxCallDataLen(void *param)
+{
+    DisplayTron *trx = (DisplayTron *)param;
+    return strlen(trx->detail->call_data) + 1;
+}
+
 void TrxCheckVault(lv_event_t *e)
 {
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {

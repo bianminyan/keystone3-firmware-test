@@ -37,6 +37,11 @@ pub struct DetailTx {
     pub ref_block_hash: String,
     pub permission_id: String,
     pub raw_data_hash: String,
+    pub call_value: String,
+    pub call_token_value: String,
+    pub token_id: String,
+    pub call_data: String,
+    pub contract_warning: String,
 }
 
 pub trait TxParser {
@@ -77,6 +82,11 @@ impl TxParser for WrappedTron {
             ref_block_hash: self.ref_block_hash.clone(),
             permission_id: self.permission_id.clone(),
             raw_data_hash: self.raw_data_hash.clone(),
+            call_value: self.call_value.clone(),
+            call_token_value: self.call_token_value.clone(),
+            token_id: self.token_id.clone(),
+            call_data: self.call_data.clone(),
+            contract_warning: self.contract_warning.clone(),
         };
         Ok(ParsedTx { overview, detail })
     }

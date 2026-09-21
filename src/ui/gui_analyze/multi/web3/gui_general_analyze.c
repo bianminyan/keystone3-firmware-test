@@ -169,6 +169,10 @@ GetObjStateFunc GuiOtherChainStateFuncGet(char *type)
         return GetTrxContractExist;
     } else if (!strcmp(type, "GetTrxTokenExist")) {
         return GetTrxTokenExist;
+    } else if (!strcmp(type, "GetTrxAttachedTokenExist")) {
+        return GetTrxAttachedTokenExist;
+    } else if (!strcmp(type, "GetTrxContractWarningExist")) {
+        return GetTrxContractWarningExist;
     } else if (!strcmp(type, "GetTrxMemoExist")) {
         return GetTrxMemoExist;
     } else if (!strcmp(type, "GetTrxMemoBytesExist")) {
@@ -274,6 +278,7 @@ GetLabelDataLenFunc GuiOtherChainTextLenFuncGet(char *type, GuiRemapViewType rem
     switch (remapIndex) {
     case REMAPVIEW_TRX:
     case REMAPVIEW_TRX_SWAP:
+        if (!strcmp(type, "GetTrxCallDataLen")) return GetTrxCallDataLen;
         if (!strcmp(type, "GetTrxMemoLen")) return GetTrxMemoLen;
         if (!strcmp(type, "GetTrxMemoHexLen")) return GetTrxMemoHexLen;
         return NULL;
@@ -441,6 +446,16 @@ static GetLabelDataFunc GuiTrxTextFuncGet(char *type)
         return GetTrxValueRaw;
     } else if (!strcmp(type, "GetTrxMemo")) {
         return GetTrxMemo;
+    } else if (!strcmp(type, "GetTrxCallValue")) {
+        return GetTrxCallValue;
+    } else if (!strcmp(type, "GetTrxCallTokenValue")) {
+        return GetTrxCallTokenValue;
+    } else if (!strcmp(type, "GetTrxTokenId")) {
+        return GetTrxTokenId;
+    } else if (!strcmp(type, "GetTrxCallData")) {
+        return GetTrxCallData;
+    } else if (!strcmp(type, "GetTrxContractWarning")) {
+        return GetTrxContractWarning;
     } else if (!strcmp(type, "GetTrxMemoHex")) {
         return GetTrxMemoHex;
     } else if (!strcmp(type, "GetTrxMemoHash")) {

@@ -46,6 +46,12 @@ pub struct DisplayTronDetail {
     pub ref_block_hash: PtrString,
     pub permission_id: PtrString,
     pub raw_data_hash: PtrString,
+    pub call_value: PtrString,
+    pub call_token_value: PtrString,
+    pub token_id: PtrString,
+    pub call_data: PtrString,
+    pub contract_warning: PtrString,
+
     pub raw_value: PtrString,
 }
 
@@ -83,6 +89,12 @@ impl From<DetailTx> for DisplayTronDetail {
             ref_block_hash: convert_c_char(value.ref_block_hash),
             permission_id: convert_c_char(value.permission_id),
             raw_data_hash: convert_c_char(value.raw_data_hash),
+            call_value: convert_c_char(value.call_value),
+            call_token_value: convert_c_char(value.call_token_value),
+            token_id: convert_c_char(value.token_id),
+            call_data: convert_c_char(value.call_data),
+            contract_warning: convert_c_char(value.contract_warning),
+
             raw_value: convert_c_char(value.raw_value),
         }
     }
@@ -125,6 +137,12 @@ impl Free for DisplayTronDetail {
         free_str_ptr!(self.ref_block_hash);
         free_str_ptr!(self.permission_id);
         free_str_ptr!(self.raw_data_hash);
+        free_str_ptr!(self.call_value);
+        free_str_ptr!(self.call_token_value);
+        free_str_ptr!(self.token_id);
+        free_str_ptr!(self.call_data);
+        free_str_ptr!(self.contract_warning);
+
         free_str_ptr!(self.raw_value);
     }
 }

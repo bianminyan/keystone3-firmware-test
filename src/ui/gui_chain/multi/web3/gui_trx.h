@@ -43,3 +43,12 @@ void GetTrxMessageRaw(void *indata, void *param, uint32_t maxLen);
 bool GetTrxMessageFromExist(void *indata, void *param);
 bool GetTrxMessageFromNotExist(void *indata, void *param);
 void GetTrxMessagePos(uint16_t *x, uint16_t *y, void *param);
+
+void GetTrxCallValue(void *indata, void *param, uint32_t maxLen);
+void GetTrxCallTokenValue(void *indata, void *param, uint32_t maxLen);
+void GetTrxTokenId(void *indata, void *param, uint32_t maxLen);
+void GetTrxCallData(void *indata, void *param, uint32_t maxLen);
+void GetTrxContractWarning(void *indata, void *param, uint32_t maxLen);
+bool GetTrxAttachedTokenExist(void *indata, void *param);
+bool GetTrxContractWarningExist(void *indata, void *param);
+int GetTrxCallDataLen(void *param);
