@@ -54,7 +54,6 @@ class TronAttachedAssetTests(unittest.TestCase):
 #include <string.h>
 #include "cJSON.h"
 #include "gui_trx_template.h"
-#define JSON_MAX_LEN (1024 * 100)
 typedef int lv_fs_file_t;
 typedef int lv_fs_res_t;
 #define LV_FS_RES_OK 0

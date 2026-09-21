@@ -59,7 +59,7 @@ UR `CryptoKeyPath` 不携带文本根前缀，FFI 的 `request_path` 补上 `m/`
 
 - 扫描检查要求 master fingerprint 长度为 4，并与请求 source fingerprint 匹配。
 - 最终 UR 签名从实际 seed 计算 fingerprint，缺失或不匹配拒绝；该检查同时覆盖交易和 PersonalMessage 分支。
-- `tron_sign_request` 在签名闭包结束后、构造返回结果前统一清零调用方传入的 seed 缓冲区，覆盖成功和错误返回；C 调用方原有的清理仍保留。
+- `tron_sign_request` 在构造切片前要求 seed 指针非空、长度为 keystore 支持的 16／32／64 字节。空指针或非法长度直接拒绝，不读取或清零无法确认范围的内存。合法 seed 缓冲区在签名闭包结束后、构造返回结果前统一清零，覆盖成功、空请求指针及其他错误返回；C 调用方原有的清理仍保留。非空指针所指对象的有效性及可写范围仍由 FFI 调用方保证。
 - 交易签名从 seed 和路径派生公钥，计算 TRON 地址并核对交易 owner。fingerprint 不能替代发送者地址校验。
 - Legacy payload 还核对请求 xfp 与解析上下文，最终交易签名同样核对 seed 对应地址。
 
@@ -164,6 +164,8 @@ Raw Data SHA-256 对应交易 raw_data 的哈希，不是 calldata 或整个签�
 
 固件和模拟器共用 `gui_trx_template.h` 中的交易、Swap 和 PersonalMessage 模板，TRON 页面不再依赖本地未跟踪的 `page_trx*.json`。模拟器仍支持其他链原有的外部模板文件。
 
+外部模板加载器自行定义 100 KiB 缓冲区上限，不依赖模拟器头文件的同名宏；回归测试不额外注入该常量。
+
 新增标签及未知调用警告当前为英文，本次没有完成新的多语言词条和字体生成。已经通过的结构及 getter 测试不等于在每个语言、字体和实机分辨率下完成视觉验收。
 
 ## 场景与预期
@@ -249,8 +251,9 @@ git diff --check
 - `legacy_trx_trc10_trc20_signatures_match_txid_and_owner`：公开测试钱包的三类 legacy 正例通过解析／检查／签名，核对固定 txid、raw 哈希、恢复公钥，并与 raw 入口的签名结果比对；原有 owner／fingerprint 负例保留。
 - `common::ur::tron_limit_tests`：超限单片／恶意分片元数据、16 KiB 请求乱序及混合片重组、重复片预算及类型切换。
 - `rust_c::tron::tests`：交易／消息请求的路径校验、UR 根前缀恢复和公钥派生错误；直接调用最终 FFI 签名入口验证缺失／错误 fingerprint 被拒绝，正确 fingerprint 保持原签名结果，并检查成功、路径错误、seed 错误、交易解析和 owner 错误后的 seed 清零。
+- FFI 边界测试还覆盖空 seed／请求指针、零长度及异常大长度、16／32／64 字节合法 seed，以及清零前后缓冲区两侧的哨兵字节。
 - `test_tron_attached_assets.py`：两个模板的 Overview / Details 资产字段、警告顺序、calldata 分页配置、实际 C getter 对长数据的完整复制，以及模拟器无需外部文件即可加载共用模板。
 
-当前已通过 79 项 TRON Rust 单测、7 项 TRON FFI 单测、3 项 TRON UR 限制测试、3 项 UI 回归检查、FFI 编译，以及相关 C 文件的语法检查。C 检查使用生成后的 multi-coins Rust 绑定头和模拟器编译参数，不等于完整固件链接或实机运行。
+当前已通过 79 项 TRON Rust 单测、10 项 TRON FFI 单测、3 项 TRON UR 限制测试、3 项 UI 回归检查、FFI 编译，以及相关 C 文件的语法检查。C 检查使用生成后的 multi-coins Rust 绑定头和模拟器编译参数，不等于完整固件链接或实机运行。
 
 尚未完成实机视觉及交互验收。QA 应扫描普通合约、transfer、approve 的附带资产请求，核对概览、详情、末页 calldata 和最终确认流程；也应回归普通 TRX / TRC-10 转账、Swap 与 PersonalMessage，确认新增卡片的隐藏和显示条件。

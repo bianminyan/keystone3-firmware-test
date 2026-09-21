@@ -1077,10 +1077,11 @@ static cJSON *ParseTransactionTemplate(const char *config)
 {
 #ifdef COMPILE_SIMULATOR
     // TRON shares the firmware's embedded JSON; other simulator pages use files.
+    enum { TRANSACTION_TEMPLATE_MAX_LEN = 100 * 1024 };
     if (config[0] != '{') {
         lv_fs_file_t fd;
         uint32_t size = 0;
-        char buf[JSON_MAX_LEN];
+        char buf[TRANSACTION_TEMPLATE_MAX_LEN];
         if (LV_FS_RES_OK != lv_fs_open(&fd, config, LV_FS_MODE_RD)) {
             printf("lv_fs_open failed %s\n", config);
             return NULL;

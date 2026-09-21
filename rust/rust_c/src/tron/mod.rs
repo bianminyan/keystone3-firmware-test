@@ -104,6 +104,10 @@ pub unsafe extern "C" fn tron_parse_sign_request(
     )
 }
 
+/// # Safety
+/// Non-null `ptr` must point to a valid TronSignRequest. For a supported length,
+/// non-null `seed` must exclusively reference that many writable bytes for the
+/// duration of this call. Pointer checks cannot establish allocation ownership.
 #[no_mangle]
 pub unsafe extern "C" fn tron_sign_request(
     ptr: PtrUR,
@@ -111,10 +115,21 @@ pub unsafe extern "C" fn tron_sign_request(
     seed_len: u32,
     fragment_len: usize,
 ) -> *mut UREncodeResult {
-    let req = extract_ptr_with_type!(ptr, TronSignRequest);
+    // An invalid extent must not be used even for cleanup: the allocation size
+    // is unknown, so reject without reading or writing caller memory.
+    if seed.is_null() || !matches!(seed_len, 16 | 32 | 64) {
+        return UREncodeResult::from(KeystoneError::SignTxFailed(
+            "invalid seed pointer or length; expected 16, 32, or 64 bytes".into(),
+        ))
+        .c_ptr();
+    }
     let seed_slice = extract_array_mut!(seed, u8, seed_len as usize);
 
     let sign_res = (|| -> Result<Vec<u8>, KeystoneError> {
+        if ptr.is_null() {
+            return Err(KeystoneError::SignTxFailed("null TRON request".into()));
+        }
+        let req = extract_ptr_with_type!(ptr, TronSignRequest);
         let sign_data = req.get_sign_data();
         app_tron::validate_sign_data_len(sign_data.len())
             .map_err(|e| KeystoneError::SignTxFailed(e.to_string()))?;
@@ -359,6 +374,71 @@ mod tests {
     }
 
     #[test]
+    fn final_signing_rejects_null_seed_and_invalid_lengths_without_memory_access() {
+        let mut req = signable_request(DataType::PersonalMessage, Some([0x73, 0xc5, 0xda, 0x0a]));
+        for len in [0, 1, 15, 17, 31, 33, 63, 65, u32::MAX] {
+            let mut storage = [0x42; 66];
+            unsafe {
+                let result = tron_sign_request(
+                    &mut req as *mut TronSignRequest as PtrUR,
+                    storage.as_mut_ptr().add(1),
+                    len,
+                    FRAGMENT_UNLIMITED_LENGTH,
+                );
+                assert!((*result).data.is_null());
+                free_ur_encode_result(result);
+            }
+            assert_eq!(
+                storage, [0x42; 66],
+                "invalid length {len} wrote caller memory"
+            );
+        }
+        for len in [0, 16, 32, 64, u32::MAX] {
+            unsafe {
+                let result = tron_sign_request(
+                    &mut req as *mut TronSignRequest as PtrUR,
+                    core::ptr::null_mut(),
+                    len,
+                    FRAGMENT_UNLIMITED_LENGTH,
+                );
+                assert!((*result).data.is_null());
+                free_ur_encode_result(result);
+            }
+        }
+    }
+
+    #[test]
+    fn final_signing_accepts_supported_seed_lengths_and_preserves_canaries() {
+        for len in [16, 32, 64] {
+            let mut storage = [0x42; 66];
+            let seed = &mut storage[1..1 + len];
+            let fingerprint =
+                keystore::algorithms::secp256k1::get_master_fingerprint_by_seed(seed).unwrap();
+            let mut req =
+                signable_request(DataType::PersonalMessage, Some(*fingerprint.as_bytes()));
+            assert!(sign_via_ffi(&mut req, seed).is_some());
+            assert_eq!(storage[0], 0x42);
+            assert!(storage[1 + len..].iter().all(|byte| *byte == 0x42));
+        }
+    }
+
+    #[test]
+    fn final_signing_rejects_null_request_and_clears_valid_seed() {
+        let mut seed = test_seed();
+        unsafe {
+            let result = tron_sign_request(
+                core::ptr::null_mut(),
+                seed.as_mut_ptr(),
+                seed.len() as u32,
+                FRAGMENT_UNLIMITED_LENGTH,
+            );
+            assert!((*result).data.is_null());
+            free_ur_encode_result(result);
+        }
+        assert!(seed.iter().all(|byte| *byte == 0));
+    }
+
+    #[test]
     fn final_signing_rejects_requests_over_16_kib_and_clears_seed() {
         for data_type in [DataType::Transaction, DataType::PersonalMessage] {
             let mut req = signable_request(data_type, Some([0x73, 0xc5, 0xda, 0x0a]));
@@ -411,7 +491,7 @@ mod tests {
     fn final_signing_clears_seed_on_invalid_paths_and_seed_errors() {
         for data_type in [DataType::Transaction, DataType::PersonalMessage] {
             let mut req = signable_request(data_type.clone(), Some([0x73, 0xc5, 0xda, 0x0a]));
-            let mut invalid_seed = [0x42; 1];
+            let mut invalid_seed = [0xff; 16];
             assert!(sign_via_ffi(&mut req, &mut invalid_seed).is_none());
             for path in [
                 "m/44'/194'/0'/0/0",
