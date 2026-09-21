@@ -11,18 +11,22 @@ use keystore::algorithms::secp256k1::derive_public_key;
 macro_rules! check_hd_path {
     ($t: expr) => {{
         let mut result: Result<()> = Ok(());
-        if $t.len() < 5 || $t.len() > 6 {
-            result = Err(TronError::InvalidHDPath(format!("Length error: {:?}", $t)));
-        } else {
-            let coin_type_idx = if $t.len() == 6 { 2 } else { 1 };
-            let coin_type = $t[coin_type_idx];
-
-            if coin_type != "194'" && coin_type != "195'" {
-                result = Err(TronError::InvalidHDPath(format!(
-                    "Coin type mismatch: {}",
-                    coin_type
-                )));
-            }
+        if $t.len() != 6
+            || ($t[0] != "m" && $t[0] != "M")
+            || $t[1] != "44'"
+            || $t[2] != "195'"
+            || $t[3] != "0'"
+            || $t[4] != "0"
+            || $t[5].is_empty()
+            || $t[5].ends_with("'")
+            || $t[5]
+                .parse::<u32>()
+                .map_or(true, |index| index >= (1 << 31))
+        {
+            result = Err(TronError::InvalidHDPath(format!(
+                "expected m/44'/195'/0'/0/index, got {:?}",
+                $t
+            )));
         }
         result
     }};
@@ -90,6 +94,16 @@ mod tests {
             let path = "m/44'/195'/0'/0/2";
             let address = get_address(path.to_string(), &extended_pub_key.to_string()).unwrap();
             assert_eq!("TYJPRrdB5APNeRs4R7fYZSwW3TcrTKw2gx".to_string(), address);
+        }
+        for invalid in [
+            "m/44'/195'/0'/0",
+            "m/44'/195'/1'/0/0",
+            "m/44'/194'/0'/0/0",
+            "m/44'/195'/0'/1/0",
+            "m/44'/195'/0'/0/0'",
+            "m/44'/195'/0'/0/2147483648",
+        ] {
+            assert!(get_address(invalid.to_string(), &extended_pub_key.to_string()).is_err());
         }
     }
 }

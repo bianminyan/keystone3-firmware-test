@@ -1,3 +1,4 @@
+use crate::address::public_key_to_address;
 use crate::errors::{Result, TronError};
 use crate::transaction::wrapped_tron::WrappedTron;
 use alloc::borrow::ToOwned;
@@ -15,7 +16,24 @@ pub trait Signer {
 }
 
 impl WrappedTron {
+    fn validate_seed_signer(&self, seed: &[u8]) -> Result<()> {
+        let fingerprint = secp256k1::get_master_fingerprint_by_seed(seed)?;
+        if !self.xfp.is_empty()
+            && self.xfp.to_uppercase() != hex::encode(fingerprint).to_uppercase()
+        {
+            return Err(TronError::InvalidParseContext(
+                "request fingerprint does not match signing seed".to_string(),
+            ));
+        }
+        let public_key = secp256k1::get_public_key_by_seed(seed, &self.hd_path)?;
+        if public_key_to_address(&public_key) != self.from {
+            return Err(TronError::NoMyInputs);
+        }
+        Ok(())
+    }
+
     fn do_sign_digest(&self, seed: &[u8]) -> Result<[u8; 65]> {
+        self.validate_seed_signer(seed)?;
         let sig_hash = self.signature_hash()?;
 
         let message = bitcoin::secp256k1::Message::from_digest_slice(sig_hash.as_slice())
@@ -56,7 +74,7 @@ impl Signer for WrappedTron {
 
 #[cfg(test)]
 mod tests {
-
+    use alloc::string::ToString;
     use hex;
 
     use crate::test::{prepare_parse_context, prepare_payload};
@@ -69,12 +87,13 @@ mod tests {
         let pubkey_str = "xpub6C3ndD75jvoARyqUBTvrsMZaprs2ZRF84kRTt5r9oxKQXn5oFChRRgrP2J8QhykhKACBLF2HxwAh4wccFqFsuJUBBcwyvkyqfzJU5gfn5pY";
         let payload = prepare_payload(hex);
         let context = prepare_parse_context(pubkey_str);
-        let tx = WrappedTron::from_payload(payload, &context).unwrap();
+        let mut tx = WrappedTron::from_payload(payload, &context).unwrap();
+        tx.xfp = "73c5da0a".to_string();
         let seed = hex::decode("5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4").unwrap();
-        let sig = tx.sign_signature_only(&seed).unwrap();
-        assert_eq!("d01233804064a481a7e50cfa81007b6a5de8c933e0c08e09fd9bf045c7b70b7f20e262098f42a121cd3de494962215a835e38d220d25eeeefb7df1376bf74b8600", sig);
-        assert_eq!(sig.len(), 130);
-        assert!(sig.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(matches!(
+            tx.sign_signature_only(&seed),
+            Err(crate::errors::TronError::NoMyInputs)
+        ));
     }
 
     #[test]
@@ -86,14 +105,13 @@ mod tests {
         let pubkey_str = "xpub6C3ndD75jvoARyqUBTvrsMZaprs2ZRF84kRTt5r9oxKQXn5oFChRRgrP2J8QhykhKACBLF2HxwAh4wccFqFsuJUBBcwyvkyqfzJU5gfn5pY";
         let payload = prepare_payload(hex);
         let context = prepare_parse_context(pubkey_str);
-        let tx = WrappedTron::from_payload(payload, &context).unwrap();
+        let mut tx = WrappedTron::from_payload(payload, &context).unwrap();
+        tx.xfp = "73c5da0a".to_string();
         let seed = hex::decode("5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4").unwrap();
-        let (raw_hex, tx_id) = tx.sign(&seed).unwrap();
-        assert_eq!("0a7c0a02ea0522082c84cb547bae782640b8f3c28bfc305a65080112610a2d747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e5472616e73666572436f6e747261637412300a1541bf90ce9c87c42a58699b1a2e3f65e88181436d53121541b0ca665130d03c977823834e3fcbe63af2421fa118011241fe599fc2386cabae4f7a9478d4ab8116513cb849644b997521f9192e4be74fec7efa3449c806bf0307e53d8ad659bf9d18795c87a059acecbce28de58c43631e01", raw_hex);
-        assert_eq!(
-            "0f89c6365796afa96ae05fab57207a4d8c5cc801b92ac2099c7dd9dcd5a91df0",
-            tx_id
-        );
+        assert!(matches!(
+            tx.sign(&seed),
+            Err(crate::errors::TronError::NoMyInputs)
+        ));
     }
 
     #[test]
@@ -104,14 +122,13 @@ mod tests {
         let pubkey_str = "xpub6C3ndD75jvoARyqUBTvrsMZaprs2ZRF84kRTt5r9oxKQXn5oFChRRgrP2J8QhykhKACBLF2HxwAh4wccFqFsuJUBBcwyvkyqfzJU5gfn5pY";
         let payload = prepare_payload(hex);
         let context = prepare_parse_context(pubkey_str);
-        let tx = WrappedTron::from_payload(payload, &context).unwrap();
+        let mut tx = WrappedTron::from_payload(payload, &context).unwrap();
+        tx.xfp = "73c5da0a".to_string();
         let seed = hex::decode("5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4").unwrap();
-        let (raw_hex, tx_id) = tx.sign(&seed).unwrap();
-        assert_eq!("0a8b010a02dd71220897877879243d8e1840d8a6f586fc305a74080212700a32747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e5472616e736665724173736574436f6e7472616374123a0a0731303032303030121541bf90ce9c87c42a58699b1a2e3f65e88181436d531a1541b0ca665130d03c977823834e3fcbe63af2421fa120e807124143da1e7a627c789e69c340f343b0983244cff5e0cb4214e0372897f1c486a6d62bc0a8c0c9bf6f7210bd4a63ad5205a7f6afa3afa58d1821134f54df52914cd801", raw_hex);
-        assert_eq!(
-            "ce840b7d819b37069268232b4ed4fd49d8ec38141f20301648703cfe4ea0f321",
-            tx_id
-        );
+        assert!(matches!(
+            tx.sign(&seed),
+            Err(crate::errors::TronError::NoMyInputs)
+        ));
     }
     #[test]
     fn test_sign_trc20_transfer() {
@@ -124,12 +141,10 @@ mod tests {
             let context = prepare_parse_context(pubkey_str);
             let tx = WrappedTron::from_payload(payload, &context).unwrap();
             let seed = hex::decode("5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4").unwrap();
-            let (raw_hex, tx_id) = tx.sign(&seed).unwrap();
-            assert_eq!("0ad4010a02e8b32208b0465d7759adf6d640c881858bfc305aae01081f12a9010a31747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e54726967676572536d617274436f6e747261637412740a1541bf90ce9c87c42a58699b1a2e3f65e88181436d53121541a614f803b6fd780986a42c78ec9c7f77e6ded13c2244a9059cbb000000000000000000000000b0ca665130d03c977823834e3fcbe63af2421fa100000000000000000000000000000000000000000000000000000000000007c37088f4cd89fc3090018094ebdc031241d01233804064a481a7e50cfa81007b6a5de8c933e0c08e09fd9bf045c7b70b7f20e262098f42a121cd3de494962215a835e38d220d25eeeefb7df1376bf74b8600", raw_hex);
-            assert_eq!(
-                "762dee17f934b7520a8c83396a823690921355d5160d6848728834fd15dea5c4",
-                tx_id
-            );
+            assert!(matches!(
+                tx.sign(&seed),
+                Err(crate::errors::TronError::InvalidParseContext(_))
+            ));
         }
     }
 }

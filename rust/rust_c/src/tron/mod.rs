@@ -22,7 +22,13 @@ use ur_registry::traits::{RegistryItem, To};
 use ur_registry::tron::tron_sign_request::TronSignRequest;
 use ur_registry::tron::tron_signature::TronSignature;
 
-const TRON_DEFAULT_PATH: &str = "m/44'/195'/0'/0/0";
+// CryptoKeyPath serializes path components, never the textual master prefix.
+// Keep the app's strict path policy; restore its input format at the UR boundary.
+fn request_path(req: &TronSignRequest) -> Option<String> {
+    req.get_derivation_path()
+        .get_path()
+        .map(|path| format!("m/{path}"))
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn tron_check_sign_request(
@@ -52,7 +58,7 @@ pub unsafe extern "C" fn tron_check_sign_request(
     let x_pub_recovered = recover_c_char(x_pub);
     let xpub_str = x_pub_recovered.as_str();
     let sign_data = req.get_sign_data();
-    let path = match req.get_derivation_path().get_path() {
+    let path = match request_path(req) {
         Some(p) => p,
         None => return TransactionCheckResult::from(RustCError::InvalidHDPath).c_ptr(),
     };
@@ -75,10 +81,10 @@ pub unsafe extern "C" fn tron_parse_sign_request(
 ) -> *mut TransactionParseResult<DisplayTron> {
     let req = extract_ptr_with_type!(ptr, TronSignRequest);
     let json_bytes = req.get_sign_data();
-    let path = req
-        .get_derivation_path()
-        .get_path()
-        .unwrap_or_else(|| String::from(TRON_DEFAULT_PATH));
+    let path = match request_path(req) {
+        Some(path) => path,
+        None => return TransactionParseResult::from(RustCError::InvalidHDPath).c_ptr(),
+    };
 
     app_tron::parse_tx_request(&json_bytes, &path).map_or_else(
         |e| TransactionParseResult::from(e).c_ptr(),
@@ -103,10 +109,20 @@ pub unsafe extern "C" fn tron_sign_request(
     let sign_res = (|| -> Result<Vec<u8>, KeystoneError> {
         let sign_data = req.get_sign_data();
         let request_id = req.get_request_id();
-        let path = req
+        let path = request_path(req).ok_or(KeystoneError::SignTxFailed(
+            "missing TRON derivation path".to_string(),
+        ))?;
+        let expected = req
             .get_derivation_path()
-            .get_path()
-            .unwrap_or_else(|| String::from(TRON_DEFAULT_PATH));
+            .get_source_fingerprint()
+            .ok_or_else(|| KeystoneError::SignTxFailed("missing TRON source fingerprint".into()))?;
+        let actual = keystore::algorithms::secp256k1::get_master_fingerprint_by_seed(seed_slice)
+            .map_err(|e| KeystoneError::SignTxFailed(e.to_string()))?;
+        if actual != expected.into() {
+            return Err(KeystoneError::SignTxFailed(
+                "TRON fingerprint does not match signing seed".into(),
+            ));
+        }
 
         let signed_tx_hex = match TransactionType::from(req.get_data_type()) {
             TransactionType::Transaction => {

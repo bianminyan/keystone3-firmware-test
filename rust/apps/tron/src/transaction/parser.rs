@@ -28,7 +28,15 @@ pub struct DetailTx {
     pub token: String,
     pub contract_address: String,
     pub memo: String,
+    pub memo_hex: String,
+    pub memo_hash: String,
+    pub fee_limit: String,
+    pub timestamp: String,
     pub expiration: String,
+    pub ref_block_bytes: String,
+    pub ref_block_hash: String,
+    pub permission_id: String,
+    pub raw_data_hash: String,
 }
 
 pub trait TxParser {
@@ -60,7 +68,15 @@ impl TxParser for WrappedTron {
             contract_address: self.contract_address.to_string(),
             token: self.token.to_string(),
             memo: self.memo.clone(),
+            memo_hex: self.memo_hex.clone(),
+            memo_hash: self.memo_hash.clone(),
+            fee_limit: self.fee_limit.to_string(),
+            timestamp: self.timestamp.clone(),
             expiration: self.expiration.clone(),
+            ref_block_bytes: self.ref_block_bytes.clone(),
+            ref_block_hash: self.ref_block_hash.clone(),
+            permission_id: self.permission_id.clone(),
+            raw_data_hash: self.raw_data_hash.clone(),
         };
         Ok(ParsedTx { overview, detail })
     }
@@ -105,6 +121,12 @@ mod tests {
         assert_eq!("TRX Transfer".to_string(), parsed_tx.overview.method);
         assert!(parsed_tx.detail.contract_address.is_empty());
         assert!(parsed_tx.detail.token.is_empty());
+        assert!(!parsed_tx.detail.timestamp.is_empty());
+        assert!(!parsed_tx.detail.expiration.is_empty());
+        assert_eq!(4, parsed_tx.detail.ref_block_bytes.len());
+        assert_eq!(16, parsed_tx.detail.ref_block_hash.len());
+        assert_eq!(64, parsed_tx.detail.memo_hash.len());
+        assert_eq!(64, parsed_tx.detail.raw_data_hash.len());
     }
 
     #[test]

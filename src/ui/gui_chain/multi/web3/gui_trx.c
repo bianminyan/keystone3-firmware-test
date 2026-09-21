@@ -239,10 +239,35 @@ void GetTrxSwapDstAddress(void *indata, void *param, uint32_t maxLen)
     strcpy_s(out, maxLen, "");
 }
 
+bool GetTrxMemoExist(void *indata, void *param)
+{
+    DisplayTron *trx = (DisplayTron *)param;
+    return trx->detail->memo != NULL && trx->detail->memo[0] != '\0';
+}
+
+bool GetTrxMemoBytesExist(void *indata, void *param)
+{
+    DisplayTron *trx = (DisplayTron *)param;
+    // Binary memos may have no displayable text; their hex is still nonempty.
+    return trx->detail->memo_hex != NULL && trx->detail->memo_hex[0] != '\0';
+}
+
 void GetTrxMemo(void *indata, void *param, uint32_t maxLen)
 {
     DisplayTron *trx = (DisplayTron *)param;
     strcpy_s((char *)indata, maxLen, trx->detail->memo);
+}
+
+int GetTrxMemoLen(void *param)
+{
+    DisplayTron *trx = (DisplayTron *)param;
+    return strlen(trx->detail->memo) + 1;
+}
+
+int GetTrxMemoHexLen(void *param)
+{
+    DisplayTron *trx = (DisplayTron *)param;
+    return strlen(trx->detail->memo_hex) + 1;
 }
 
 void GetTrxNetwork(void *indata, void *param, uint32_t maxLen)
@@ -262,6 +287,22 @@ void GetTrxValueRaw(void *indata, void *param, uint32_t maxLen)
     DisplayTron *trx = (DisplayTron *)param;
     strcpy_s((char *)indata, maxLen, trx->detail->raw_value);
 }
+
+#define DEFINE_TRX_DETAIL_GETTER(name, field)                         \
+    void name(void *indata, void *param, uint32_t maxLen)             \
+    {                                                                  \
+        DisplayTron *trx = (DisplayTron *)param;                       \
+        strcpy_s((char *)indata, maxLen, trx->detail->field);         \
+    }
+
+DEFINE_TRX_DETAIL_GETTER(GetTrxMemoHex, memo_hex)
+DEFINE_TRX_DETAIL_GETTER(GetTrxMemoHash, memo_hash)
+DEFINE_TRX_DETAIL_GETTER(GetTrxFeeLimit, fee_limit)
+DEFINE_TRX_DETAIL_GETTER(GetTrxTimestamp, timestamp)
+DEFINE_TRX_DETAIL_GETTER(GetTrxRefBlockBytes, ref_block_bytes)
+DEFINE_TRX_DETAIL_GETTER(GetTrxRefBlockHash, ref_block_hash)
+DEFINE_TRX_DETAIL_GETTER(GetTrxPermissionId, permission_id)
+DEFINE_TRX_DETAIL_GETTER(GetTrxRawDataHash, raw_data_hash)
 
 void TrxCheckVault(lv_event_t *e)
 {

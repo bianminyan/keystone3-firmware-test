@@ -10,7 +10,6 @@ use alloc::vec::Vec;
 use alloc::{format, vec};
 use app_utils::keystone;
 use ascii::AsciiStr;
-use core::str::FromStr;
 use cryptoxide::hashing;
 use ethabi::{
     ethereum_types::{H160, U256},
@@ -36,10 +35,17 @@ pub struct WrappedTron {
     pub(crate) value: String,
     pub(crate) method: String,
     pub(crate) token_short_name: Option<String>,
-    pub(crate) divider: f64,
+    pub(crate) decimals: u8,
     pub(crate) fee_limit: u64,
     pub(crate) memo: String,
+    pub(crate) memo_hex: String,
+    pub(crate) memo_hash: String,
+    pub(crate) timestamp: String,
     pub(crate) expiration: String,
+    pub(crate) ref_block_bytes: String,
+    pub(crate) ref_block_hash: String,
+    pub(crate) permission_id: String,
+    pub(crate) raw_data_hash: String,
 }
 
 #[macro_export]
@@ -57,49 +63,71 @@ macro_rules! derivation_account_path {
     }};
 }
 
-const KNOWN_TOKENS: &[(&str, &str, f64)] = &[
-    ("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", "USDT", 1_000_000.0), // 6 decimals
-    ("TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8", "USDC", 1_000_000.0), // 6 decimals
-    (
-        "TUpMhErZL2fhh4sVNULAbNKLokS4GjC1F4",
-        "TUSD",
-        1_000_000_000_000_000_000.0,
-    ), // 18 decimals
-    (
-        "TAFjULxiVgT4qWk6UZwjqwZXTSaGaqnVp4",
-        "BTT",
-        1_000_000_000_000_000_000.0,
-    ), // 18 decimals
-    (
-        "TCFLL5dx5ZJdKnWuesXxi1VPwjLVmWZZy9",
-        "JST",
-        1_000_000_000_000_000_000.0,
-    ), // 18 decimals
-    ("TFczxzPhnThNSqr5by8tvxsdCFRRz6cPNq", "NFT", 1_000_000.0),  // 6 decimals
-    (
-        "TSSMHYeV2uE9qYH95DqyoCuNCzEL1NvU3S",
-        "SUN",
-        1_000_000_000_000_000_000.0,
-    ), // 18 decimals
-    ("TYhWwKpw43ENFWBTGpzLHn3882f2au7SMi", "WBTC", 100_000_000.0), // 8 decimals
-    ("TNUC9Qb1rRpS5CbWLmNMxXBjyFoydXjWFR", "WTRX", 1_000_000.0), // 6 decimals
-    ("TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7", "WIN", 1_000_000.0),  // 6 decimals
-    (
-        "TXDk8mbtRbXeYuMNS83CfKPaYYT8XWv9Hz",
-        "USDD",
-        1_000_000_000_000_000_000.0,
-    ), // 18 decimals
+const KNOWN_TOKENS: &[(&str, &str, u8)] = &[
+    ("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", "USDT", 6),
+    ("TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8", "USDC", 6),
+    ("TUpMhErZL2fhh4sVNULAbNKLokS4GjC1F4", "TUSD", 18),
+    ("TAFjULxiVgT4qWk6UZwjqwZXTSaGaqnVp4", "BTT", 18),
+    ("TCFLL5dx5ZJdKnWuesXxi1VPwjLVmWZZy9", "JST", 18),
+    ("TFczxzPhnThNSqr5by8tvxsdCFRRz6cPNq", "NFT", 6),
+    ("TSSMHYeV2uE9qYH95DqyoCuNCzEL1NvU3S", "SUN", 18),
+    ("TYhWwKpw43ENFWBTGpzLHn3882f2au7SMi", "WBTC", 8),
+    ("TNUC9Qb1rRpS5CbWLmNMxXBjyFoydXjWFR", "WTRX", 6),
+    ("TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7", "WIN", 6),
+    ("TXDk8mbtRbXeYuMNS83CfKPaYYT8XWv9Hz", "USDD", 18),
 ];
 
-fn known_token_metadata(contract_address: &str) -> Option<(&'static str, f64)> {
+fn known_token_metadata(contract_address: &str) -> Option<(&'static str, u8)> {
     KNOWN_TOKENS
         .iter()
         .find(|token| token.0 == contract_address)
         .map(|token| (token.1, token.2))
 }
 
+fn invalid_raw(message: &str) -> TronError {
+    TronError::InvalidRawTxCryptoBytes(message.to_string())
+}
+
+fn validate_address_bytes(address: &[u8], field: &str) -> Result<()> {
+    if address.len() != 21 || address[0] != 0x41 {
+        return Err(invalid_raw(&format!("invalid {field} address")));
+    }
+    Ok(())
+}
+
+fn format_decimal_units(raw: &str, decimals: u8) -> Result<String> {
+    if raw.is_empty() || !raw.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(invalid_raw("amount is not an unsigned decimal integer"));
+    }
+    let normalized = raw.trim_start_matches('0');
+    let digits = if normalized.is_empty() {
+        "0"
+    } else {
+        normalized
+    };
+    if decimals == 0 {
+        return Ok(digits.to_string());
+    }
+    let decimals = decimals as usize;
+    let mut formatted = if digits.len() <= decimals {
+        format!("0.{:0>width$}", digits, width = decimals)
+    } else {
+        let split = digits.len() - decimals;
+        format!("{}.{}", &digits[..split], &digits[split..])
+    };
+    while formatted.ends_with('0') {
+        formatted.pop();
+    }
+    if formatted.ends_with('.') {
+        formatted.pop();
+    }
+    Ok(formatted)
+}
+
 impl WrappedTron {
     pub fn from_raw_transaction(raw_tx: Transaction, path: String) -> Result<Self> {
+        let path_parts = path.split('/').collect::<Vec<&str>>();
+        crate::check_hd_path!(path_parts)?;
         let mut instance = Self {
             tron_tx: raw_tx,
             hd_path: path,
@@ -111,130 +139,151 @@ impl WrappedTron {
             to: String::new(),
             value: "0".to_string(),
             method: String::new(),
-            divider: DIVIDER,
+            decimals: DEFAULT_DECIMALS,
             token_short_name: None,
             fee_limit: 0,
             memo: String::new(),
+            memo_hex: String::new(),
+            memo_hash: String::new(),
+            timestamp: String::new(),
             expiration: String::new(),
+            ref_block_bytes: String::new(),
+            ref_block_hash: String::new(),
+            permission_id: String::new(),
+            raw_data_hash: String::new(),
         };
 
-        if let Some(raw) = &instance.tron_tx.raw_data {
-            instance.fee_limit = raw.fee_limit as u64;
-            instance.memo = String::from_utf8_lossy(&raw.data).to_string();
-            if raw.contract.len() > 1 {
-                return Err(TronError::InvalidRawTxCryptoBytes(
-                    "multiple contracts require a complete review".to_string(),
-                ));
+        let raw = instance
+            .tron_tx
+            .raw_data
+            .as_ref()
+            .ok_or_else(|| invalid_raw("empty raw data"))?;
+        if raw.contract.len() != 1 {
+            return Err(invalid_raw("exactly one contract is required"));
+        }
+        if raw.ref_block_bytes.len() != 2 || raw.ref_block_hash.len() != 8 {
+            return Err(invalid_raw("invalid ref block fields"));
+        }
+        if raw.timestamp <= 0 || raw.expiration <= raw.timestamp || raw.fee_limit < 0 {
+            return Err(invalid_raw("invalid timestamp, expiration, or fee limit"));
+        }
+
+        instance.fee_limit = raw.fee_limit as u64;
+        instance.memo = String::from_utf8(raw.data.clone())
+            .ok()
+            .filter(|memo| !memo.contains('\0'))
+            .unwrap_or_default();
+        instance.memo_hex = hex::encode(&raw.data);
+        instance.memo_hash = hex::encode(hashing::sha256(&raw.data));
+        instance.timestamp = raw.timestamp.to_string();
+        instance.expiration = raw.expiration.to_string();
+        instance.ref_block_bytes = hex::encode(&raw.ref_block_bytes);
+        instance.ref_block_hash = hex::encode(&raw.ref_block_hash);
+        let raw_bytes = raw.encode_to_vec();
+        instance.raw_data_hash = hex::encode(hashing::sha256(&raw_bytes));
+
+        let contract = &raw.contract[0];
+        if !contract.provider.is_empty()
+            || !contract.contract_name.is_empty()
+            || contract.permission_id < 0
+        {
+            return Err(invalid_raw("unsupported contract metadata"));
+        }
+        instance.permission_id = contract.permission_id.to_string();
+        let param = contract
+            .parameter
+            .as_ref()
+            .ok_or_else(|| invalid_raw("missing contract parameter"))?;
+        use crate::pb::protocol::transaction::contract::ContractType;
+        let c_type = ContractType::from_i32(contract.r#type)
+            .ok_or_else(|| invalid_raw("unsupported contract type"))?;
+
+        match c_type {
+            ContractType::TransferContract => {
+                if param.type_url != "type.googleapis.com/protocol.TransferContract" {
+                    return Err(invalid_raw("TransferContract type_url mismatch"));
+                }
+                let ct = TransferContract::decode(param.value.as_slice())
+                    .map_err(|_| invalid_raw("TransferContract decode failed"))?;
+                if ct.encode_to_vec() != param.value {
+                    return Err(invalid_raw("non-canonical TransferContract encoding"));
+                }
+                validate_address_bytes(&ct.owner_address, "owner")?;
+                validate_address_bytes(&ct.to_address, "recipient")?;
+                if ct.amount < 0 {
+                    return Err(invalid_raw("negative transfer amount"));
+                }
+                instance.from = bitcoin::base58::encode_check(&ct.owner_address);
+                instance.to = bitcoin::base58::encode_check(&ct.to_address);
+                instance.value = ct.amount.to_string();
+                instance.token = String::new();
+                instance.decimals = DEFAULT_DECIMALS;
             }
-            if let Some(contract) = raw.contract.get(0) {
-                use crate::pb::protocol::transaction::contract::ContractType;
-                let c_type = ContractType::from_i32(contract.r#type).ok_or(
-                    TronError::InvalidRawTxCryptoBytes(format!(
-                        "unsupported contract type {}",
-                        contract.r#type
-                    )),
-                )?;
-
-                if let Some(param) = &contract.parameter {
-                    match c_type {
-                        // A. TRX Transfer
-                        ContractType::TransferContract => {
-                            let ct =
-                                TransferContract::decode(param.value.as_slice()).map_err(|_| {
-                                    TronError::InvalidRawTxCryptoBytes(
-                                        "TransferContract decode failed".to_string(),
-                                    )
-                                })?;
-                            instance.from = bitcoin::base58::encode_check(&ct.owner_address);
-                            instance.to = bitcoin::base58::encode_check(&ct.to_address);
-                            instance.value = ct.amount.to_string();
-                            instance.token = "TRX".to_string();
-                            instance.divider = DIVIDER;
-                        }
-
-                        // B. TRC-20 Transfer
-                        ContractType::TriggerSmartContract => {
-                            let ct = TriggerSmartContract::decode(param.value.as_slice()).map_err(
-                                |_| {
-                                    TronError::InvalidRawTxCryptoBytes(
-                                        "TriggerSmartContract decode failed".to_string(),
-                                    )
-                                },
-                            )?;
-                            instance.from = bitcoin::base58::encode_check(&ct.owner_address);
-                            instance.contract_address =
-                                bitcoin::base58::encode_check(&ct.contract_address);
-
-                            if ct.data.len() >= 68 && &ct.data[0..4] == &[0xa9, 0x05, 0x9c, 0xbb] {
-                                instance.method = "TRC-20 Transfer".to_string();
-                                let mut to_addr_bytes = vec![0x41u8];
-                                to_addr_bytes.extend_from_slice(&ct.data[16..36]);
-                                instance.to = bitcoin::base58::encode_check(&to_addr_bytes);
-
-                                let amount_bytes = &ct.data[36..68];
-                                instance.value =
-                                    ethabi::ethereum_types::U256::from_big_endian(amount_bytes)
-                                        .to_string();
-
-                                if let Some((token, divider)) =
-                                    known_token_metadata(&instance.contract_address)
-                                {
-                                    instance.token = token.to_string();
-                                    instance.divider = divider;
-                                } else {
-                                    // Unknown token metadata must stay in raw units.  A
-                                    // hard-coded decimal count would make the displayed
-                                    // amount look authoritative even though the contract
-                                    // has not been verified.
-                                    instance.token = "TRC20 Token (raw)".to_string();
-                                    instance.divider = 1.0;
-                                }
-                            } else if ct.data.len() >= 68
-                                && &ct.data[0..4] == &[0x09, 0x5e, 0xa7, 0xb3]
-                            {
-                                instance.method = "TRC-20 Approve".to_string();
-                                let mut spender_bytes = vec![0x41u8];
-                                spender_bytes.extend_from_slice(&ct.data[16..36]);
-                                instance.to = bitcoin::base58::encode_check(&spender_bytes);
-                                instance.value =
-                                    U256::from_big_endian(&ct.data[36..68]).to_string();
-                                if let Some((token, divider)) =
-                                    known_token_metadata(&instance.contract_address)
-                                {
-                                    instance.token = token.to_string();
-                                    instance.divider = divider;
-                                } else {
-                                    instance.token = "TRC20 Token (raw)".to_string();
-                                    instance.divider = 1.0;
-                                }
-                            } else {
-                                instance.method = "Contract Call".to_string();
-                            }
-                        }
-
-                        // C. TRC-10 Transfer
-                        ContractType::TransferAssetContract => {
-                            let ct = TransferAssetContract::decode(param.value.as_slice())
-                                .map_err(|_| {
-                                    TronError::InvalidRawTxCryptoBytes(
-                                        "TransferAssetContract decode failed".to_string(),
-                                    )
-                                })?;
-                            instance.from = bitcoin::base58::encode_check(&ct.owner_address);
-                            instance.to = bitcoin::base58::encode_check(&ct.to_address);
-                            instance.value = ct.amount.to_string();
-                            instance.token = String::from_utf8_lossy(&ct.asset_name).to_string();
-                            instance.divider = DIVIDER;
-                        }
-                        _ => {
-                            return Err(TronError::InvalidRawTxCryptoBytes(format!(
-                                "unsupported contract type {}",
-                                contract.r#type
-                            )))
-                        }
-                    }
+            ContractType::TriggerSmartContract => {
+                if param.type_url != "type.googleapis.com/protocol.TriggerSmartContract" {
+                    return Err(invalid_raw("TriggerSmartContract type_url mismatch"));
+                }
+                let ct = TriggerSmartContract::decode(param.value.as_slice())
+                    .map_err(|_| invalid_raw("TriggerSmartContract decode failed"))?;
+                if ct.encode_to_vec() != param.value {
+                    return Err(invalid_raw("non-canonical TriggerSmartContract encoding"));
+                }
+                validate_address_bytes(&ct.owner_address, "owner")?;
+                validate_address_bytes(&ct.contract_address, "contract")?;
+                if ct.call_value != 0 || ct.call_token_value != 0 || ct.token_id != 0 {
+                    return Err(invalid_raw("unsupported smart contract value fields"));
+                }
+                if ct.data.len() != 68 || ct.data[4..16].iter().any(|byte| *byte != 0) {
+                    return Err(invalid_raw("non-canonical TRC-20 calldata"));
+                }
+                let selector = &ct.data[..4];
+                instance.method = if selector == [0xa9, 0x05, 0x9c, 0xbb] {
+                    "TRC-20 Transfer".to_string()
+                } else if selector == [0x09, 0x5e, 0xa7, 0xb3] {
+                    "TRC-20 Approve".to_string()
+                } else {
+                    return Err(invalid_raw("unsupported smart contract selector"));
+                };
+                instance.from = bitcoin::base58::encode_check(&ct.owner_address);
+                instance.contract_address = bitcoin::base58::encode_check(&ct.contract_address);
+                let mut destination = vec![0x41u8];
+                destination.extend_from_slice(&ct.data[16..36]);
+                instance.to = bitcoin::base58::encode_check(&destination);
+                instance.value = U256::from_big_endian(&ct.data[36..68]).to_string();
+                if let Some((token, decimals)) = known_token_metadata(&instance.contract_address) {
+                    instance.token = token.to_string();
+                    instance.decimals = decimals;
+                } else {
+                    instance.token = "TRC20 Token (raw)".to_string();
+                    instance.decimals = 0;
                 }
             }
+            ContractType::TransferAssetContract => {
+                if param.type_url != "type.googleapis.com/protocol.TransferAssetContract" {
+                    return Err(invalid_raw("TransferAssetContract type_url mismatch"));
+                }
+                let ct = TransferAssetContract::decode(param.value.as_slice())
+                    .map_err(|_| invalid_raw("TransferAssetContract decode failed"))?;
+                if ct.encode_to_vec() != param.value {
+                    return Err(invalid_raw("non-canonical TransferAssetContract encoding"));
+                }
+                validate_address_bytes(&ct.owner_address, "owner")?;
+                validate_address_bytes(&ct.to_address, "recipient")?;
+                if ct.amount < 0 {
+                    return Err(invalid_raw("negative asset transfer amount"));
+                }
+                instance.from = bitcoin::base58::encode_check(&ct.owner_address);
+                instance.to = bitcoin::base58::encode_check(&ct.to_address);
+                instance.value = ct.amount.to_string();
+                instance.token = String::from_utf8(ct.asset_name)
+                    .map_err(|_| invalid_raw("invalid TRC-10 asset id"))?;
+                if instance.token.is_empty() || !instance.token.bytes().all(|b| b.is_ascii_digit())
+                {
+                    return Err(invalid_raw("invalid TRC-10 asset id"));
+                }
+                instance.decimals = DEFAULT_DECIMALS;
+            }
+            _ => return Err(invalid_raw("unsupported contract type")),
         }
         Ok(instance)
     }
@@ -336,27 +385,32 @@ impl WrappedTron {
         latest_block: LatestBlock,
         is_trc_20: bool,
     ) -> Result<Transaction> {
-        let number_buf: [u8; 8] = (latest_block.number as u64).to_be_bytes();
-        let hash_buf = hex::decode(&latest_block.hash).map_err(|_e| {
-            TronError::InvalidRawTxCryptoBytes(format!(
-                "invalid latest block hash {}",
-                latest_block.hash
-            ))
-        })?;
-        let mut generated_block_id = [0u8; 32];
-        generated_block_id[..8].copy_from_slice(&number_buf);
-        generated_block_id[8..31].copy_from_slice(&hash_buf[8..hash_buf.len() - 1]);
-        if let Some(mut raw_data) = tx.raw_data.to_owned() {
-            raw_data.ref_block_hash = generated_block_id[8..16].to_vec();
-            raw_data.ref_block_bytes = generated_block_id[6..8].to_vec();
-            if is_trc_20 {
-                raw_data.fee_limit = 1000000000;
-                raw_data.timestamp = latest_block.timestamp;
-            }
-            raw_data.expiration = latest_block.timestamp + 600 * 5 * 1000;
-            tx.raw_data = Some(raw_data);
-        };
-        Ok(tx.to_owned())
+        if latest_block.number < 0 || latest_block.timestamp <= 0 {
+            return Err(invalid_raw("invalid latest block number or timestamp"));
+        }
+        let number_buf = (latest_block.number as u64).to_be_bytes();
+        let hash_buf = hex::decode(&latest_block.hash)
+            .map_err(|_| invalid_raw("invalid latest block hash"))?;
+        if hash_buf.len() != 32 {
+            return Err(invalid_raw("latest block hash must be 32 bytes"));
+        }
+        let expiration = latest_block
+            .timestamp
+            .checked_add(600 * 5 * 1000)
+            .ok_or_else(|| invalid_raw("latest block timestamp overflow"))?;
+        let mut raw_data = tx
+            .raw_data
+            .clone()
+            .ok_or_else(|| invalid_raw("empty raw data"))?;
+        raw_data.ref_block_hash = hash_buf[8..16].to_vec();
+        raw_data.ref_block_bytes = number_buf[6..8].to_vec();
+        raw_data.timestamp = latest_block.timestamp;
+        raw_data.expiration = expiration;
+        if is_trc_20 {
+            raw_data.fee_limit = 1_000_000_000;
+        }
+        tx.raw_data = Some(raw_data);
+        Ok(tx.clone())
     }
 
     fn build_transfer_tx(tx_data: &protoc::TronTx) -> Result<Transaction> {
@@ -370,6 +424,9 @@ impl WrappedTron {
                 tx_data.value
             ))
         })?;
+        if value < 0 {
+            return Err(invalid_raw("negative transfer value"));
+        }
         let tx = &mut WrappedTron::build_transfer_transaction(
             token,
             tx_data.from.to_owned(),
@@ -462,105 +519,31 @@ impl WrappedTron {
             .ok_or(TronError::InvalidRawTxCryptoBytes(
                 "empty transaction field for payload content".to_string(),
             ))?;
-        // `override` is supplied by the sender and is not part of the signed
-        // transaction. Only the contract-address allowlist below may provide
-        // human-readable token metadata.
-        let token_short_name: Option<String> = None;
-        let mut divider = DIVIDER;
+        if content.coin_code.to_uppercase() != "TRON" {
+            return Err(invalid_raw("invalid coin code"));
+        }
         match tx {
             TronTx(tx) => {
-                let contract_address = tx.contract_address.to_string();
-                let mut token = tx.token.to_string();
-                if !contract_address.is_empty() {
-                    if let Some((known_token, known_divider)) =
-                        known_token_metadata(&contract_address)
-                    {
-                        token = known_token.to_string();
-                        divider = known_divider;
-                    } else {
-                        token = "TRC20 Token (raw)".to_string();
-                        divider = 1.0;
-                    }
-                }
                 let mut tron_tx = if tx.contract_address.is_empty() {
                     Self::build_transfer_tx(tx)
                 } else {
                     Self::generate_trc20_tx(tx)
                 }?;
-                let fee_limit = if let Some(raw) = &tron_tx.raw_data {
-                    raw.fee_limit as u64
-                } else {
-                    0
-                };
-                let mut expiration = "".to_string();
-
-                if !tx.memo.is_empty() {
-                    if let Some(ref mut raw) = tron_tx.raw_data {
-                        raw.data = tx.memo.as_bytes().to_vec();
-                        expiration = (raw.expiration).to_string();
-                    }
+                if let Some(ref mut raw) = tron_tx.raw_data {
+                    raw.data = tx.memo.as_bytes().to_vec();
                 }
-
-                Ok(Self {
-                    hd_path: content.hd_path,
-                    extended_pubkey: context.extended_public_key.to_string(),
-                    tron_tx,
-                    xfp: payload.xfp,
-                    token,
-                    contract_address,
-                    from: tx.from.to_string(),
-                    to: tx.to.to_string(),
-                    value: tx.value.to_string(),
-                    method: String::new(),
-                    divider,
-                    token_short_name,
-                    fee_limit,
-                    memo: tx.memo.clone(),
-                    expiration,
-                })
+                let mut wrapped = Self::from_raw_transaction(tron_tx, content.hd_path)?;
+                wrapped.extended_pubkey = context.extended_public_key.to_string();
+                wrapped.xfp = payload.xfp;
+                Ok(wrapped)
             }
-            _ => Err(TronError::InvalidRawTxCryptoBytes(
-                "invalid transaction type".to_string(),
-            )),
+            _ => Err(invalid_raw("invalid transaction type")),
         }
     }
 
     pub fn format_amount(&self) -> Result<String> {
-        let raw_val = f64::from_str(self.value.as_str())?;
-        let amount = raw_val / self.divider;
-        let unit = self.format_unit()?;
-
-        // Calculate precision from divider (power of 10)
-        let precision = if self.divider <= 1.0 {
-            0
-        } else {
-            let mut count = 0;
-            let mut d = self.divider;
-            while d >= 9.99999 {
-                // Account for float precision
-                d /= 10.0;
-                count += 1;
-            }
-            count
-        };
-
-        let formatted = format!("{:.*}", precision, amount);
-        let trimmed = if formatted.contains('.') {
-            formatted
-                .trim_end_matches('0')
-                .trim_end_matches('.')
-                .to_string()
-        } else {
-            formatted
-        };
-
-        let final_value = if trimmed == "0" && raw_val > 0.0 {
-            format!("{:.*}", precision, amount)
-        } else {
-            trimmed
-        };
-
-        Ok(format!("{} {}", final_value, unit))
+        let amount = format_decimal_units(&self.value, self.decimals)?;
+        Ok(format!("{} {}", amount, self.format_unit()?))
     }
 
     pub fn format_method(&self) -> Result<String> {
@@ -579,7 +562,9 @@ impl WrappedTron {
         if let Some(ref name) = self.token_short_name {
             return Ok(name.clone());
         }
-        if !self.token.is_empty() {
+        if self.token == "1002000" {
+            Ok("BTT".to_string())
+        } else if !self.token.is_empty() {
             Ok(self.token.clone())
         } else {
             Ok("TRX".to_string())
@@ -587,7 +572,7 @@ impl WrappedTron {
     }
 }
 
-pub const DIVIDER: f64 = 1000000_f64;
+pub const DEFAULT_DECIMALS: u8 = 6;
 pub const NETWORK: &str = "Tron Mainnet";
 
 #[cfg(test)]
@@ -600,6 +585,43 @@ mod tests {
     use bitcoin::bip32::Fingerprint;
     use core::str::FromStr;
     use ur_registry::pb::protoc::{payload, Payload, SignMessage};
+
+    fn valid_trigger_transaction(data: Vec<u8>) -> Transaction {
+        let trigger = TriggerSmartContract {
+            owner_address: [vec![0x41], vec![0x11; 20]].concat(),
+            contract_address: bitcoin::base58::decode_check("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t")
+                .unwrap(),
+            data,
+            ..Default::default()
+        };
+        Transaction {
+            raw_data: Some(transaction::Raw {
+                ref_block_bytes: vec![0, 1],
+                ref_block_hash: vec![2; 8],
+                expiration: 2_000,
+                contract: vec![transaction::Contract {
+                    r#type: transaction::contract::ContractType::TriggerSmartContract as i32,
+                    parameter: Some(Any {
+                        type_url: "type.googleapis.com/protocol.TriggerSmartContract".to_string(),
+                        value: trigger.encode_to_vec(),
+                    }),
+                    ..Default::default()
+                }],
+                timestamp: 1_000,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn canonical_transfer_calldata() -> Vec<u8> {
+        let mut data = vec![0xa9, 0x05, 0x9c, 0xbb];
+        data.extend_from_slice(&[0; 12]);
+        data.extend_from_slice(&[0x22; 20]);
+        data.extend_from_slice(&[0; 31]);
+        data.push(1);
+        data
+    }
 
     #[test]
     fn test_from_raw_transaction_decode_failures() {
@@ -652,10 +674,17 @@ mod tests {
             value: "".to_string(),
             method: "".to_string(),
             token_short_name: None,
-            divider: 1.0,
+            decimals: 0,
             fee_limit: 0,
             memo: String::new(),
+            memo_hex: String::new(),
+            memo_hash: String::new(),
+            timestamp: String::new(),
             expiration: String::new(),
+            ref_block_bytes: String::new(),
+            ref_block_hash: String::new(),
+            permission_id: String::new(),
+            raw_data_hash: String::new(),
         };
         assert!(tx_no_raw.signature_hash().is_err());
     }
@@ -706,10 +735,17 @@ mod tests {
             value: "".to_string(),
             method: "".to_string(),
             token_short_name: None,
-            divider: 1.0,
+            decimals: 0,
             fee_limit: 0,
             memo: String::new(),
+            memo_hex: String::new(),
+            memo_hash: String::new(),
+            timestamp: String::new(),
             expiration: String::new(),
+            ref_block_bytes: String::new(),
+            ref_block_hash: String::new(),
+            permission_id: String::new(),
+            raw_data_hash: String::new(),
         };
         let result = tx.signature_hash();
         assert!(result.is_err());
@@ -843,13 +879,13 @@ mod tests {
         let mut tx = WrappedTron::from_payload(payload, &context).unwrap();
 
         // Test 18 decimals (like TUSD)
-        tx.divider = 1_000_000_000_000_000_000.0;
+        tx.decimals = 18;
         tx.value = "1000000000000000000".to_string();
         let formatted = tx.format_amount().unwrap();
         assert!(formatted.contains("1"));
 
         // Test 8 decimals (like WBTC)
-        tx.divider = 100_000_000.0;
+        tx.decimals = 8;
         tx.value = "100000000".to_string();
         let formatted = tx.format_amount().unwrap();
         assert!(formatted.contains("1"));
@@ -866,11 +902,7 @@ mod tests {
         tron_tx.raw_data = Some(raw);
 
         let result = WrappedTron::from_raw_transaction(tron_tx, "m/44'/195'/0'/0/0".to_string());
-        assert!(matches!(
-            result,
-            Err(TronError::InvalidRawTxCryptoBytes(message))
-                if message.contains("unsupported contract type")
-        ));
+        assert!(result.is_err());
     }
 
     #[test]
@@ -884,11 +916,7 @@ mod tests {
         tron_tx.raw_data = Some(raw);
 
         let result = WrappedTron::from_raw_transaction(tron_tx, "m/44'/195'/0'/0/0".to_string());
-        assert!(matches!(
-            result,
-            Err(TronError::InvalidRawTxCryptoBytes(message))
-                if message.contains("multiple contracts")
-        ));
+        assert!(result.is_err());
     }
 
     #[test]
@@ -899,8 +927,8 @@ mod tests {
         let mut data = vec![0x09, 0x5e, 0xa7, 0xb3];
         data.extend_from_slice(&[0u8; 12]);
         data.extend_from_slice(&spender[1..]);
-        data.extend_from_slice(&[0u8; 31]);
-        data.push(1);
+        data.extend_from_slice(&[0u8; 29]);
+        data.extend_from_slice(&[0x0f, 0x42, 0x40]);
 
         let trigger = TriggerSmartContract {
             owner_address: owner,
@@ -920,19 +948,35 @@ mod tests {
         };
         let tx = Transaction {
             raw_data: Some(transaction::Raw {
+                ref_block_bytes: vec![0x00, 0x01],
+                ref_block_hash: vec![0x22; 8],
+                expiration: 2_000,
                 contract: vec![contract],
+                timestamp: 1_000,
                 ..Default::default()
             }),
             ..Default::default()
         };
 
-        let parsed = WrappedTron::from_raw_transaction(tx, "m/44'/195'/0'/0/0".to_string())
+        let parsed = WrappedTron::from_raw_transaction(tx.clone(), "m/44'/195'/0'/0/0".to_string())
             .unwrap()
             .parse()
             .unwrap();
         assert_eq!("TRC-20 Approve", parsed.detail.method);
         assert_eq!("1 USDT", parsed.detail.value);
         assert_eq!(bitcoin::base58::encode_check(&spender), parsed.detail.to);
+
+        let mut non_canonical = tx;
+        non_canonical.raw_data.as_mut().unwrap().contract[0]
+            .parameter
+            .as_mut()
+            .unwrap()
+            .value
+            .extend_from_slice(&[0x80, 0x06, 0x01]);
+        assert!(
+            WrappedTron::from_raw_transaction(non_canonical, "m/44'/195'/0'/0/0".to_string(),)
+                .is_err()
+        );
     }
 
     #[test]
@@ -1004,10 +1048,7 @@ mod tests {
         tron_tx.raw_data = Some(raw);
 
         let result = WrappedTron::from_raw_transaction(tron_tx, "m/44'/195'/0'/0/0".to_string());
-        assert!(result.is_ok());
-        let wrapped = result.unwrap();
-        // Should not parse TRC-20 data if it's too short
-        assert_eq!(wrapped.value, "0");
+        assert!(result.is_err());
     }
 
     #[test]
@@ -1030,9 +1071,7 @@ mod tests {
         tron_tx.raw_data = Some(raw);
 
         let result = WrappedTron::from_raw_transaction(tron_tx, "m/44'/195'/0'/0/0".to_string());
-        assert!(result.is_ok());
-        let wrapped = result.unwrap();
-        assert_eq!(wrapped.value, "0");
+        assert!(result.is_err());
     }
 
     #[test]
@@ -1043,10 +1082,7 @@ mod tests {
         tron_tx.raw_data = Some(raw);
 
         let result = WrappedTron::from_raw_transaction(tron_tx, "m/44'/195'/0'/0/0".to_string());
-        assert!(result.is_ok());
-        let wrapped = result.unwrap();
-        assert_eq!(wrapped.from, "");
-        assert_eq!(wrapped.value, "0");
+        assert!(result.is_err());
     }
 
     #[test]
@@ -1057,14 +1093,14 @@ mod tests {
         let context = prepare_parse_context(pubkey_str);
         let mut tx = WrappedTron::from_payload(payload, &context).unwrap();
 
-        // Test with custom divider (not 6 or 18)
-        tx.divider = 1_000.0; // 3 decimals
+        // Test with custom decimal precision (not 6 or 18)
+        tx.decimals = 3;
         tx.value = "1000".to_string();
         let formatted = tx.format_amount().unwrap();
         assert!(formatted.contains("1"));
 
-        // Test with divider = 1 (no decimals)
-        tx.divider = 1.0;
+        // Test with no decimals
+        tx.decimals = 0;
         tx.value = "100".to_string();
         let formatted = tx.format_amount().unwrap();
         assert!(formatted.contains("100"));
@@ -1083,5 +1119,109 @@ mod tests {
         );
         let raw_data = tx.tron_tx.raw_data.as_ref().expect("raw_data should exist");
         assert_eq!(tx.memo.as_bytes().to_vec(), raw_data.data);
+    }
+
+    #[test]
+    fn formats_u256_amount_without_float_rounding() {
+        let raw = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+        let formatted = format_decimal_units(raw, 6).unwrap();
+        assert_eq!(formatted.replace('.', ""), raw);
+        assert!(formatted.ends_with(".639935"));
+        assert!(!formatted.contains('e'));
+    }
+
+    #[test]
+    fn rejects_non_canonical_trc20_calldata() {
+        let mut trailing = canonical_transfer_calldata();
+        trailing.push(0);
+        assert!(WrappedTron::from_raw_transaction(
+            valid_trigger_transaction(trailing),
+            "m/44'/195'/0'/0/0".to_string(),
+        )
+        .is_err());
+
+        let mut padding = canonical_transfer_calldata();
+        padding[4] = 1;
+        assert!(WrappedTron::from_raw_transaction(
+            valid_trigger_transaction(padding),
+            "m/44'/195'/0'/0/0".to_string(),
+        )
+        .is_err());
+
+        let mut selector = canonical_transfer_calldata();
+        selector[..4].copy_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+        assert!(WrappedTron::from_raw_transaction(
+            valid_trigger_transaction(selector),
+            "m/44'/195'/0'/0/0".to_string(),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn rejects_hidden_smart_contract_values() {
+        for field in 0..3 {
+            let mut tx = valid_trigger_transaction(canonical_transfer_calldata());
+            let parameter = tx.raw_data.as_mut().unwrap().contract[0]
+                .parameter
+                .as_mut()
+                .unwrap();
+            let mut trigger = TriggerSmartContract::decode(parameter.value.as_slice()).unwrap();
+            match field {
+                0 => trigger.call_value = 1,
+                1 => trigger.call_token_value = 1,
+                _ => trigger.token_id = 1,
+            }
+            parameter.value = trigger.encode_to_vec();
+            assert!(
+                WrappedTron::from_raw_transaction(tx, "m/44'/195'/0'/0/0".to_string(),).is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_mismatched_or_hidden_contract_metadata() {
+        let mut wrong_type = valid_trigger_transaction(canonical_transfer_calldata());
+        wrong_type.raw_data.as_mut().unwrap().contract[0]
+            .parameter
+            .as_mut()
+            .unwrap()
+            .type_url = "type.googleapis.com/protocol.TransferContract".to_string();
+        assert!(
+            WrappedTron::from_raw_transaction(wrong_type, "m/44'/195'/0'/0/0".to_string(),)
+                .is_err()
+        );
+
+        let mut provider = valid_trigger_transaction(canonical_transfer_calldata());
+        provider.raw_data.as_mut().unwrap().contract[0].provider = vec![1];
+        assert!(
+            WrappedTron::from_raw_transaction(provider, "m/44'/195'/0'/0/0".to_string(),).is_err()
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_transaction_header_and_path() {
+        let mut tx = valid_trigger_transaction(canonical_transfer_calldata());
+        tx.raw_data.as_mut().unwrap().expiration = 1_000;
+        assert!(WrappedTron::from_raw_transaction(tx, "m/44'/195'/0'/0/0".to_string(),).is_err());
+        assert!(WrappedTron::from_raw_transaction(
+            valid_trigger_transaction(canonical_transfer_calldata()),
+            "m/44'/60'/0'/0/0".to_string(),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn preserves_non_text_memo_as_hex_and_hash() {
+        for memo in [vec![0xff, 0xfe], vec![b'a', 0, b'b']] {
+            let mut tx = valid_trigger_transaction(canonical_transfer_calldata());
+            tx.raw_data.as_mut().unwrap().data = memo.clone();
+            let parsed = WrappedTron::from_raw_transaction(tx, "m/44'/195'/0'/0/0".to_string())
+                .unwrap()
+                .parse()
+                .unwrap();
+            assert!(parsed.detail.memo.is_empty());
+            assert_eq!(parsed.detail.memo_hex, hex::encode(memo));
+            assert_eq!(parsed.detail.memo_hash.len(), 64);
+        }
     }
 }

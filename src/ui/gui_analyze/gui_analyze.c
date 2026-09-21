@@ -3,6 +3,8 @@
 #include "cjson/cJSON.h"
 #include "lvgl.h"
 #include "gui_analyze.h"
+#include "assert.h"
+#include "gui_chain_components.h"
 #include "gui_chain.h"
 #include "gui_model.h"
 
@@ -313,7 +315,7 @@ lv_event_cb_t GuiTemplateEventCbGet(char *type)
 void GuiWidgetBaseInit(lv_obj_t *obj, cJSON *json)
 {
     GetContSizeFunc func = NULL;
-    uint16_t xpos, ypos;
+    uint16_t xpos = 0, ypos = 0;
     int xsize, ysize;
     lv_align_t align;
     // virtual void create_lvgl_widget(cJSON *json) {};
@@ -418,6 +420,41 @@ void GuiWidgetBaseInit(lv_obj_t *obj, cJSON *json)
 
     lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
 
+    /* Opt-in content layout. Apply before creating children so percentage widths
+     * and paged-text viewports measure the final available content width. */
+    bool dynamic = cJSON_IsTrue(cJSON_GetObjectItem(json, "dynamic"));
+    if (dynamic) {
+        const char *type = cJSON_GetObjectItem(json, "type")->valuestring;
+        bool viewport = cJSON_IsTrue(cJSON_GetObjectItem(json, "viewport"));
+        if (!strcmp(type, "container") || !strcmp(type, "tabview_child")) {
+            lv_obj_set_flex_flow(obj, LV_FLEX_FLOW_COLUMN);
+            lv_obj_set_style_pad_row(obj, 12, LV_PART_MAIN);
+            lv_obj_set_style_pad_column(obj, 0, LV_PART_MAIN);
+            if (!strcmp(type, "tabview_child")) {
+                lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN);
+                lv_obj_set_style_pad_top(obj, 12, LV_PART_MAIN);
+                lv_obj_set_style_pad_bottom(obj, 16, LV_PART_MAIN);
+            } else {
+                cJSON *padding = cJSON_GetObjectItem(json, "content_padding");
+                lv_obj_set_style_pad_all(obj, padding ? padding->valueint : 16, LV_PART_MAIN);
+            }
+        }
+        if (strcmp(type, "tabview_child") && !viewport) {
+            lv_obj_set_width(obj, lv_pct(100));
+            if (strcmp(type, "paged_text")) lv_obj_set_height(obj, LV_SIZE_CONTENT);
+        }
+        if (!strcmp(type, "label")) {
+            lv_label_set_long_mode(obj, LV_LABEL_LONG_WRAP);
+            lv_obj_set_height(obj, LV_SIZE_CONTENT);
+        }
+        if (viewport || !strcmp(type, "tabview_child")) {
+            lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_set_scroll_dir(obj, LV_DIR_VER);
+        } else {
+            lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+        }
+    }
+
     cJSON *childrenArray = cJSON_GetObjectItem(json, "children");
     if (childrenArray != NULL) {
         for (cJSON *child = childrenArray->child; child != NULL; child = child->next) {
@@ -463,6 +500,8 @@ static char *GetLabelText(lv_obj_t *parent, cJSON *json)
         }
     }
     char *text = EXT_MALLOC(bufLen);
+    ASSERT(text != NULL);
+    memset(text, 0, bufLen);
     item = cJSON_GetObjectItem(json, "text");
     if (item != NULL) {
         strcpy_s(text, bufLen, _(item->valuestring));
@@ -482,6 +521,25 @@ static char *GetLabelText(lv_obj_t *parent, cJSON *json)
         }
     }
     return text;
+}
+
+static void GuiPagedTextDelete(lv_event_t *event)
+{
+    EXT_FREE(lv_event_get_user_data(event));
+}
+
+static lv_obj_t *GuiWidgetPagedText(lv_obj_t *parent, cJSON *json)
+{
+    lv_obj_t *obj = lv_obj_create(parent);
+    lv_obj_set_size(obj, lv_pct(100), 360);
+    lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN);
+    lv_obj_set_style_border_width(obj, 0, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
+    char *text = GetLabelText(parent, json);
+    GuiShowPagedMessageText(obj, text, true, NULL, NULL);
+    /* The pager borrows its source until the container is destroyed. */
+    lv_obj_add_event_cb(obj, GuiPagedTextDelete, LV_EVENT_DELETE, text);
+    return obj;
 }
 
 lv_obj_t *GuiWidgetTextArea(lv_obj_t *parent, cJSON *json)
@@ -996,6 +1054,8 @@ static lv_obj_t *GuiWidgetFactoryCreate(lv_obj_t *parent, cJSON *json)
         obj = GuiWidgetCustomContainer(parent, json);
     } else if (0 == strcmp(type, "textarea")) {
         obj = GuiWidgetTextArea(parent, json);
+    } else if (0 == strcmp(type, "paged_text")) {
+        obj = GuiWidgetPagedText(parent, json);
     } else if (0 == strcmp(type, "json_label")) {
         obj = GuiWidgetJsonLabel(parent, json);
     } else if (0 == strcmp(type, "btn")) {

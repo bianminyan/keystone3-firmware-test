@@ -169,6 +169,10 @@ GetObjStateFunc GuiOtherChainStateFuncGet(char *type)
         return GetTrxContractExist;
     } else if (!strcmp(type, "GetTrxTokenExist")) {
         return GetTrxTokenExist;
+    } else if (!strcmp(type, "GetTrxMemoExist")) {
+        return GetTrxMemoExist;
+    } else if (!strcmp(type, "GetTrxMemoBytesExist")) {
+        return GetTrxMemoBytesExist;
     } else if (!strcmp(type, "GetTrxMessageFromExist")) {
         return GetTrxMessageFromExist;
     } else if (!strcmp(type, "GetTrxMessageFromNotExist")) {
@@ -268,6 +272,11 @@ GetLabelDataFunc GuiOtherChainTextFuncGet(char *type, GuiRemapViewType remapInde
 GetLabelDataLenFunc GuiOtherChainTextLenFuncGet(char *type, GuiRemapViewType remapIndex)
 {
     switch (remapIndex) {
+    case REMAPVIEW_TRX:
+    case REMAPVIEW_TRX_SWAP:
+        if (!strcmp(type, "GetTrxMemoLen")) return GetTrxMemoLen;
+        if (!strcmp(type, "GetTrxMemoHexLen")) return GetTrxMemoHexLen;
+        return NULL;
     case REMAPVIEW_SUI:
         return GuiSuiTextLenFuncGet(type);
     case REMAPVIEW_APT:
@@ -432,6 +441,22 @@ static GetLabelDataFunc GuiTrxTextFuncGet(char *type)
         return GetTrxValueRaw;
     } else if (!strcmp(type, "GetTrxMemo")) {
         return GetTrxMemo;
+    } else if (!strcmp(type, "GetTrxMemoHex")) {
+        return GetTrxMemoHex;
+    } else if (!strcmp(type, "GetTrxMemoHash")) {
+        return GetTrxMemoHash;
+    } else if (!strcmp(type, "GetTrxFeeLimit")) {
+        return GetTrxFeeLimit;
+    } else if (!strcmp(type, "GetTrxTimestamp")) {
+        return GetTrxTimestamp;
+    } else if (!strcmp(type, "GetTrxRefBlockBytes")) {
+        return GetTrxRefBlockBytes;
+    } else if (!strcmp(type, "GetTrxRefBlockHash")) {
+        return GetTrxRefBlockHash;
+    } else if (!strcmp(type, "GetTrxPermissionId")) {
+        return GetTrxPermissionId;
+    } else if (!strcmp(type, "GetTrxRawDataHash")) {
+        return GetTrxRawDataHash;
     }
     return NULL;
 }
