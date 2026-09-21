@@ -19,6 +19,22 @@ pub enum VerificationResult {
 
 pub fn verify<P: consensus::Parameters>(params: &P, ufvk: &str, text: &str) -> VerificationResult {
     use VerificationResult::*;
+    // The upstream UA decoder matches lowercase HRPs. Normalize only uniformly
+    // uppercase UAs; mixed-case Bech32 must still fail and other formats stay intact.
+    let normalized;
+    let text = if ["u1", "utest1", "uregtest1"].iter().any(|prefix| {
+        text.get(..prefix.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
+    }) && text.bytes().any(|b| b.is_ascii_uppercase())
+    {
+        if text.bytes().any(|b| b.is_ascii_lowercase()) {
+            return InvalidAddress;
+        }
+        normalized = text.to_ascii_lowercase();
+        normalized.as_str()
+    } else {
+        text
+    };
     // Network-aware decoding also checks the encoding and receiver structure.
     let ua = match Address::decode(params, text) {
         Some(Address::Unified(ua)) => ua,
@@ -80,6 +96,35 @@ mod tests {
         zcash_address::unified::{self, Container, Encoding, Receiver},
         zcash_protocol::consensus::{MainNetwork, NetworkType, TestNetwork},
     };
+
+    #[test]
+    fn uppercase_addresses_are_owned_but_mixed_case_is_invalid() {
+        let key = key(1);
+        let ufvk = key.encode(&MainNetwork);
+        let (address, _) = key.default_address(UnifiedAddressRequest::ORCHARD).unwrap();
+        let text = address.encode(&MainNetwork);
+        assert_eq!(
+            verify(&MainNetwork, &ufvk, &text.to_ascii_uppercase()),
+            VerificationResult::Owned
+        );
+        let mixed = alloc::format!("U{}", &text[1..]);
+        assert_eq!(
+            verify(&MainNetwork, &ufvk, &mixed),
+            VerificationResult::InvalidAddress
+        );
+        let mut broken = text.to_ascii_uppercase();
+        broken.pop();
+        broken.push('!');
+        assert_eq!(
+            verify(&MainNetwork, &ufvk, &broken),
+            VerificationResult::InvalidAddress
+        );
+        let testnet = address.encode(&TestNetwork).to_ascii_uppercase();
+        assert_eq!(
+            verify(&MainNetwork, &ufvk, &testnet),
+            VerificationResult::InvalidAddress
+        );
+    }
 
     fn key(seed: u8) -> UnifiedFullViewingKey {
         UnifiedFullViewingKey::decode(

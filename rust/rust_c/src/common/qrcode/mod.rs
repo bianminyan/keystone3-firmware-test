@@ -33,7 +33,11 @@ pub unsafe extern "C" fn parse_qrcode_text(qr: PtrString) -> Ptr<URParseResult> 
         return URParseResult::from(RustCError::InvalidMessage).c_ptr();
     }
     #[cfg(feature = "cypherpunk")]
-    if value.starts_with("u1") || value.starts_with("utest1") || value.starts_with("uregtest1") {
+    if ["u1", "utest1", "uregtest1"].iter().any(|prefix| {
+        value
+            .get(..prefix.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
+    }) {
         // Bound retained QR text before address decoding. No URI
         // stripping: a payment request is not an address verification request.
         if value.len() > 1024 {

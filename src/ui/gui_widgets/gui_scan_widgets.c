@@ -89,8 +89,9 @@ static void GuiScanShowZcashAddress(void)
     const char *address = zcash_address_qr_text(g_zcashAddressQr->data);
     char ufvk[ZCASH_UFVK_BUFFER_SIZE] = {0};
     ZcashAddressVerification result = ZcashAddressKeyUnavailable;
-    if (address != NULL && IsZcashSupportedForCurrentMnemonic() &&
-            GetZcashUFVK(GetCurrentAccountIndex(), ufvk) == SUCCESS_CODE && ufvk[0] != '\0') {
+    const uint8_t accountIndex = GetCurrentAccountIndex();
+    if (address != NULL && accountIndex <= 2 && IsZcashSupportedForCurrentMnemonic() &&
+            GetZcashUFVK(accountIndex, ufvk) == SUCCESS_CODE && ufvk[0] != '\0') {
         result = verify_zcash_address(ufvk, (char *)address);
     }
     CLEAR_ARRAY(ufvk);

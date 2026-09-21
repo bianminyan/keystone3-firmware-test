@@ -819,6 +819,35 @@ mod tests {
                 ));
                 parsed.free();
             }
+            for (candidate, owned) in [
+                (text.to_ascii_uppercase(), true),
+                (format!("U{}", &text[1..]), false),
+                ("UTEST1INVALID".to_string(), false),
+                ("UREGTEST1INVALID".to_string(), false),
+            ] {
+                let input = CString::new(candidate.as_bytes()).unwrap();
+                let parsed = Box::from_raw(parse_qrcode_text(input.as_ptr() as PtrString));
+                assert_eq!(parsed.error_code, 0);
+                assert_eq!(parsed.t, ViewType::ZcashAddressCheck);
+                let borrowed = zcash_address_qr_text(parsed.data);
+                assert_eq!(
+                    cstr_core::CStr::from_ptr(borrowed).to_str().unwrap(),
+                    candidate
+                );
+                let result = verify_zcash_address(key.as_ptr() as PtrString, borrowed as PtrString);
+                if owned {
+                    assert!(matches!(
+                        result,
+                        ZcashAddressVerification::ZcashAddressOwned
+                    ));
+                } else {
+                    assert!(matches!(
+                        result,
+                        ZcashAddressVerification::ZcashAddressInvalid
+                    ));
+                }
+                parsed.free();
+            }
             for text in [
                 "zcash:u1invalid".to_string(),
                 format!("u1{}", "q".repeat(1024)),

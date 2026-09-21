@@ -31,7 +31,7 @@ Zashi 可以轮换收款地址，同一钱包的多个 Unified Address（UA）�
 
 仅在 Rust `cypherpunk` feature 和 C `CYPHERPUNK_VERSION` 对应功能下生效。
 
-`parse_qrcode_text` 将以 `u1`、`utest1`、`uregtest1` 开头的文本识别为地址验证候选，构造 `QRCodeType::ZcashAddressText` 和 `ViewType::ZcashAddressCheck`。这是路由判断，不是地址有效性判断；格式及网络由后续 verifier 校验。
+`parse_qrcode_text` 将以 `u1`、`utest1`、`uregtest1` 开头的文本识别为地址验证候选，构造 `QRCodeType::ZcashAddressText` 和 `ViewType::ZcashAddressCheck`。前缀匹配不区分 ASCII 大小写，显示时保留扫描原文。这是路由判断，不是地址有效性判断；格式及网络由后续 verifier 校验。
 
 - 保留的二维码文本最多为 1024 字节；超限返回无效消息错误。
 - 不剥离 `zcash:` URI，也不提取 URI 参数中的地址。支付请求不能自动变成地址归属验证请求。
@@ -44,7 +44,7 @@ Zashi 可以轮换收款地址，同一钱包的多个 Unified Address（UA）�
 
 FFI 使用 `MainNetwork`。测试网或 regtest 地址即使通过扫码前缀路由，也不能在设备上验证为成功。
 
-UI 从当前设备钱包槽位读取现有 Zcash UFVK，并沿用 `IsZcashSupportedForCurrentMnemonic()` 的支持条件。成功／不匹配文案明确对应当前钱包的 **Zcash Account 0**，不代表搜索了其他 Zcash account。`GetCurrentAccountIndex()` 表示设备钱包槽位，不应与 Zcash 派生账户编号混淆。
+UI 先读取一次当前设备钱包槽位，仅允许 0、1、2；未登录（255）或其他无效槽位直接显示不可验证，不调用助记词支持检查或 UFVK 读取。通过检查后读取现有 Zcash UFVK，并沿用 `IsZcashSupportedForCurrentMnemonic()` 的支持条件。成功／不匹配文案明确对应当前钱包的 **Zcash Account 0**，不代表搜索了其他 Zcash account。`GetCurrentAccountIndex()` 表示设备钱包槽位，不应与 Zcash 派生账户编号混淆。
 
 此 PR 不修改 UFVK 的生成、存储、解密或 passphrase／SLIP39 支持策略。当前钱包不满足已有支持条件或读取密钥失败时，显示不可验证，不以地址前缀推断归属。
 
@@ -54,7 +54,7 @@ UI 从当前设备钱包槽位读取现有 Zcash UFVK，并沿用 `IsZcashSuppor
 
 `address_verification::verify` 依次执行：
 
-1. 按指定网络解码地址，要求为 Unified Address。
+1. 对全大写 UA 转为小写供底层库解码，大小写混用的 UA 返回 InvalidAddress；不修改页面显示原文。按指定网络解码地址，要求为 Unified Address。
 2. 若存在未知 receiver 或 Sapling receiver，返回不支持完整验证；缺少 Orchard receiver 也返回不支持。
 3. 解码当前账户 UFVK，取得 unified incoming viewing key 及 Orchard external incoming viewing key。
 4. 使用 Orchard `diversifier_index` 判断 receiver 是否属于该 external viewing key，并恢复 diversifier index。
@@ -149,9 +149,12 @@ Continue 不是自动生成钱包或立即跳转下一步，也不能替代原�
 | 自己的 Orchard + 别人的 transparent | 不匹配，不能部分成功 |
 | 自己的 Orchard + 同钱包但不同 index 的 transparent | 不匹配 |
 | UA 含 Sapling／未知 receiver，或没有 Orchard | 不支持完整验证，不报告成功 |
+| 全大写的有效 UA | 正常验证归属，显示扫描原文 |
+| 大小写混用的 UA | 地址无效 |
 | 地址 checksum 损坏、错误网络 | 地址无效 |
 | `zcash:` URI | 不作为裸地址验证请求处理 |
 | 超过 1024 字节的候选文本 | 在保留文本前拒绝 |
+| 未登录或设备钱包槽位超出 0–2 | 显示不可验证，不读取 UFVK |
 | 当前钱包不支持或 UFVK 不可用 | 显示不可验证 |
 | 12 词创建／导入点击 Continue | 允许继续，仍执行原有流程要求 |
 | 创建页 Back／关闭 | 返回词数选择，不自动变成 24 词 |
@@ -199,6 +202,7 @@ Continue 不是自动生成钱包或立即跳转下一步，也不能替代原�
 ```sh
 cargo test --manifest-path rust/Cargo.toml -p app_zcash address_verification --lib
 cargo test --manifest-path rust/Cargo.toml -p rust_c --no-default-features --features simulator-cypherpunk --lib zcash_address
+python3 tools/tests/test_zcash_address_scan.py
 git diff --check
 ```
 
@@ -209,9 +213,12 @@ git diff --check
 - `other_wallet_and_internal_address_are_not_owned`：其他钱包与 internal 地址。
 - `mixed_receivers_and_wrong_transparent_index_are_rejected`：混合 receiver、不同 transparent index。
 - `unverified_receivers_never_report_success`：Sapling、未知 receiver 和不能完整验证的地址。
+- `uppercase_addresses_are_owned_but_mixed_case_is_invalid`：全大写地址、混合大小写、损坏编码和大写测试网地址。
 - `invalid_encoding_network_and_viewing_key_are_rejected`：坏编码、错误网络及无效 UFVK。
 - `zcash_address_text_qr_owns_and_releases_its_payload`：扫码文本到 FFI 验证、重复释放流程、URI／超长输入及空指针分类。
 
-移植完成时已通过 6 项算法单测、1 项扫码 FFI 单测，以及相关 C 文件和生成字体的语法检查。没有为弹窗交互新增自动化测试，语法检查不等于完整固件构建或视觉验收。
+- `tools/tests/test_zcash_address_scan.py`：编译实际扫码函数的账户检查部分，遍历所有 uint8_t 槽位及助记词／密钥可用状态，验证无效槽位不访问密钥。
+
+Review 修复后通过 7 项算法单测、1 项扫码 FFI 单测、1 项账户检查回归测试，以及相关 C 文件和生成字体的语法检查。没有为弹窗交互新增自动化测试，语法检查不等于完整固件构建或视觉验收。
 
 尚未做实机验证。QA 应分别测试主网默认／轮换地址、错误钱包、混合地址、错误网络和连续扫码；在创建与导入流程核对 12 词提醒、Continue、Back／关闭、切换到 24 词及重新进入，并回归非 Cypherpunk 固件。
