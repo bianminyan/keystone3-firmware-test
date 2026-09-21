@@ -63,6 +63,76 @@ static ViewType g_qrcodeViewType;
 static uint8_t g_chainType = CHAIN_BUTT;
 static ViewType g_viewTypeFilter[2];
 
+#ifdef CYPHERPUNK_VERSION
+static URParseResult *g_zcashAddressQr;
+
+static void ClearZcashAddressQr(void)
+{
+    if (g_zcashAddressQr != NULL) {
+        free_ur_parse_result(g_zcashAddressQr);
+        g_zcashAddressQr = NULL;
+    }
+}
+
+void GuiScanSetZcashAddress(URParseResult *result)
+{
+    ClearZcashAddressQr();
+    g_zcashAddressQr = result;
+}
+
+static void GuiScanShowZcashAddress(void)
+{
+    if (g_zcashAddressQr == NULL || g_pageWidget == NULL) {
+        ClearZcashAddressQr();
+        return;
+    }
+    const char *address = zcash_address_qr_text(g_zcashAddressQr->data);
+    char ufvk[ZCASH_UFVK_BUFFER_SIZE] = {0};
+    ZcashAddressVerification result = ZcashAddressKeyUnavailable;
+    if (address != NULL && IsZcashSupportedForCurrentMnemonic() &&
+            GetZcashUFVK(GetCurrentAccountIndex(), ufvk) == SUCCESS_CODE && ufvk[0] != '\0') {
+        result = verify_zcash_address(ufvk, (char *)address);
+    }
+    CLEAR_ARRAY(ufvk);
+    const char *message;
+    switch (result) {
+    case ZcashAddressOwned:
+        message = _("zcash_verify_owned");
+        break;
+    case ZcashAddressNotOwned:
+        message = _("zcash_verify_not_owned");
+        break;
+    case ZcashAddressInvalid:
+        message = _("zcash_verify_invalid");
+        break;
+    case ZcashAddressUnsupported:
+        message = _("zcash_verify_unsupported");
+        break;
+    default:
+        message = _("zcash_verify_unavailable");
+        break;
+    }
+    SetPageLockScreen(true);
+    UpdatePageContentZone(g_pageWidget);
+    lv_obj_t *cont = g_pageWidget->contentZone;
+    lv_obj_add_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(cont, LV_DIR_VER);
+    lv_obj_set_style_pad_all(cont, 24, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(cont, 24, LV_PART_MAIN);
+    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_t *label = GuiCreateLittleTitleLabel(cont, _("zcash_verify_title"));
+    lv_obj_set_width(label, 408);
+    label = GuiCreateIllustrateLabel(cont, message);
+    lv_obj_set_width(label, 408);
+    lv_obj_set_style_text_color(label, lv_color_hex(result == ZcashAddressOwned ? 0x00CC88 : 0xF5870A), LV_PART_MAIN);
+    label = GuiCreateTextLabel(cont, address == NULL ? "" : address);
+    lv_obj_set_width(label, 408);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    // LVGL owns a copy of the displayed text. Release the QR payload now.
+    ClearZcashAddressQr();
+}
+#endif
+
 void GuiScanInit(void *param, uint16_t len)
 {
     if (param == NULL) {
@@ -85,6 +155,9 @@ void GuiScanInit(void *param, uint16_t len)
 
 void GuiScanDeInit()
 {
+#ifdef CYPHERPUNK_VERSION
+    ClearZcashAddressQr();
+#endif
     if (g_pageWidget != NULL) {
         DestroyPageWidget(g_pageWidget);
         g_pageWidget = NULL;
@@ -107,6 +180,12 @@ void GuiScanResult(bool result, void *param)
     if (result) {
         UrViewType_t urViewType = *(UrViewType_t *)param;
         g_qrcodeViewType = urViewType.viewType;
+#ifdef CYPHERPUNK_VERSION
+        if (g_qrcodeViewType == ZcashAddressCheck) {
+            GuiScanShowZcashAddress();
+            return;
+        }
+#endif
 #ifdef BTC_ONLY
         if (g_viewTypeFilter[0] != 0xFF) {
             if (!IsViewTypeSupported(g_qrcodeViewType, g_viewTypeFilter, NUMBER_OF_ARRAYS(g_viewTypeFilter))) {

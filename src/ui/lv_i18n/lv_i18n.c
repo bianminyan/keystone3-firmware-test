@@ -18,6 +18,13 @@ static inline uint32_t op_f(uint32_t val) { UNUSED(val); return 0; }
 static inline uint32_t op_t(uint32_t val) { UNUSED(val); return 0; }
 
 const static lv_i18n_phrase_t en_singulars[] = {
+    {"zcash_verify_title", "Verify Zcash Address"},
+    {"zcash_verify_owned", "This address belongs to Account 0 of your current wallet."},
+    {"zcash_verify_not_owned", "This address does not match Account 0 of your current wallet."},
+    {"zcash_verify_invalid", "Invalid address or incorrect network. Only Zcash mainnet addresses are supported."},
+    {"zcash_verify_unsupported", "This address format cannot be fully verified on this device."},
+    {"zcash_verify_unavailable", "Address verification is unavailable for the current wallet."},
+
     {"Address", "Address"},
     {"Approve", "Approve"},
     {"Attention", "Attention"},
@@ -1046,6 +1053,13 @@ static const lv_i18n_lang_t en_lang = {
 };
 
 const static lv_i18n_phrase_t de_singulars[] = {
+    {"zcash_verify_title", "Verify Zcash Address"},
+    {"zcash_verify_owned", "This address belongs to Account 0 of your current wallet."},
+    {"zcash_verify_not_owned", "This address does not match Account 0 of your current wallet."},
+    {"zcash_verify_invalid", "Invalid address or incorrect network. Only Zcash mainnet addresses are supported."},
+    {"zcash_verify_unsupported", "This address format cannot be fully verified on this device."},
+    {"zcash_verify_unavailable", "Address verification is unavailable for the current wallet."},
+
     {"Address", "Adresse"},
     {"Approve", "Genehmigen"},
     {"Attention", "Achtung"},
@@ -2074,6 +2088,13 @@ static const lv_i18n_lang_t de_lang = {
 };
 
 const static lv_i18n_phrase_t es_singulars[] = {
+    {"zcash_verify_title", "Verify Zcash Address"},
+    {"zcash_verify_owned", "This address belongs to Account 0 of your current wallet."},
+    {"zcash_verify_not_owned", "This address does not match Account 0 of your current wallet."},
+    {"zcash_verify_invalid", "Invalid address or incorrect network. Only Zcash mainnet addresses are supported."},
+    {"zcash_verify_unsupported", "This address format cannot be fully verified on this device."},
+    {"zcash_verify_unavailable", "Address verification is unavailable for the current wallet."},
+
     {"Address", "Dirección"},
     {"Approve", "Aprobar"},
     {"Attention", "Atención"},
@@ -3101,6 +3122,13 @@ static const lv_i18n_lang_t es_lang = {
 };
 
 const static lv_i18n_phrase_t ja_singulars[] = {
+    {"zcash_verify_title", "Verify Zcash Address"},
+    {"zcash_verify_owned", "This address belongs to Account 0 of your current wallet."},
+    {"zcash_verify_not_owned", "This address does not match Account 0 of your current wallet."},
+    {"zcash_verify_invalid", "Invalid address or incorrect network. Only Zcash mainnet addresses are supported."},
+    {"zcash_verify_unsupported", "This address format cannot be fully verified on this device."},
+    {"zcash_verify_unavailable", "Address verification is unavailable for the current wallet."},
+
     {"Address", "住所"},
     {"Approve", "承認"},
     {"Attention", "注意"},
@@ -4127,6 +4155,13 @@ static const lv_i18n_lang_t ja_lang = {
 };
 
 const static lv_i18n_phrase_t ko_singulars[] = {
+    {"zcash_verify_title", "Verify Zcash Address"},
+    {"zcash_verify_owned", "This address belongs to Account 0 of your current wallet."},
+    {"zcash_verify_not_owned", "This address does not match Account 0 of your current wallet."},
+    {"zcash_verify_invalid", "Invalid address or incorrect network. Only Zcash mainnet addresses are supported."},
+    {"zcash_verify_unsupported", "This address format cannot be fully verified on this device."},
+    {"zcash_verify_unavailable", "Address verification is unavailable for the current wallet."},
+
     {"Address", "주소"},
     {"Approve", "허락"},
     {"Attention", "주목"},
@@ -5153,6 +5188,13 @@ static const lv_i18n_lang_t ko_lang = {
 };
 
 const static lv_i18n_phrase_t ru_singulars[] = {
+    {"zcash_verify_title", "Verify Zcash Address"},
+    {"zcash_verify_owned", "This address belongs to Account 0 of your current wallet."},
+    {"zcash_verify_not_owned", "This address does not match Account 0 of your current wallet."},
+    {"zcash_verify_invalid", "Invalid address or incorrect network. Only Zcash mainnet addresses are supported."},
+    {"zcash_verify_unsupported", "This address format cannot be fully verified on this device."},
+    {"zcash_verify_unavailable", "Address verification is unavailable for the current wallet."},
+
     {"Address", "Адрес"},
     {"Approve", "Разрешить"},
     {"Attention", "Внимание"},
@@ -6184,6 +6226,13 @@ static const lv_i18n_lang_t ru_lang = {
 };
 
 const static lv_i18n_phrase_t zh_cn_singulars[] = {
+    {"zcash_verify_title", "验证 Zcash 地址"},
+    {"zcash_verify_owned", "此地址属于当前钱包的 Account 0。"},
+    {"zcash_verify_not_owned", "此地址与当前钱包的 Account 0 不匹配。"},
+    {"zcash_verify_invalid", "地址无效或网络不正确。仅支持 Zcash 主网地址。"},
+    {"zcash_verify_unsupported", "此设备无法完整验证这种地址格式。"},
+    {"zcash_verify_unavailable", "当前钱包无法进行地址验证。"},
+
     {"Address", "地址"},
     {"Approve", "允许"},
     {"Attention", "注意"},

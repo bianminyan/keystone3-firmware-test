@@ -32,6 +32,23 @@ pub unsafe extern "C" fn parse_qrcode_text(qr: PtrString) -> Ptr<URParseResult> 
     if !is_ok {
         return URParseResult::from(RustCError::InvalidMessage).c_ptr();
     }
+    #[cfg(feature = "cypherpunk")]
+    if value.starts_with("u1") || value.starts_with("utest1") || value.starts_with("uregtest1") {
+        // Bound retained QR text before address decoding. No URI
+        // stripping: a payment request is not an address verification request.
+        if value.len() > 1024 {
+            return URParseResult::from(RustCError::InvalidMessage).c_ptr();
+        }
+        if let Ok(address) = cstr_core::CString::new(value.as_bytes()) {
+            return URParseResult::single(
+                super::ur::ViewType::ZcashAddressCheck,
+                super::ur::QRCodeType::ZcashAddressText,
+                address,
+            )
+            .c_ptr();
+        }
+        return URParseResult::from(RustCError::InvalidMessage).c_ptr();
+    }
     if value.to_lowercase().starts_with("signmessage") {
         if let Some((headers, message)) = value.split_once(':') {
             if message.is_empty() {

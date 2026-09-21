@@ -3,6 +3,10 @@
 
 #include "rust.h"
 
+#ifdef CYPHERPUNK_VERSION
+void GuiScanSetZcashAddress(URParseResult *result);
+#endif
+
 void GuiScanInit(void *param, uint16_t len);
 void GuiScanDeInit();
 void GuiScanRefresh();

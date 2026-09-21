@@ -387,6 +387,8 @@ pub enum ViewType {
     MultisigCryptoImportXpub,
     #[cfg(feature = "btc-only")]
     MultisigBytesImportXpub,
+    #[cfg(feature = "cypherpunk")]
+    ZcashAddressCheck,
     ViewTypeUnKnown,
 }
 
@@ -403,6 +405,8 @@ pub enum QRCodeType {
     #[cfg(feature = "bitcoin")]
     BtcSignRequest,
     SeedSignerMessage,
+    #[cfg(feature = "cypherpunk")]
+    ZcashAddressText,
     #[cfg(feature = "multi-coins")]
     KeystoneSignRequest,
     #[cfg(feature = "ethereum")]
@@ -601,6 +605,10 @@ impl Free for URParseResult {
 
 unsafe fn free_ur(ur_type: &QRCodeType, data: PtrUR) {
     match ur_type {
+        #[cfg(feature = "cypherpunk")]
+        QRCodeType::ZcashAddressText => {
+            free_ptr_with_type!(data, CString);
+        }
         #[cfg(feature = "bitcoin")]
         QRCodeType::CryptoPSBT => {
             free_ptr_with_type!(data, CryptoPSBT);
@@ -781,6 +789,51 @@ impl_response!(URParseMultiResult);
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "cypherpunk")]
+    #[test]
+    fn zcash_address_text_qr_owns_and_releases_its_payload() {
+        use crate::common::qrcode::parse_qrcode_text;
+        use crate::zcash::{verify_zcash_address, zcash_address_qr_text, ZcashAddressVerification};
+        let key = keystore::algorithms::zcash::derive_ufvk(
+            &zcash_vendor::zcash_protocol::consensus::MainNetwork,
+            &[1; 32],
+            "m/32'/133'/0'",
+        )
+        .unwrap();
+        let text =
+            app_zcash::get_address(&zcash_vendor::zcash_protocol::consensus::MainNetwork, &key)
+                .unwrap();
+        let input = CString::new(text.as_bytes()).unwrap();
+        let key = CString::new(key).unwrap();
+        unsafe {
+            for _ in 0..8 {
+                let parsed = Box::from_raw(parse_qrcode_text(input.as_ptr() as PtrString));
+                assert_eq!(parsed.error_code, 0);
+                assert_eq!(parsed.t, ViewType::ZcashAddressCheck);
+                assert!(matches!(parsed.ur_type, QRCodeType::ZcashAddressText));
+                let borrowed = zcash_address_qr_text(parsed.data);
+                assert_eq!(cstr_core::CStr::from_ptr(borrowed).to_str().unwrap(), text);
+                assert!(matches!(
+                    verify_zcash_address(key.as_ptr() as PtrString, borrowed as PtrString),
+                    ZcashAddressVerification::ZcashAddressOwned
+                ));
+                parsed.free();
+            }
+            for text in [
+                "zcash:u1invalid".to_string(),
+                format!("u1{}", "q".repeat(1024)),
+            ] {
+                let text = CString::new(text).unwrap();
+                let parsed = Box::from_raw(parse_qrcode_text(text.as_ptr() as PtrString));
+                assert_ne!(parsed.error_code, 0);
+                parsed.free();
+            }
+            assert!(matches!(
+                verify_zcash_address(core::ptr::null_mut(), core::ptr::null_mut()),
+                ZcashAddressVerification::ZcashAddressKeyUnavailable
+            ));
+        }
+    }
     use alloc::vec;
 
     use super::*;
@@ -1042,6 +1095,8 @@ pub fn decode_ur(ur: String) -> URParseResult {
         QRCodeType::AvaxSignRequest => _decode_ur::<AvaxSignRequest>(ur, ur_type),
         #[cfg(not(feature = "btc-only"))]
         QRCodeType::QRHardwareCall => _decode_ur::<QRHardwareCall>(ur, ur_type),
+        #[cfg(feature = "cypherpunk")]
+        QRCodeType::ZcashAddressText => URParseResult::from(RustCError::InvalidMessage),
         QRCodeType::URTypeUnKnown | QRCodeType::SeedSignerMessage => URParseResult::from(
             URError::NotSupportURTypeError("UnKnown ur type".to_string()),
         ),
@@ -1156,6 +1211,8 @@ fn receive_ur(ur: String, decoder: &mut KeystoneURDecoder) -> URParseMultiResult
         QRCodeType::XmrTxUnsignedRequest => _receive_ur::<XmrTxUnsigned>(ur, ur_type, decoder),
         #[cfg(feature = "avalanche")]
         QRCodeType::AvaxSignRequest => _receive_ur::<AvaxSignRequest>(ur, ur_type, decoder),
+        #[cfg(feature = "cypherpunk")]
+        QRCodeType::ZcashAddressText => URParseMultiResult::from(RustCError::InvalidMessage),
         QRCodeType::URTypeUnKnown | QRCodeType::SeedSignerMessage => URParseMultiResult::from(
             URError::NotSupportURTypeError("UnKnown ur type".to_string()),
         ),
