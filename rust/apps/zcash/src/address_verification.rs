@@ -98,6 +98,28 @@ mod tests {
     };
 
     #[test]
+    fn official_mainnet_vector_is_owned() {
+        // zcash/zcash-test-vectors @ 78321beacb0e0477e33cd002b56585a107c2708c
+        // test-vectors/json/{unified_full_viewing_keys,unified_address}.json
+        // Root seed 000102...1f, account 14, diversifier index 0.
+        // https://github.com/zcash/zcash-test-vectors/tree/78321beacb0e0477e33cd002b56585a107c2708c/test-vectors/json
+        let ufvk = "uview1dgucetjuudl3msv6tcecj0getnxsdpk5j60h74nckdtrrqs5p4gvf8a3s3lflxednpr774sx7tyaqfxw0s8mnnl7nk7h4m5m3y8xl7efgjprar8sdq6k3mha9l9cln5wy3s6k4g7ma0tc7y30x5xwl7ezxrzhvnrgd8q9zzh4l088mta932ml7wll39y3s82qmse58ulr7p6rj59lh9v0g7evcpghu3ntnh6jr2jzj2vdc904ahhlkq6sn0jdyt3l4s0ch6af7nvh4emlspt32hgk5t59mg3nuxnjqpvpx26vwcfvpuhm8vmpy0ray4mhwhtz9de8gvwg423rpw7l899fvyu0wmr5lp5lu46ckufa2gpt9msjpxxach5cnuwaxph00e65tfmelxyed78t57t4g7f8v9q9fq0378g23yql2t9tp78g3mp0xl30q623rmxglhknl79e7ltwurfvpw7w4k57yzv97exq9h0fv0urgvffu6dqmk5";
+        let address = "u1ukslldhknrzmvpdmn03u03edgfy976w3muurfs9asvh3n9uh9h6sgle6m7yjgf3wafxtvke08u735v4nd3kjqnyulw7cvxh6ke357knyjudgqtes6kcw7y28e6kewr03pjah5mh26na";
+        assert_eq!(
+            verify(&MainNetwork, ufvk, address),
+            VerificationResult::Owned
+        );
+        assert_eq!(
+            verify(&MainNetwork, ufvk, &address.to_ascii_uppercase()),
+            VerificationResult::Owned
+        );
+        assert_eq!(
+            verify(&TestNetwork, ufvk, address),
+            VerificationResult::InvalidAddress
+        );
+    }
+
+    #[test]
     fn uppercase_addresses_are_owned_but_mixed_case_is_invalid() {
         let key = key(1);
         let ufvk = key.encode(&MainNetwork);

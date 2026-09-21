@@ -2,9 +2,14 @@
 #define _GUI_SCAN_WIDGETS_H
 
 #include "rust.h"
+#include "qrdecode_task.h"
 
 #ifdef CYPHERPUNK_VERSION
-void GuiScanSetZcashAddress(URParseResult *result);
+// Message payload owns its address bytes; no Rust pointers cross tasks.
+typedef struct {
+    UrViewType_t viewType;
+    char address[1025];
+} ZcashAddressScanResult_t;
 #endif
 
 void GuiScanInit(void *param, uint16_t len);

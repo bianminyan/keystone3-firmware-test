@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class ZcashScanAccountGuardTest(unittest.TestCase):
     def test_account_guard_before_key_access(self):
         source = (ROOT / 'src/ui/gui_widgets/gui_scan_widgets.c').read_text()
-        start = source.index('static void GuiScanShowZcashAddress(void)')
+        start = source.index('static void GuiScanShowZcashAddress(const char *address)')
         end = source.index('    CLEAR_ARRAY(ufvk);', start)
         function = source[start:end] + '    observed = result;\n}\n'
         harness = r'''
@@ -25,12 +25,9 @@ class ZcashScanAccountGuardTest(unittest.TestCase):
 typedef int ZcashAddressVerification;
 static struct { void *data; } qr;
 static void *g_pageWidget = &qr;
-static typeof(qr) *g_zcashAddressQr = &qr;
 static uint8_t slot;
 static int reads, support_checks, key_reads, verifies, observed;
 static bool supported, key_available;
-static void ClearZcashAddressQr(void) {}
-static const char *zcash_address_qr_text(void *p) { return "u1example"; }
 static uint8_t GetCurrentAccountIndex(void) { reads++; return slot; }
 static bool IsZcashSupportedForCurrentMnemonic(void) { support_checks++; return supported; }
 static int GetZcashUFVK(uint8_t index, char *out) {
@@ -48,7 +45,7 @@ int main(void) {
             for (int available = 0; available <= 1; available++) {
                 slot = index; supported = support; key_available = available;
                 reads = support_checks = key_reads = verifies = 0;
-                GuiScanShowZcashAddress();
+                GuiScanShowZcashAddress("u1example");
                 assert(reads == 1);
                 assert(support_checks == (index <= 2));
                 assert(key_reads == (index <= 2 && support));
@@ -66,6 +63,102 @@ int main(void) {
             source_path.write_text(harness)
             subprocess.run(['cc', '-std=gnu11', str(source_path), '-o', str(executable)], check=True)
             subprocess.run([str(executable)], check=True)
+
+
+class ZcashUiLifetimeTest(unittest.TestCase):
+    def compile_and_run(self, harness):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / 'regression.c'
+            binary = Path(tmp) / 'regression'
+            source.write_text(harness)
+            subprocess.run(['cc', '-std=gnu11', '-fsanitize=address,undefined',
+                            str(source), '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
+    def test_scan_message_survives_rust_result_release(self):
+        source = (ROOT / 'src/ui/gui_analyze/gui_resolve_ur.c').read_text()
+        start = source.index('    case ZcashAddressCheck: {')
+        end = source.index('    case ZcashBatchTx:', start)
+        case = source[start:end]
+        header = (ROOT / 'src/ui/gui_widgets/gui_scan_widgets.h').read_text()
+        start = header.index('typedef struct {')
+        end = header.index('} ZcashAddressScanResult_t;', start) + len('} ZcashAddressScanResult_t;')
+        payload = header[start:end]
+        self.compile_and_run(r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+typedef struct { uint8_t viewType, urType; } UrViewType_t;
+typedef struct { char *data; } URParseResult;
+enum { ZcashAddressCheck = 42, SIG_QRCODE_VIEW_SCAN_PASS = 99 };
+''' + payload + r'''
+static ZcashAddressScanResult_t queued;
+static int freed, reject_message;
+static const char *zcash_address_qr_text(char *data) { return data; }
+static void free_ur_parse_result(URParseResult *result) {
+    free(result->data); free(result); freed++;
+}
+static void StopQrDecode(void) {}
+static void UserDelay(int ms) {}
+static int GuiApiEmitSignal(int signal, void *data, unsigned size) {
+    assert(freed == 1);
+    assert(signal == SIG_QRCODE_VIEW_SCAN_PASS);
+    assert(size == sizeof(queued));
+    if (reject_message) return -1;
+    memcpy(&queued, data, size);
+    return 0;
+}
+static void handle(URParseResult *urResult, UrViewType_t urViewType) {
+    switch (urViewType.viewType) {
+''' + case + r'''
+    }
+}
+int main(void) {
+    for (int reject = 0; reject <= 1; reject++) {
+        reject_message = reject;
+        for (int length = 2; length <= 1024; length++) {
+            URParseResult *result = malloc(sizeof(*result));
+            result->data = malloc(length + 1);
+            memset(result->data, 'Q', length);
+            result->data[0] = 'U'; result->data[1] = '1'; result->data[length] = 0;
+            freed = 0;
+            handle(result, (UrViewType_t){ZcashAddressCheck, 7});
+            assert(freed == 1);
+            if (!reject) {
+                assert(queued.viewType.viewType == ZcashAddressCheck);
+                assert(strlen(queued.address) == length);
+                assert(queued.address[0] == 'U' && queued.address[1] == '1');
+                for (int i = 2; i < length; i++) assert(queued.address[i] == 'Q');
+            }
+        }
+    }
+}
+''')
+
+    def test_optional_hint_labels_are_not_dereferenced(self):
+        source = (ROOT / 'src/ui/gui_components/gui_hintbox.c').read_text()
+        start = source.index('    uint32_t height =', source.index('void *GuiCreateGeneralHintBox'))
+        end = source.index('    GuiHintBoxResize(cont, height);', start)
+        calculation = source[start:end]
+        self.compile_and_run(r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stddef.h>
+static int lv_obj_get_self_height(int *obj) { assert(obj); return *obj; }
+static int lv_obj_get_self_width(int *obj) { assert(obj); return *obj; }
+int main(void) {
+    int label = 20;
+    for (int mask = 0; mask < 8; mask++) {
+        int *title = &label;
+        int *desc1 = (mask & 1) ? &label : NULL;
+        int *desc2 = (mask & 2) ? &label : NULL;
+        int *img = (mask & 4) ? &label : NULL;
+''' + calculation + r'''
+        assert(height == 174 + (desc1 ? 32 : 0) + (desc2 ? 32 : 0) + (img ? 68 : 0));
+    }
+}
+''')
 
 
 if __name__ == '__main__':

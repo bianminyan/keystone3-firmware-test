@@ -230,11 +230,14 @@ void *GuiCreateGeneralHintBox(const void *src, const char *titleText,
     }
 
     uint32_t height =
-        24 + lv_obj_get_self_height(title) + 12 + lv_obj_get_self_height(desc1);
+        24 + lv_obj_get_self_height(title);
+    if (desc1 != NULL) {
+        height += 12 + lv_obj_get_self_height(desc1);
+    }
     if (img != NULL) {
         height = height + 48 + lv_obj_get_self_width(img);
     }
-    if (lv_obj_get_self_height(desc2) != 0) {
+    if (desc2 != NULL && lv_obj_get_self_height(desc2) != 0) {
         height += (12 + lv_obj_get_self_height(desc2));
     }
     height += 16;

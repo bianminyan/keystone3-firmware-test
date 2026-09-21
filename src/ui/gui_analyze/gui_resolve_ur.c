@@ -98,9 +98,20 @@ void handleURResult(URParseResult *urResult, URParseMultiResult *urMultiResult, 
         break;
 #endif
 #ifdef CYPHERPUNK_VERSION
-    case ZcashAddressCheck:
-        GuiScanSetZcashAddress(urResult);
-        break;
+    case ZcashAddressCheck: {
+        ZcashAddressScanResult_t message = {.viewType = urViewType};
+        const char *address = zcash_address_qr_text(urResult->data);
+        if (address != NULL) {
+            strncpy(message.address, address, sizeof(message.address) - 1);
+        }
+        // The decoder retains sole ownership of the Rust result. The UI queue
+        // copies only address bytes, so closing the page cannot race its release.
+        free_ur_parse_result(urResult);
+        StopQrDecode();
+        UserDelay(500);
+        GuiApiEmitSignal(SIG_QRCODE_VIEW_SCAN_PASS, &message, sizeof(message));
+        return;
+    }
     case ZcashBatchTx:
         GuiSetZcashBatchUrData(urResult, urMultiResult, is_multi);
         break;
@@ -126,7 +137,6 @@ void handleURResult(URParseResult *urResult, URParseMultiResult *urMultiResult, 
             || urViewType.viewType == EthBatchTx
 #endif
 #ifdef CYPHERPUNK_VERSION
-            || urViewType.viewType == ZcashAddressCheck
             || urViewType.viewType == ZcashBatchTx
 #endif
 #ifdef BTC_ONLY

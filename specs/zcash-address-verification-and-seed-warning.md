@@ -85,8 +85,8 @@ UI 先读取一次当前设备钱包槽位，仅允许 0、1、2；未登录（2
 
 - `verify_zcash_address` 将 Rust 结果映射为 C 枚举，空 UFVK 指针返回 KeyUnavailable，空地址指针返回 InvalidAddress。
 - `URParseResult` 拥有地址 CString；`zcash_address_qr_text` 只借用该文本，调用方不得单独释放。
-- 页面替换扫码结果或退出扫描页时清理旧结果。
-- LVGL 复制显示文本后释放 QR payload；不保留指向已释放 CString 的页面内容。
+- 解码任务将地址复制到 `ZcashAddressScanResult_t` 后释放 Rust QR payload；UI 消息只包含地址字节，不传递 Rust 指针。
+- UI 消息队列复制整个结果结构，LVGL 在消息释放前复制显示文本。即使页面关闭、消息被丢弃或发送失败，也不存在跨任务共享 QR 指针或重复释放。
 - UFVK 使用局部缓冲区，完成验证后调用 `CLEAR_ARRAY` 清理；不把 UFVK 显示在页面上。
 
 实现入口：`rust/rust_c/src/zcash/mod.rs`、`common/ur.rs::free_ur`、`gui_scan_widgets.c`。
@@ -124,6 +124,8 @@ Continue 不是自动生成钱包或立即跳转下一步，也不能替代原�
 标题：`24 words recommended for Zcash`。
 
 正文：`For better security when using Zcash, we recommend using a 24-word seed phrase.`
+
+通用弹窗计算高度前检查可选说明标签是否存在，单段说明不会解引用空标签。
 
 按钮为 Back / Continue，右上角关闭按钮与 Back 使用相同回调。文案表达推荐，不声称 12 词必然失窃或失效，不增加未在实现中强制执行的词数限制。
 
@@ -208,6 +210,7 @@ git diff --check
 
 核心测试入口：
 
+- `official_mainnet_vector_is_owned`：Zcash 官方固定 UFVK／UA 向量（commit `78321beacb0e0477e33cd002b56585a107c2708c`），覆盖小写、大写及错误网络。
 - `default_and_rotated_addresses_are_owned`：默认地址及轮换 index。
 - `orchard_only_supports_full_diversifier_range`：Orchard-only 高 index。
 - `other_wallet_and_internal_address_are_not_owned`：其他钱包与 internal 地址。
@@ -217,8 +220,8 @@ git diff --check
 - `invalid_encoding_network_and_viewing_key_are_rejected`：坏编码、错误网络及无效 UFVK。
 - `zcash_address_text_qr_owns_and_releases_its_payload`：扫码文本到 FFI 验证、重复释放流程、URI／超长输入及空指针分类。
 
-- `tools/tests/test_zcash_address_scan.py`：编译实际扫码函数的账户检查部分，遍历所有 uint8_t 槽位及助记词／密钥可用状态，验证无效槽位不访问密钥。
+- `tools/tests/test_zcash_address_scan.py`：编译实际扫码函数的账户检查部分，遍历所有 uint8_t 槽位及助记词／密钥可用状态，验证无效槽位不访问密钥；另覆盖地址消息在 Rust 结果释放后仍有效、发送失败路径，以及可选弹窗标签的所有组合。后两项启用 AddressSanitizer 和 UndefinedBehaviorSanitizer。
 
-Review 修复后通过 7 项算法单测、1 项扫码 FFI 单测、1 项账户检查回归测试，以及相关 C 文件和生成字体的语法检查。没有为弹窗交互新增自动化测试，语法检查不等于完整固件构建或视觉验收。
+Review 修复后通过 8 项算法单测、1 项扫码 FFI 单测、3 项 C 回归测试，以及相关 C 文件和生成字体的语法检查。没有为弹窗交互新增自动化测试，语法检查不等于完整固件构建或视觉验收。
 
 尚未做实机验证。QA 应分别测试主网默认／轮换地址、错误钱包、混合地址、错误网络和连续扫码；在创建与导入流程核对 12 词提醒、Continue、Back／关闭、切换到 24 词及重新进入，并回归非 Cypherpunk 固件。

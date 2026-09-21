@@ -64,29 +64,11 @@ static uint8_t g_chainType = CHAIN_BUTT;
 static ViewType g_viewTypeFilter[2];
 
 #ifdef CYPHERPUNK_VERSION
-static URParseResult *g_zcashAddressQr;
-
-static void ClearZcashAddressQr(void)
+static void GuiScanShowZcashAddress(const char *address)
 {
-    if (g_zcashAddressQr != NULL) {
-        free_ur_parse_result(g_zcashAddressQr);
-        g_zcashAddressQr = NULL;
-    }
-}
-
-void GuiScanSetZcashAddress(URParseResult *result)
-{
-    ClearZcashAddressQr();
-    g_zcashAddressQr = result;
-}
-
-static void GuiScanShowZcashAddress(void)
-{
-    if (g_zcashAddressQr == NULL || g_pageWidget == NULL) {
-        ClearZcashAddressQr();
+    if (g_pageWidget == NULL) {
         return;
     }
-    const char *address = zcash_address_qr_text(g_zcashAddressQr->data);
     char ufvk[ZCASH_UFVK_BUFFER_SIZE] = {0};
     ZcashAddressVerification result = ZcashAddressKeyUnavailable;
     const uint8_t accountIndex = GetCurrentAccountIndex();
@@ -129,8 +111,7 @@ static void GuiScanShowZcashAddress(void)
     label = GuiCreateTextLabel(cont, address == NULL ? "" : address);
     lv_obj_set_width(label, 408);
     lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
-    // LVGL owns a copy of the displayed text. Release the QR payload now.
-    ClearZcashAddressQr();
+    // LVGL copies the address before the UI message is released.
 }
 #endif
 
@@ -156,9 +137,6 @@ void GuiScanInit(void *param, uint16_t len)
 
 void GuiScanDeInit()
 {
-#ifdef CYPHERPUNK_VERSION
-    ClearZcashAddressQr();
-#endif
     if (g_pageWidget != NULL) {
         DestroyPageWidget(g_pageWidget);
         g_pageWidget = NULL;
@@ -183,7 +161,7 @@ void GuiScanResult(bool result, void *param)
         g_qrcodeViewType = urViewType.viewType;
 #ifdef CYPHERPUNK_VERSION
         if (g_qrcodeViewType == ZcashAddressCheck) {
-            GuiScanShowZcashAddress();
+            GuiScanShowZcashAddress(((const ZcashAddressScanResult_t *)param)->address);
             return;
         }
 #endif
