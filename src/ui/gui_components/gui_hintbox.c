@@ -245,6 +245,24 @@ void *GuiCreateGeneralHintBox(const void *src, const char *titleText,
     return cont;
 }
 
+#ifdef CYPHERPUNK_VERSION
+lv_obj_t *GuiCreateZcashSeedWarning(lv_event_cb_t backHandler, lv_event_cb_t continueHandler)
+{
+    lv_obj_t *cont = GuiCreateGeneralHintBox(&imgWarn,
+                     _("zcash_seed_warning_title"), _("zcash_seed_warning_desc"), NULL,
+                     _("zcash_seed_warning_back"), DARK_GRAY_COLOR, _("Continue"), ORANGE_COLOR);
+    lv_obj_t *back = GuiGetHintBoxLeftBtn(cont);
+    lv_obj_t *next = GuiGetHintBoxRightBtn(cont);
+    lv_obj_set_width(back, 196);
+    lv_obj_set_width(next, 196);
+    lv_obj_add_event_cb(back, backHandler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(next, continueHandler, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *close = GuiCreateImgButton(cont, &imgClose, 48, backHandler, NULL);
+    lv_obj_align_to(close, lv_obj_get_child(cont, 1), LV_ALIGN_TOP_RIGHT, -16, 16);
+    return cont;
+}
+#endif
+
 static void SetBackupConfirmationButtonState(lv_obj_t *button, bool enabled)
 {
     if (enabled) {

@@ -18,6 +18,9 @@ static inline uint32_t op_f(uint32_t val) { UNUSED(val); return 0; }
 static inline uint32_t op_t(uint32_t val) { UNUSED(val); return 0; }
 
 const static lv_i18n_phrase_t en_singulars[] = {
+    {"zcash_seed_warning_title", "24 words recommended for Zcash"},
+    {"zcash_seed_warning_desc", "For better security when using Zcash, we recommend using a 24-word seed phrase."},
+    {"zcash_seed_warning_back", "Back"},
     {"zcash_verify_title", "Verify Zcash Address"},
     {"zcash_verify_owned", "This address belongs to Account 0 of your current wallet."},
     {"zcash_verify_not_owned", "This address does not match Account 0 of your current wallet."},
@@ -1053,6 +1056,9 @@ static const lv_i18n_lang_t en_lang = {
 };
 
 const static lv_i18n_phrase_t de_singulars[] = {
+    {"zcash_seed_warning_title", "24 words recommended for Zcash"},
+    {"zcash_seed_warning_desc", "For better security when using Zcash, we recommend using a 24-word seed phrase."},
+    {"zcash_seed_warning_back", "Back"},
     {"zcash_verify_title", "Verify Zcash Address"},
     {"zcash_verify_owned", "This address belongs to Account 0 of your current wallet."},
     {"zcash_verify_not_owned", "This address does not match Account 0 of your current wallet."},
@@ -2088,6 +2094,9 @@ static const lv_i18n_lang_t de_lang = {
 };
 
 const static lv_i18n_phrase_t es_singulars[] = {
+    {"zcash_seed_warning_title", "24 words recommended for Zcash"},
+    {"zcash_seed_warning_desc", "For better security when using Zcash, we recommend using a 24-word seed phrase."},
+    {"zcash_seed_warning_back", "Back"},
     {"zcash_verify_title", "Verify Zcash Address"},
     {"zcash_verify_owned", "This address belongs to Account 0 of your current wallet."},
     {"zcash_verify_not_owned", "This address does not match Account 0 of your current wallet."},
@@ -3122,6 +3131,9 @@ static const lv_i18n_lang_t es_lang = {
 };
 
 const static lv_i18n_phrase_t ja_singulars[] = {
+    {"zcash_seed_warning_title", "24 words recommended for Zcash"},
+    {"zcash_seed_warning_desc", "For better security when using Zcash, we recommend using a 24-word seed phrase."},
+    {"zcash_seed_warning_back", "Back"},
     {"zcash_verify_title", "Verify Zcash Address"},
     {"zcash_verify_owned", "This address belongs to Account 0 of your current wallet."},
     {"zcash_verify_not_owned", "This address does not match Account 0 of your current wallet."},
@@ -4155,6 +4167,9 @@ static const lv_i18n_lang_t ja_lang = {
 };
 
 const static lv_i18n_phrase_t ko_singulars[] = {
+    {"zcash_seed_warning_title", "24 words recommended for Zcash"},
+    {"zcash_seed_warning_desc", "For better security when using Zcash, we recommend using a 24-word seed phrase."},
+    {"zcash_seed_warning_back", "Back"},
     {"zcash_verify_title", "Verify Zcash Address"},
     {"zcash_verify_owned", "This address belongs to Account 0 of your current wallet."},
     {"zcash_verify_not_owned", "This address does not match Account 0 of your current wallet."},
@@ -5188,6 +5203,9 @@ static const lv_i18n_lang_t ko_lang = {
 };
 
 const static lv_i18n_phrase_t ru_singulars[] = {
+    {"zcash_seed_warning_title", "24 words recommended for Zcash"},
+    {"zcash_seed_warning_desc", "For better security when using Zcash, we recommend using a 24-word seed phrase."},
+    {"zcash_seed_warning_back", "Back"},
     {"zcash_verify_title", "Verify Zcash Address"},
     {"zcash_verify_owned", "This address belongs to Account 0 of your current wallet."},
     {"zcash_verify_not_owned", "This address does not match Account 0 of your current wallet."},
@@ -6226,6 +6244,9 @@ static const lv_i18n_lang_t ru_lang = {
 };
 
 const static lv_i18n_phrase_t zh_cn_singulars[] = {
+    {"zcash_seed_warning_title", "建议使用 24 个助记词来使用 Zcash"},
+    {"zcash_seed_warning_desc", "为了更安全地使用 Zcash，我们建议使用 24 个助记词。"},
+    {"zcash_seed_warning_back", "返回"},
     {"zcash_verify_title", "验证 Zcash 地址"},
     {"zcash_verify_owned", "此地址属于当前钱包的 Account 0。"},
     {"zcash_verify_not_owned", "此地址与当前钱包的 Account 0 不匹配。"},
