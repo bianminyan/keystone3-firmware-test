@@ -1529,7 +1529,7 @@ mod tests {
 
         const QA_MEMO: &str = concat!(
             "Keystone offers seamless compatibility with leading wallets such as MetaMask, ",
-            "OKX Wallet, Tonkeeper, Solflare, Backpack, Blue Wallet, Keplr, Eternl and others, ",
+            "OKX Wallet, Keeper, Solflare, Backpack, Blue Wallet, Keplr, Eternl and others, ",
             "ensuring top-tier security for a wide range of cryptocurrencies, including ",
             "Bitcoin and Ethereum."
         );

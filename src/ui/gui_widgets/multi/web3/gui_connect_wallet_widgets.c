@@ -169,7 +169,7 @@ static const lv_img_dsc_t *g_heliumCoinArray[2] = {
     &coinHelium,
 };
 
-static const lv_img_dsc_t *g_tonKeeperCoinArray[1] = {
+static const lv_img_dsc_t *g_keeperCoinArray[1] = {
     &coinTon,
 };
 
@@ -207,7 +207,7 @@ WalletListItem_t g_walletListArray[] = {
     {WALLET_LIST_NUFI, &walletNufi, "NuFi", g_nufiCoinArray, 5, true, WALLET_FILTER_BTC | WALLET_FILTER_ETH | WALLET_FILTER_SOL | WALLET_FILTER_ADA},
     {WALLET_LIST_HELIUM, &walletHelium, "Helium Wallet", g_heliumCoinArray, 2, true, WALLET_FILTER_SOL},
     {WALLET_LIST_BTC_WALLET, &coinBtc, "Bitcoin Wallets", g_btcWalletCoinArray, NUMBER_OF_ARRAYS(g_btcWalletCoinArray), true, WALLET_FILTER_BTC},
-    {WALLET_LIST_TONKEEPER, &walletTonkeeper, "Tonkeeper", g_tonKeeperCoinArray, 1, false, WALLET_FILTER_OTHER},
+    {WALLET_LIST_KEEPER, &walletKeeper, "Keeper", g_keeperCoinArray, 1, false, WALLET_FILTER_OTHER},
     {WALLET_LIST_RABBY, &walletRabby, "Rabby", g_ethWalletCoinArray, 4, true, WALLET_FILTER_ETH},
     {WALLET_LIST_NABOX, &walletNabox, "Nabox", g_naboxWalletCoinArray, 7, true, WALLET_FILTER_BTC | WALLET_FILTER_ETH | WALLET_FILTER_SOL | WALLET_FILTER_OTHER},
     {WALLET_LIST_BITGET, &walletBitget, "Bitget Wallet", g_bitgetWalletCoinArray, 3, true, WALLET_FILTER_BTC | WALLET_FILTER_ETH | WALLET_FILTER_OTHER},
@@ -1094,7 +1094,7 @@ UREncodeResult *GuiGetTonData(void)
     GetMasterFingerPrint(mfp);
     char* xpub = GetCurrentAccountPublicKey(XPUB_TYPE_TON_BIP39);
     path = GetXPubPath(XPUB_TYPE_TON_BIP39);
-    return get_tonkeeper_wallet_ur(xpub, GetWalletName(), mfp, sizeof(mfp), path);
+    return get_keeper_wallet_ur(xpub, GetWalletName(), mfp, sizeof(mfp), path);
 }
 
 void GuiPrepareArConnectWalletView(void)
@@ -1222,9 +1222,9 @@ void GuiConnectWalletSetQrdata(WALLET_LIST_INDEX_ENUM index)
         func = GuiGetThorWalletData;
         AddCoinsFromArray(g_ThorWalletCoinArray, NUMBER_OF_ARRAYS(g_ThorWalletCoinArray), false, 0);
         break;
-    case WALLET_LIST_TONKEEPER:
+    case WALLET_LIST_KEEPER:
         func = GuiGetTonData;
-        AddCoinsFromArray(g_tonKeeperCoinArray, NUMBER_OF_ARRAYS(g_tonKeeperCoinArray), false, 0);
+        AddCoinsFromArray(g_keeperCoinArray, NUMBER_OF_ARRAYS(g_keeperCoinArray), false, 0);
         break;
     case WALLET_LIST_KEYSTONE:
         // todo  add keystone ur logic
