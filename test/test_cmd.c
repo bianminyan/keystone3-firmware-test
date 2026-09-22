@@ -919,6 +919,32 @@ static void AccountPublicInfoTestFunc(int argc, char *argv[])
 }
 
 
+
+#ifdef WEB3_VERSION
+static void MigrationPrintArReceiveFromPublicKey(uint8_t accountIndex, const char *publicKey)
+{
+    if (publicKey == NULL || publicKey[0] == '\0') {
+        printf("MigrationArReceive=0,accountIndex=%d,status=no_ar_pubkey\r\n", accountIndex);
+        printf("MigrationArReceiveDone=1\r\n");
+        return;
+    }
+    SimpleResponse_c_char *address = arweave_get_address((char *)publicKey);
+    if (address == NULL || address->error_code != SUCCESS_CODE || address->data == NULL || address->data[0] == '\0') {
+        int32_t ret = address == NULL ? ERR_GENERAL_FAIL : address->error_code;
+        printf("MigrationArReceive=%d,accountIndex=%d,status=address_error\r\n", ret, accountIndex);
+        printf("MigrationArReceiveDone=1\r\n");
+        if (address != NULL) {
+            free_simple_response_c_char(address);
+        }
+        return;
+    }
+    printf("MigrationArReceive=0,accountIndex=%d,status=address\r\n", accountIndex);
+    printf("MigrationArReceiveAddress=%s\r\n", address->data);
+    printf("MigrationArReceiveDone=1\r\n");
+    free_simple_response_c_char(address);
+}
+#endif
+
 static void MigrationTestFunc(int argc, char *argv[])
 {
     if (argc < 1) {
@@ -937,6 +963,22 @@ static void MigrationTestFunc(int argc, char *argv[])
         printf("MigrationArSetup=%d,accountIndex=%d\r\n", ret, accountIndex);
 #else
         printf("MigrationArSetup=-1,accountIndex=0\r\n");
+#endif
+    } else if (strcmp(argv[0], "ar_receive_probe") == 0) {
+#ifdef WEB3_VERSION
+        VALUE_CHECK(argc, 2);
+        uint8_t accountIndex = 0;
+        int32_t ret = VerifyPasswordAndLogin(&accountIndex, argv[1]);
+        if (ret != SUCCESS_CODE) {
+            printf("MigrationArReceive=%d,accountIndex=%d,status=login_error\r\n", ret, accountIndex);
+            printf("MigrationArReceiveDone=1\r\n");
+            return;
+        }
+        SecretCacheSetPassword(argv[1]);
+        MigrationPrintArReceiveFromPublicKey(accountIndex, GetCurrentAccountPublicKey(XPUB_TYPE_ARWEAVE));
+#else
+        printf("MigrationArReceive=-1,accountIndex=0,status=unsupported\r\n");
+        printf("MigrationArReceiveDone=1\r\n");
 #endif
     } else if (strcmp(argv[0], "reboot") == 0) {
         printf("MigrationReboot=0\r\n");
