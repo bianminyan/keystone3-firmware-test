@@ -245,9 +245,15 @@ uint8_t *GuiGetFpVersion(char *version, uint32_t maxLen)
     return version;
 }
 
-void ShowAssert(const char *file, uint32_t len)
+void ShowAssert(const char *file, uint32_t line)
 {
-    printf("assert,file=%s\r\nline=%d\r\n", file, len);
+#ifdef BUILD_PRODUCTION
+    (void)file;
+    (void)line;
+    printf("assert\r\n");
+#else
+    printf("assert,file=%s\r\nline=%u\r\n", file, (unsigned int)line);
+#endif
     while (1)
         ;
 }
