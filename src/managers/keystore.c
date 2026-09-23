@@ -28,6 +28,7 @@
 #include "assert.h"
 #include "secret_cache.h"
 #include "background_task.h"
+#include "fingerprint_process.h"
 #ifdef COMPILE_SIMULATOR
 #include "simulator_model.h"
 #include "simulator_storage.h"
@@ -313,6 +314,11 @@ int32_t ChangePassword(uint8_t accountIndex, const char *newPassword, const char
         CHECK_ERRCODE_BREAK("check repeat password", ret);
         ret = LoadAccountSecret(accountIndex, &accountSecret, password);   // decrypt seed under PIN_old (reads only)
         CHECK_ERRCODE_BREAK("load account secret", ret);
+        // Fingerprint signing still holds PIN_old. Persist its disabled state before re-wrapping
+        // the account so a reset after CREATED cannot leave the switch enabled with a stale PIN.
+        if (GetFingerSignFlag()) {
+            UpdateFingerSignFlag(accountIndex, false);
+        }
         // Change-PIN re-provisions the SAME index under PIN_new. Bracket the re-wrap with CHANGING_PIN so an
         // interrupted change (power loss / failure) is erased and restored at boot. The backend hook
         // handles generation-specific prep (gen-1 no-op).

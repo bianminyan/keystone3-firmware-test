@@ -1500,7 +1500,6 @@ static int32_t ModelChangeAccountPass(const void *inData, uint32_t inDataLen)
             retryable = !modified && ret == ERR_KEYSTORE_REPEAT_PASSWORD;
             break;
         }
-        UpdateFingerSignFlag(target, false);
     } while (0);
     ClearSecretCache();
     if (ret == SUCCESS_CODE) {
