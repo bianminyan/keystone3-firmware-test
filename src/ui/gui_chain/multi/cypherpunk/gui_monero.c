@@ -63,10 +63,14 @@ static void SetUpMoneroDecryptKey(void)
 {
     char *pvk = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_PVK_0);
     SimpleResponse_u8 *decryptKeyData = monero_generate_decrypt_key(pvk);
-    if (decryptKeyData->error_code == SUCCESS_CODE) {
+    if (decryptKeyData == NULL) {
+        printf("monero decrypt key unavailable\n");
+        return;
+    }
+    if (decryptKeyData->error_code == SUCCESS_CODE && decryptKeyData->data != NULL) {
         memcpy(g_decryptKey, decryptKeyData->data, 32);
     }
-    free_simple_response_u8(decryptKeyData);
+    monero_free_decrypt_key_response(decryptKeyData);
 }
 
 PtrT_TransactionCheckResult GuiGetMoneroOutputCheckResult(void)
@@ -84,7 +88,8 @@ PtrT_TransactionCheckResult GuiGetMoneroUnsignedTxCheckResult(void)
     g_requestType = UnsignedTxRequest;
     SetUpMoneroDecryptKey();
     char *pvk = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_PVK_0);
-    return monero_unsigned_request_check(data, g_decryptKey, pvk);
+    char *pubSpendKey = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_0);
+    return monero_unsigned_request_check(data, g_decryptKey, pvk, pubSpendKey);
 }
 
 void GuiSetMoneroUrData(URParseResult *urResult, URParseMultiResult *urMultiResult, bool multi)
@@ -101,7 +106,14 @@ void *GuiGetMoneroOutputData(void)
     do {
         char *pvk = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_PVK_0);
         PtrT_TransactionParseResult_DisplayMoneroOutput parseResult = monero_parse_output(data, g_decryptKey, pvk);
-        CHECK_CHAIN_BREAK(parseResult);
+        if (parseResult == NULL) {
+            break;
+        }
+        if (parseResult->error_code != 0) {
+            printf("monero parse error %d: %s\n", (int)parseResult->error_code, parseResult->error_message);
+            free_TransactionParseResult_DisplayMoneroOutput(parseResult);
+            break;
+        }
         g_parseResult = (void *)parseResult;
     } while (0);
     return g_parseResult;
@@ -113,8 +125,18 @@ void *GuiGetMoneroUnsignedTxData(void)
     void *data = g_isMulti ? g_urMultiResult->data : g_urResult->data;
     do {
         char *pvk = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_PVK_0);
-        PtrT_TransactionParseResult_DisplayMoneroUnsignedTx parseResult = monero_parse_unsigned_tx(data, g_decryptKey, pvk);
-        CHECK_CHAIN_BREAK(parseResult);
+        // The account public spend key lets the parser prove that a "change"
+        // output pays this wallet instead of trusting the host's claim.
+        char *pubSpendKey = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_0);
+        PtrT_TransactionParseResult_DisplayMoneroUnsignedTx parseResult = monero_parse_unsigned_tx(data, g_decryptKey, pvk, pubSpendKey);
+        if (parseResult == NULL) {
+            break;
+        }
+        if (parseResult->error_code != 0) {
+            printf("monero parse error %d: %s\n", (int)parseResult->error_code, parseResult->error_message);
+            free_TransactionParseResult_DisplayMoneroUnsignedTx(parseResult);
+            break;
+        }
         g_parseResult = (void *)parseResult;
     } while (0);
     return g_parseResult;
@@ -132,7 +154,9 @@ UREncodeResult *GuiGetMoneroKeyimagesQrCodeData(void)
         int ret = GetAccountSeed(GetCurrentAccountIndex(), seed, SecretCacheGetPassword());
         CHECK_ERRCODE_BREAK("GetAccountSeed", ret);
         encodeResult = monero_generate_keyimage(data, seed, len, 0);
-        CHECK_CHAIN_BREAK(encodeResult);
+        if (encodeResult == NULL || encodeResult->error_code != 0) {
+            break;
+        }
     } while (0);
     memset_s(seed, sizeof(seed), 0, sizeof(seed));
     ClearSecretCache();
@@ -152,7 +176,9 @@ UREncodeResult *GuiGetMoneroSignedTransactionQrCodeData(void)
         int ret = GetAccountSeed(GetCurrentAccountIndex(), seed, SecretCacheGetPassword());
         CHECK_ERRCODE_BREAK("GetAccountSeed", ret);
         encodeResult = monero_generate_signature(data, seed, len, 0);
-        CHECK_CHAIN_BREAK(encodeResult);
+        if (encodeResult == NULL || encodeResult->error_code != 0) {
+            break;
+        }
     } while (0);
     memset_s(seed, sizeof(seed), 0, sizeof(seed));
     ClearSecretCache();
@@ -261,7 +287,9 @@ void GuiShowXmrTransactionOverview(lv_obj_t *parent, void *totalData)
     lv_obj_align(networkContainer, LV_ALIGN_DEFAULT, 0, 160);
 
     uint32_t outputsSize = data->outputs->size;
-    uint32_t containerHeight = 18 * 2 + 30 + 16 + outputsSize * 120;
+    // 160 instead of 120: an integrated output shows its payment ID on a second
+    // line under the address.
+    uint32_t containerHeight = 18 * 2 + 30 + 16 + outputsSize * 160;
     lv_obj_t * detilsContainer = GuiCreateContainerWithParent(parent, 408, containerHeight);
     GuiSetTransactionContainerStyle(detilsContainer);
     lv_obj_align(detilsContainer, LV_ALIGN_DEFAULT, 0, 238);
@@ -273,7 +301,7 @@ void GuiShowXmrTransactionOverview(lv_obj_t *parent, void *totalData)
     uint32_t addressOffset = 0;
     for (size_t i = 0; i < data->outputs->size; i++) {
         bool is_change = data->outputs->data[i].is_change;
-        uint32_t addressY = 18 + 38 + i * 120 + addressOffset;
+        uint32_t addressY = 18 + 38 + i * 160 + addressOffset;
         char outputIndex[BUFFER_SIZE_16] = {0};
         snprintf(outputIndex, sizeof(outputIndex), "%u", (unsigned int)(i + 1));
         label = GuiCreateIllustrateLabel(detilsContainer, outputIndex);
@@ -283,6 +311,8 @@ void GuiShowXmrTransactionOverview(lv_obj_t *parent, void *totalData)
         label = GuiCreateIllustrateLabel(detilsContainer, data->outputs->data[i].address);
         lv_obj_align(label, LV_ALIGN_DEFAULT, 52, addressY);
         lv_obj_set_width(label, 332);
+        // Keep the address label: `label` is reused for the "Change" badge below.
+        lv_obj_t *addressLabel = label;
 
         if (is_change) {
             lv_obj_t *changeContainer = GuiCreateContainerWithParent(detilsContainer, 87, 30);
@@ -298,106 +328,100 @@ void GuiShowXmrTransactionOverview(lv_obj_t *parent, void *totalData)
             lv_obj_set_style_text_opa(label, 163, LV_PART_MAIN);
             lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
         }
+
+        // The payment ID the transaction actually carries, for integrated
+        // addresses: shown next to the address it belongs to.
+        // The payment ID belongs to this output: one request can carry several
+        // transactions, each with its own ID.
+        if (data->outputs->data[i].is_integrated && data->outputs->data[i].payment_id != NULL && data->outputs->data[i].payment_id[0] != '\0') {
+            char paymentId[BUFFER_SIZE_32] = {0};
+            snprintf(paymentId, sizeof(paymentId), "Payment ID: %s", data->outputs->data[i].payment_id);
+            lv_obj_t *paymentIdLabel = GuiCreateIllustrateLabel(detilsContainer, paymentId);
+            lv_obj_align_to(paymentIdLabel, addressLabel, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 6);
+            lv_obj_set_width(paymentIdLabel, 332);
+            lv_label_set_long_mode(paymentIdLabel, LV_LABEL_LONG_WRAP);
+            lv_obj_set_style_text_opa(paymentIdLabel, 144, LV_PART_MAIN);
+        }
     }
+}
+
+// Measure wrapped text before placing the next row. Amounts must remain lossless.
+static lv_coord_t AddXmrDetailLabel(lv_obj_t *parent, const char *text, lv_coord_t y,
+                                  bool muted, bool amount)
+{
+    lv_obj_t *label = GuiCreateIllustrateLabel(parent, text);
+    lv_obj_set_width(label, 360);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 24, y);
+    if (muted) {
+        lv_obj_set_style_text_opa(label, 144, LV_PART_MAIN);
+    }
+    if (amount) {
+        lv_obj_set_style_text_color(label, ORANGE_COLOR, LV_PART_MAIN);
+    }
+    lv_obj_update_layout(label);
+    return y + lv_obj_get_height(label);
 }
 
 void GuiShowXmrTransactionDetails(lv_obj_t *parent, void *totalData)
 {
     DisplayMoneroUnsignedTx *data = (DisplayMoneroUnsignedTx *)totalData;
-
     lv_obj_set_width(parent, 408);
-    lv_obj_set_height(parent, 602);
+    lv_obj_set_height(parent, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_bottom(parent, 24, LV_PART_MAIN);
 
-    lv_obj_t * amountContainer = GuiCreateContainerWithParent(parent, 408, 138);
+    lv_obj_t *amountContainer = GuiCreateContainerWithParent(parent, 408, LV_SIZE_CONTENT);
     GuiSetTransactionContainerStyle(amountContainer);
-    lv_obj_align(amountContainer, LV_ALIGN_DEFAULT, 0, 78);
+    lv_coord_t y = 16;
+    y = AddXmrDetailLabel(amountContainer, "Input Value", y, true, false);
+    y = AddXmrDetailLabel(amountContainer, data->output_amount, y + 6, false, false);
+    y = AddXmrDetailLabel(amountContainer, "Output Value", y + 16, true, false);
+    y = AddXmrDetailLabel(amountContainer, data->input_amount, y + 6, false, false);
+    y = AddXmrDetailLabel(amountContainer, "Fee", y + 16, true, false);
+    y = AddXmrDetailLabel(amountContainer, data->fee, y + 6, false, false);
+    lv_obj_set_height(amountContainer, y + 16);
+    lv_coord_t containerY = y + 32;
 
-    lv_obj_t *label = GuiCreateIllustrateLabel(amountContainer, "Input Value");
-    lv_obj_align(label, LV_ALIGN_DEFAULT, 24, 16);
-    lv_obj_set_style_text_opa(label, 144, LV_PART_MAIN);
-
-    label = GuiCreateIllustrateLabel(amountContainer, data->output_amount);
-    lv_obj_align(label, LV_ALIGN_DEFAULT, 147, 16);
-    lv_obj_set_width(label, 220);
-
-    label = GuiCreateIllustrateLabel(amountContainer, "Output Value");
-    lv_obj_align(label, LV_ALIGN_DEFAULT, 24, 54);
-    lv_obj_set_style_text_opa(label, 144, LV_PART_MAIN);
-
-    label = GuiCreateIllustrateLabel(amountContainer, data->input_amount);
-    lv_obj_align(label, LV_ALIGN_DEFAULT, 164, 54);
-    lv_obj_set_width(label, 220);
-
-    label = GuiCreateIllustrateLabel(amountContainer, "Fee");
-    lv_obj_align(label, LV_ALIGN_DEFAULT, 24, 92);
-    lv_obj_set_style_text_opa(label, 144, LV_PART_MAIN);
-
-    label = GuiCreateIllustrateLabel(amountContainer, data->fee);
-    lv_obj_align(label, LV_ALIGN_DEFAULT, 73, 92);
-    lv_obj_set_width(label, 220);
-
-    uint32_t inputsSize = data->inputs->size;
-    uint32_t inputContainerHeight = 16 * 2 + 30 + inputsSize * 120;
-    lv_obj_t * inputsContainer = GuiCreateContainerWithParent(parent, 408, inputContainerHeight);
+    lv_obj_t *inputsContainer = GuiCreateContainerWithParent(parent, 408, LV_SIZE_CONTENT);
     GuiSetTransactionContainerStyle(inputsContainer);
-    lv_obj_align(inputsContainer, LV_ALIGN_DEFAULT, 0, 232);
-
-    label = GuiCreateIllustrateLabel(inputsContainer, "Inputs");
-    lv_obj_align(label, LV_ALIGN_DEFAULT, 24, 16);
-    lv_obj_set_style_text_opa(label, 144, LV_PART_MAIN);
-
+    lv_obj_align(inputsContainer, LV_ALIGN_TOP_LEFT, 0, containerY);
+    y = AddXmrDetailLabel(inputsContainer, "Inputs", 16, true, false);
     for (size_t i = 0; i < data->inputs->size; i++) {
         char inputIndex[BUFFER_SIZE_32] = {0};
         snprintf(inputIndex, sizeof(inputIndex), "Pubkey %u", (unsigned int)(i + 1));
-        lv_obj_t *titleLabel = GuiCreateIllustrateLabel(inputsContainer, inputIndex);
-        lv_obj_align(titleLabel, LV_ALIGN_DEFAULT, 24, 54 + i * 120);
-        lv_obj_set_style_text_opa(titleLabel, 144, LV_PART_MAIN);
-
-        lv_obj_t *ammountLabel = GuiCreateIllustrateLabel(inputsContainer, data->inputs->data[i].amount);
-        lv_obj_align_to(ammountLabel, titleLabel, LV_ALIGN_OUT_RIGHT_MID, 16, 0);
-        lv_obj_set_style_text_color(ammountLabel, ORANGE_COLOR, LV_PART_MAIN);
-
-        label = GuiCreateIllustrateLabel(inputsContainer, data->inputs->data[i].key);
-        lv_obj_align(label, LV_ALIGN_DEFAULT, 24, 84 + i * 120);
-        lv_obj_set_width(label, 332);
+        y = AddXmrDetailLabel(inputsContainer, inputIndex, y + 16, true, false);
+        y = AddXmrDetailLabel(inputsContainer, data->inputs->data[i].amount, y + 6, false, true);
+        y = AddXmrDetailLabel(inputsContainer, data->inputs->data[i].key, y + 6, false, false);
     }
+    lv_obj_set_height(inputsContainer, y + 16);
+    containerY += y + 32;
 
-    uint32_t outputsSize = data->outputs->size;
-    uint32_t outputContainerHeight = 16 * 2 + 30 + outputsSize * 150;
-    lv_obj_t * outputsContainer = GuiCreateContainerWithParent(parent, 408, outputContainerHeight);
+    lv_obj_t *outputsContainer = GuiCreateContainerWithParent(parent, 408, LV_SIZE_CONTENT);
     GuiSetTransactionContainerStyle(outputsContainer);
-    lv_obj_align(outputsContainer, LV_ALIGN_DEFAULT, 0, 232 + 16 + inputContainerHeight);
-
-    label = GuiCreateIllustrateLabel(outputsContainer, "Outputs");
-    lv_obj_align(label, LV_ALIGN_DEFAULT, 24, 16);
-    lv_obj_set_style_text_opa(label, 144, LV_PART_MAIN);
-
+    lv_obj_align(outputsContainer, LV_ALIGN_TOP_LEFT, 0, containerY);
+    y = AddXmrDetailLabel(outputsContainer, "Outputs", 16, true, false);
     for (size_t i = 0; i < data->outputs->size; i++) {
-        bool is_change = data->outputs->data[i].is_change;
         char outputIndex[BUFFER_SIZE_32] = {0};
         snprintf(outputIndex, sizeof(outputIndex), "Address %u", (unsigned int)(i + 1));
-        lv_obj_t *titleLabel = GuiCreateIllustrateLabel(outputsContainer, outputIndex);
-        lv_obj_align(titleLabel, LV_ALIGN_DEFAULT, 24, 54 + i * 150);
-        lv_obj_set_style_text_opa(titleLabel, 144, LV_PART_MAIN);
-
-        lv_obj_t *amountLabel = GuiCreateIllustrateLabel(outputsContainer, data->outputs->data[i].amount);
-        lv_obj_align_to(amountLabel, titleLabel, LV_ALIGN_OUT_RIGHT_MID, 16, 0);
-        lv_obj_set_style_text_color(amountLabel, ORANGE_COLOR, LV_PART_MAIN);
-
-        if (is_change) {
+        y = AddXmrDetailLabel(outputsContainer, outputIndex, y + 16, true, false);
+        if (data->outputs->data[i].is_change) {
             lv_obj_t *changeContainer = GuiCreateContainerWithParent(outputsContainer, 87, 30);
-            lv_obj_align_to(changeContainer, amountLabel, LV_ALIGN_OUT_RIGHT_MID, 16, 0);
-            lv_obj_set_style_radius(changeContainer, 16, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_bg_color(changeContainer, WHITE_COLOR, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_bg_opa(changeContainer, 30, LV_PART_MAIN | LV_STATE_DEFAULT);
-            label = GuiCreateIllustrateLabel(changeContainer, "Change");
+            lv_obj_align(changeContainer, LV_ALIGN_TOP_RIGHT, -24, y - 30);
+            lv_obj_set_style_radius(changeContainer, 16, LV_PART_MAIN);
+            lv_obj_set_style_bg_color(changeContainer, WHITE_COLOR, LV_PART_MAIN);
+            lv_obj_set_style_bg_opa(changeContainer, 30, LV_PART_MAIN);
+            lv_obj_t *label = GuiCreateIllustrateLabel(changeContainer, "Change");
             lv_obj_set_style_text_color(label, WHITE_COLOR, LV_PART_MAIN);
             lv_obj_set_style_text_opa(label, 163, LV_PART_MAIN);
             lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
         }
-
-        label = GuiCreateIllustrateLabel(outputsContainer, data->outputs->data[i].address);
-        lv_obj_align(label, LV_ALIGN_DEFAULT, 24, 84 + i * 150);
-        lv_obj_set_width(label, 332);
+        y = AddXmrDetailLabel(outputsContainer, data->outputs->data[i].amount, y + 6, false, true);
+        y = AddXmrDetailLabel(outputsContainer, data->outputs->data[i].address, y + 6, false, false);
+        if (data->outputs->data[i].is_integrated && data->outputs->data[i].payment_id != NULL && data->outputs->data[i].payment_id[0] != '\0') {
+            char paymentId[BUFFER_SIZE_32] = {0};
+            snprintf(paymentId, sizeof(paymentId), "Payment ID: %s", data->outputs->data[i].payment_id);
+            y = AddXmrDetailLabel(outputsContainer, paymentId, y + 6, true, false);
+        }
     }
+    lv_obj_set_height(outputsContainer, y + 16);
 }

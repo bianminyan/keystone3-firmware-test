@@ -18,10 +18,19 @@ impl PrivateKey {
         PrivateKey { scalar }
     }
 
+    /// Takes exactly 32 bytes; use `try_from_slice` for untrusted input.
     pub fn from_bytes(bytes: &[u8]) -> PrivateKey {
         PrivateKey {
             scalar: Scalar::from_bytes_mod_order(bytes.try_into().unwrap()),
         }
+    }
+
+    /// Fallible variant for data that comes from outside the crate.
+    pub fn try_from_slice(bytes: &[u8]) -> Result<PrivateKey> {
+        let bytes: [u8; PUBKEY_LEH] = bytes.try_into().map_err(|_| MoneroError::FormatError)?;
+        Ok(PrivateKey {
+            scalar: Scalar::from_bytes_mod_order(bytes),
+        })
     }
 
     pub fn to_bytes(&self) -> [u8; PUBKEY_LEH] {

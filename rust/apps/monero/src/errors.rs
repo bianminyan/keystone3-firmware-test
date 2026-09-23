@@ -29,6 +29,8 @@ pub enum MoneroError {
     UnsupportedInputType,
     #[error("mismatched mfp")]
     MismatchedMfp,
+    #[error("change address does not belong to this wallet")]
+    ChangeAddressMismatch,
     #[error("invalid private view key")]
     InvalidPrivateViewKey,
 }

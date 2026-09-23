@@ -203,14 +203,20 @@ pub fn get_key_image_from_input(input: Input) -> Result<Keyimage> {
 }
 
 pub fn fmt_monero_amount(value: u64) -> String {
-    let value = value as f64 / 1_000_000_000_000.0;
-    let value = format!("{value:.12}");
-    let value = value.trim_end_matches('0').to_string();
-    if value.ends_with('.') {
-        format!("{} XMR", &value[..value.len() - 1])
-    } else {
-        format!("{value} XMR")
+    const PICONERO: u64 = 1_000_000_000_000;
+
+    let whole = value / PICONERO;
+    let fraction = value % PICONERO;
+    if fraction == 0 {
+        return format!("{whole} XMR");
     }
+
+    let mut fraction = format!("{fraction:012}");
+    while fraction.ends_with('0') {
+        fraction.pop();
+    }
+
+    format!("{whole}.{fraction} XMR")
 }
 
 #[cfg(test)]
@@ -391,6 +397,13 @@ mod tests {
 
     #[test]
     fn test_fmt_monero_amount() {
+        // Above 2^53 piconero (~9007 XMR) a float would lose precision.
+        assert_eq!(
+            fmt_monero_amount(u64::MAX),
+            "18446744.073709551615 XMR"
+        );
+        assert_eq!(fmt_monero_amount(9_007_199_254_740_993), "9007.199254740993 XMR");
+
         let amount = 10000000000001;
         let res = fmt_monero_amount(amount);
         assert_eq!(res, "10.000000000001 XMR");

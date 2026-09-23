@@ -5,6 +5,9 @@ mod extra;
 mod signed_transaction;
 mod transfer_key;
 
+#[cfg(test)]
+mod regression_tests;
+
 pub mod address;
 pub mod errors;
 pub mod key;

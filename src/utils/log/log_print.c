@@ -182,6 +182,8 @@ void LogRustPanic(char* panic_info)
 #include "mhscpu.h"
 #include "cmsis_os.h"
 #include "presetting.h"
+#include "secret_cache.h"
+#include "screen_manager.h"
 #include "version.h"
 #include "hardware_version.h"
 #include "define.h"
@@ -212,6 +214,9 @@ void RestartCountdownOnLcd(void)
 void LogRustPanic(char* panic_info)
 {
     osKernelLock();
+    // Restore session state before displaying the error page.
+    ClearSecretCache();
+    SetLockScreen(true);
     // Show only a fixed, user-facing error message on the LCD.
     PrintOnLcd(&openSans_20, 0xFFFF, "The error was caused by a failed data request.\nYour assets remain safe.\n");
     PrintErrorInfoOnLcd();

@@ -96,13 +96,9 @@ fn calc_output_key_offset(
     internal_output_index: u64,
     major: u32,
     minor: u32,
-) -> Scalar {
+) -> Option<Scalar> {
     let recv_derivation = (keypair.view.scalar
-        * PublicKey::from_bytes(tx_pubkey)
-            .unwrap()
-            .point
-            .decompress()
-            .unwrap())
+        * PublicKey::from_bytes(tx_pubkey).ok()?.point.decompress()?)
     .mul_by_cofactor();
 
     let mut output_index_buf = vec![0; length(internal_output_index)];
@@ -116,22 +112,43 @@ fn calc_output_key_offset(
         key_offset += Scalar::from_bytes_mod_order(keypair.get_m(major, minor));
     }
 
-    key_offset
+    Some(key_offset)
 }
 
-fn calc_key_image_private_key(
+/// Every transaction key an output could have been derived from: the main one
+/// first, then the additional keys
+/// (`cryptonote_format_utils.cpp:406-433`).
+fn candidate_tx_keys(tx_pubkey: &[u8; 32], additional_tx_keys: &[PublicKey]) -> Vec<[u8; 32]> {
+    let mut keys = Vec::with_capacity(1 + additional_tx_keys.len());
+    keys.push(*tx_pubkey);
+    for key in additional_tx_keys.iter() {
+        keys.push(key.as_bytes());
+    }
+    keys
+}
+
+fn verified_key_image_offset(
     keypair: &KeyPair,
     tx_pubkey: &[u8; 32],
+    pubkey: &[u8; 32],
+    additional_tx_keys: &[PublicKey],
     internal_output_index: u64,
     major: u32,
     minor: u32,
-) -> PrivateKey {
-    let key_offsset =
-        calc_output_key_offset(keypair, tx_pubkey, internal_output_index, major, minor);
+) -> Option<Scalar> {
+    let target = PublicKey::from_bytes(pubkey).ok()?.point.decompress()?;
 
-    let prv_key = keypair.spend.scalar + key_offsset;
+    for key in candidate_tx_keys(tx_pubkey, additional_tx_keys).iter() {
+        if let Some(offset) =
+            calc_output_key_offset(keypair, key, internal_output_index, major, minor)
+        {
+            if EdwardsPoint::mul_base(&(keypair.spend.scalar + offset)) == target {
+                return Some(offset);
+            }
+        }
+    }
 
-    PrivateKey::new(prv_key)
+    None
 }
 
 fn generate_key_image<R: RngCore + CryptoRng>(
@@ -143,33 +160,25 @@ fn generate_key_image<R: RngCore + CryptoRng>(
     major: u32,
     minor: u32,
     mut rng: R,
-) -> KeyImageAndSignature {
-    let mut additional_tx_pub_key = None;
-    if major != 0 || minor != 0 {
-        if additional_tx_keys.len() == 1 {
-            additional_tx_pub_key = Some(additional_tx_keys[0]);
-        } else if !additional_tx_keys.is_empty() {
-            if internal_output_index as usize >= additional_tx_keys.len() {
-                panic!("Wrong number of additional derivations");
-            }
-            additional_tx_pub_key = Some(additional_tx_keys[internal_output_index as usize]);
-        }
-    }
+) -> Result<KeyImageAndSignature> {
+    let offset = verified_key_image_offset(
+        keypair,
+        tx_pubkey,
+        pubkey,
+        &additional_tx_keys,
+        internal_output_index,
+        major,
+        minor,
+    )
+    .ok_or(MoneroError::GenerateKeyImageError)?;
 
-    let key_to_use = match additional_tx_pub_key {
-        Some(key) => &key.as_bytes(),
-        None => tx_pubkey,
-    };
-
-    let prvkey =
-        calc_key_image_private_key(keypair, key_to_use, internal_output_index, major, minor);
-
-    let image = generate_key_image_from_priavte_key(&prvkey.clone());
+    let prvkey = PrivateKey::new(keypair.spend.scalar + offset);
+    let image = generate_key_image_from_priavte_key(&prvkey);
 
     let signature = generate_ring_signature(
-        &image.clone().compress().0,
-        &image.clone(),
-        vec![PublicKey::from_bytes(pubkey).unwrap()],
+        &image.compress().0,
+        &image,
+        vec![PublicKey::from_bytes(pubkey)?],
         &prvkey,
         0,
         &mut rng,
@@ -177,7 +186,10 @@ fn generate_key_image<R: RngCore + CryptoRng>(
 
     let signature = [signature[0][0].to_bytes(), signature[0][1].to_bytes()].concat();
 
-    KeyImageAndSignature::new(image.compress().0, signature.try_into().unwrap())
+    Ok(KeyImageAndSignature::new(
+        image.compress().0,
+        signature.try_into().map_err(|_| MoneroError::FormatError)?,
+    ))
 }
 
 fn generate_key_image_from_offset(
@@ -187,7 +199,7 @@ fn generate_key_image_from_offset(
 ) -> Option<EdwardsPoint> {
     let input_key = private_spend_key.scalar + key_offset;
 
-    if EdwardsPoint::mul_base(&input_key) != output_public_key.point.decompress().unwrap() {
+    if EdwardsPoint::mul_base(&input_key) != output_public_key.point.decompress()? {
         return None;
     }
 
@@ -203,33 +215,31 @@ pub fn try_to_generate_image(
     major: u32,
     optional_minors: Vec<u32>,
 ) -> Result<(Keyimage, Scalar)> {
-    let mut additional_tx_pub_key = None;
-    if major != 0 || !optional_minors.is_empty() {
-        if additional_tx_keys.len() == 1 {
-            additional_tx_pub_key = Some(additional_tx_keys[0]);
-        } else if !additional_tx_keys.is_empty() {
-            if internal_output_index as usize >= additional_tx_keys.len() {
-                return Err(MoneroError::GenerateKeyImageError);
-            }
-            additional_tx_pub_key = Some(additional_tx_keys[internal_output_index as usize]);
-        }
-    }
+    let output_public_key = PublicKey::from_bytes(output_pubkey)?;
 
-    let key_to_use = match additional_tx_pub_key {
-        Some(key) => &key.as_bytes(),
-        None => tx_pubkey,
+    // Every candidate transaction key, the main one first.
+    let candidate_keys = candidate_tx_keys(tx_pubkey, &additional_tx_keys);
+
+    // The account's primary address (minor 0) is always a valid candidate, even if
+    // the host sent an empty subaddress index list.
+    let minors = if optional_minors.is_empty() {
+        vec![0]
+    } else {
+        optional_minors
     };
 
-    for minor in optional_minors {
-        let offset =
-            calc_output_key_offset(keypair, key_to_use, internal_output_index, major, minor);
-        if let Some(image) = generate_key_image_from_offset(
-            &keypair.spend,
-            &offset,
-            &PublicKey::from_bytes(output_pubkey).unwrap(),
-        ) {
-            return Ok((Keyimage::new(image.compress().to_bytes()), offset));
-        };
+    for key_to_use in candidate_keys.iter() {
+        for minor in minors.iter() {
+            if let Some(offset) =
+                calc_output_key_offset(keypair, key_to_use, internal_output_index, major, *minor)
+            {
+                if let Some(image) =
+                    generate_key_image_from_offset(&keypair.spend, &offset, &output_public_key)
+                {
+                    return Ok((Keyimage::new(image.compress().to_bytes()), offset));
+                }
+            }
+        }
     }
 
     Err(MoneroError::GenerateKeyImageError)
@@ -239,8 +249,8 @@ impl ExportedTransferDetail {
     pub fn key_image<R: RngCore + CryptoRng>(
         &self,
         keypair: &KeyPair,
-        mut rng: R,
-    ) -> KeyImageAndSignature {
+        rng: R,
+    ) -> Result<KeyImageAndSignature> {
         generate_key_image(
             keypair,
             &self.tx_pubkey,
@@ -253,35 +263,29 @@ impl ExportedTransferDetail {
         )
     }
 
-    pub fn generate_key_image_without_signature(&self, keypair: &KeyPair) -> (PublicKey, Keyimage) {
-        let mut additional_tx_pub_key = None;
-        let additional_tx_keys = self.additional_tx_keys.clone();
-        if additional_tx_keys.len() == 1 {
-            additional_tx_pub_key = Some(additional_tx_keys[0]);
-        } else if !additional_tx_keys.is_empty() {
-            if self.internal_output_index as usize >= additional_tx_keys.len() {
-                panic!("Wrong number of additional derivations");
-            }
-            additional_tx_pub_key = Some(additional_tx_keys[self.internal_output_index as usize]);
-        }
-
-        let key_to_use = match additional_tx_pub_key {
-            Some(key) => &key.as_bytes(),
-            None => &self.tx_pubkey,
-        };
-
-        let prvkey = calc_key_image_private_key(
+    /// The key image and public key of an output listed in the request, derived
+    /// only from the transaction key that provably produces `pubkey`.
+    pub fn generate_key_image_without_signature(
+        &self,
+        keypair: &KeyPair,
+    ) -> Result<(PublicKey, Keyimage)> {
+        let offset = verified_key_image_offset(
             keypair,
-            key_to_use,
+            &self.tx_pubkey,
+            &self.pubkey,
+            &self.additional_tx_keys,
             self.internal_output_index,
             self.major,
             self.minor,
-        );
+        )
+        .ok_or(MoneroError::GenerateKeyImageError)?;
 
-        (
+        let prvkey = PrivateKey::new(keypair.spend.scalar + offset);
+
+        Ok((
             prvkey.get_public_key(),
             Keyimage::new(generate_key_image_from_priavte_key(&prvkey).compress().0),
-        )
+        ))
     }
 }
 
@@ -296,20 +300,20 @@ pub fn generate_export_ur_data<R: RngCore + CryptoRng>(
         OUTPUT_EXPORT_MAGIC,
     )?;
 
-    if decrypted_data.pk1 != Some(keypair.get_public_spend()) {
-        panic!("Public spend key does not match");
-    }
-    if decrypted_data.pk2 != Some(keypair.get_public_view()) {
-        panic!("Public view key does not match");
+    if decrypted_data.pk1 != Some(keypair.get_public_spend())
+        || decrypted_data.pk2 != Some(keypair.get_public_view())
+    {
+        return Err(MoneroError::MismatchedMfp);
     }
 
     let outputs = ExportedTransferDetails::from_bytes(&decrypted_data.data)?;
+    outputs.validate_curve_points()?;
 
     let mut key_images: KeyImages = KeyImages(vec![]);
     for output in outputs.details.iter() {
         key_images
             .0
-            .push(output.key_image(&keypair.clone(), &mut rng));
+            .push(output.key_image(&keypair.clone(), &mut rng)?);
     }
 
     Ok(encrypt_data_with_pvk(
@@ -463,7 +467,8 @@ mod tests {
             0,
             0,
             rng,
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             hex::encode(ki.image.0),

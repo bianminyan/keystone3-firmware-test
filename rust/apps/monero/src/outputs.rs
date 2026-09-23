@@ -1,6 +1,6 @@
-use crate::errors::Result;
+use crate::errors::{MoneroError, Result};
 use crate::key::PublicKey;
-use crate::utils::{constants::OUTPUT_EXPORT_MAGIC, constants::PUBKEY_LEH, io::*};
+use crate::utils::{constants::OUTPUT_EXPORT_MAGIC, constants::PUBKEY_LEH};
 use crate::utils::{decrypt_data_with_decrypt_key, fmt_monero_amount};
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -49,8 +49,10 @@ pub struct ExportedTransferDetails {
 
 impl ExportedTransferDetails {
     pub fn from_bytes(bytes: &[u8]) -> Result<ExportedTransferDetails> {
-        let mut offset = 0;
-        let has_transfers = read_varinteger(bytes, &mut offset);
+        use crate::utils::io::{Reader, MAX_ADDITIONAL_KEYS, MAX_DESTINATIONS};
+
+        let mut reader = Reader::new(bytes);
+        let has_transfers = reader.read_varint()?;
         if has_transfers == 0 {
             return Ok(ExportedTransferDetails {
                 offset: 0,
@@ -58,35 +60,29 @@ impl ExportedTransferDetails {
                 details: Vec::new(),
             });
         }
-        // offset
-        read_varinteger(bytes, &mut offset);
-        // transfers.size()
-        let value_offset = read_varinteger(bytes, &mut offset);
-        // details size
-        let value_size = read_varinteger(bytes, &mut offset);
-        // for size
-        let mut details = Vec::new();
+
+        let _offset = reader.read_varint()?;
+        let value_offset = reader.read_varint()?;
+        let value_size = reader.read_count(MAX_DESTINATIONS)?;
+
+        let mut details = Vec::with_capacity(value_size.min(32));
         for _ in 0..value_size {
-            // version ignore
-            read_varinteger(bytes, &mut offset);
-            let pubkey = PublicKey::from_bytes(&bytes[offset..offset + PUBKEY_LEH]).unwrap();
-            offset += PUBKEY_LEH;
-            let internal_output_index = read_varinteger(bytes, &mut offset);
-            let global_output_index = read_varinteger(bytes, &mut offset);
-            let tx_pubkey = PublicKey::from_bytes(&bytes[offset..offset + PUBKEY_LEH]).unwrap();
-            let flags = bytes[offset + PUBKEY_LEH];
-            offset += PUBKEY_LEH + 1;
-            let amount = read_varinteger(bytes, &mut offset);
-            // FIXME: additional_tx_keys
-            let keys_num = read_varinteger(bytes, &mut offset);
-            let mut additional_tx_keys = Vec::new();
+            let _version = reader.read_varint()?;
+            let pubkey = PublicKey::from_bytes(reader.read_bytes(PUBKEY_LEH)?)?;
+            let internal_output_index = reader.read_varint()?;
+            let global_output_index = reader.read_varint()?;
+            let tx_pubkey = PublicKey::from_bytes(reader.read_bytes(PUBKEY_LEH)?)?;
+            let flags = reader.read_u8()?;
+            let amount = reader.read_varint()?;
+
+            let keys_num = reader.read_count(MAX_ADDITIONAL_KEYS)?;
+            let mut additional_tx_keys = Vec::with_capacity(keys_num.min(32));
             for _ in 0..keys_num {
-                let key = PublicKey::from_bytes(&bytes[offset..offset + PUBKEY_LEH]).unwrap();
-                additional_tx_keys.push(key);
-                offset += PUBKEY_LEH;
+                additional_tx_keys.push(PublicKey::from_bytes(reader.read_bytes(PUBKEY_LEH)?)?);
             }
-            let major = read_varinteger(bytes, &mut offset);
-            let minor = read_varinteger(bytes, &mut offset);
+
+            let major = reader.read_varint()?;
+            let minor = reader.read_varint()?;
 
             details.push(ExportedTransferDetail {
                 pubkey: pubkey.as_bytes(),
@@ -103,9 +99,29 @@ impl ExportedTransferDetails {
 
         Ok(ExportedTransferDetails {
             offset: value_offset,
-            size: value_size,
+            size: value_size as u64,
             details,
         })
+    }
+
+    pub fn validate_curve_points(&self) -> Result<()> {
+        fn check(bytes: &[u8; PUBKEY_LEH]) -> Result<()> {
+            PublicKey::from_bytes(bytes)?
+                .point
+                .decompress()
+                .ok_or(MoneroError::FormatError)
+                .map(|_| ())
+        }
+
+        for detail in self.details.iter() {
+            check(&detail.pubkey)?;
+            check(&detail.tx_pubkey)?;
+            for key in detail.additional_tx_keys.iter() {
+                check(&key.as_bytes())?;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -123,8 +139,15 @@ pub fn parse_display_info(
     let decrypted_data =
         decrypt_data_with_decrypt_key(decrypt_key, pvk, data.to_vec(), OUTPUT_EXPORT_MAGIC)?;
     let outputs = ExportedTransferDetails::from_bytes(&decrypted_data.data)?;
+    outputs.validate_curve_points()?;
 
-    let total_amount = outputs.details.iter().fold(0, |acc, x| acc + x.amount);
+    // Sum with overflow checking: the amounts come from the request.
+    let mut total_amount = 0u64;
+    for detail in outputs.details.iter() {
+        total_amount = total_amount
+            .checked_add(detail.amount)
+            .ok_or(MoneroError::FormatError)?;
+    }
 
     Ok(DisplayMoneroOutput {
         txos_num: outputs.size,
