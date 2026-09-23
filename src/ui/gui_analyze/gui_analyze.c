@@ -1115,7 +1115,7 @@ void SetParseTransactionResult(void* result)
 static cJSON *ParseTransactionTemplate(const char *config)
 {
 #ifdef COMPILE_SIMULATOR
-    // TRON and SOL share the firmware's embedded JSON; other pages use files.
+    // Shared embedded templates coexist with legacy simulator file layouts.
     enum { TRANSACTION_TEMPLATE_MAX_LEN = 100 * 1024 };
     if (config[0] != '{') {
         lv_fs_file_t fd;

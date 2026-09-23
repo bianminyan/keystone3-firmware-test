@@ -51,6 +51,7 @@ extern bool g_reboot;
 
 #undef GUI_ANALYZE_OBJ_SURPLUS
 #ifdef CYPHERPUNK_VERSION
+#include "multi/cypherpunk/gui_monero_template.h"
 #define GUI_ANALYZE_OBJ_SURPLUS \
     { \
         REMAPVIEW_ZCASH, \
@@ -61,14 +62,14 @@ extern bool g_reboot;
     }, \
     { \
         REMAPVIEW_XMR_OUTPUT, \
-        PC_SIMULATOR_PATH "/page_xmr_output.json", \
+        GUI_XMR_OUTPUT_TEMPLATE, \
         GuiGetMoneroOutputData, \
         NULL, \
         FreeMoneroMemory, \
     }, \
     { \
         REMAPVIEW_XMR_UNSIGNED, \
-        PC_SIMULATOR_PATH "/page_xmr_unsigned.json", \
+        GUI_XMR_UNSIGNED_TEMPLATE, \
         GuiGetMoneroUnsignedTxData, \
         NULL, \
         FreeMoneroMemory, \
