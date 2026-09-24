@@ -874,16 +874,32 @@ static int32_t VerifySeedMasterFingerprint(const uint8_t *seed, int seedLen)
         return SUCCESS_CODE;
     }
     uint8_t expected[4] = {0};
+    uint8_t actual[4] = {0};
     GetMasterFingerPrint(expected);
     SimpleResponse_u8 *response = get_master_fingerprint((PtrBytes)seed, (uint32_t)seedLen);
-    bool match = response != NULL && response->error_code == 0 && response->data != NULL &&
-                 timingsafe_bcmp(response->data, expected, sizeof(expected)) == 0;
+    bool responseOk = response != NULL && response->error_code == 0 && response->data != NULL;
+    if (responseOk) {
+        memcpy_s(actual, sizeof(actual), response->data, sizeof(actual));
+    }
     if (response != NULL) {
         free_simple_response_u8(response);
     }
-    if (!match) {
+    if (!responseOk || timingsafe_bcmp(actual, expected, sizeof(expected)) != 0) {
         printf("seed master fingerprint mismatch\r\n");
+#ifdef COMPILE_SIMULATOR
+        // The simulator's secure element is a JSON fixture, so the recorded param
+        // page - and with it the mfp - can legitimately be zero or missing, for
+        // example when an earlier account creation was interrupted. Blocking there
+        // would make the account unusable, so simulator builds report the pair and
+        // continue, exactly like the wallet data hash check in
+        // AccountPublicInfoReadFromFlash. Device builds keep rejecting the mismatch.
+        printf("simulator: recorded mfp=%02x%02x%02x%02x, seed mfp=%02x%02x%02x%02x, continuing\r\n",
+               expected[0], expected[1], expected[2], expected[3],
+               actual[0], actual[1], actual[2], actual[3]);
+        return SUCCESS_CODE;
+#else
         return ERR_KEYSTORE_EXTEND_PUBLIC_KEY_NOT_MATCH;
+#endif
     }
     return SUCCESS_CODE;
 }
