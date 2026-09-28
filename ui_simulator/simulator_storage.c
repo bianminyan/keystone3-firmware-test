@@ -18,6 +18,7 @@
 #define SIMULATOR_USER3_SECRET_ADDR                 0x5000
 // Keep the legacy JSON field name so existing simulator accounts remain readable.
 #define SIMULATOR_ACCOUNT_BLOB_AUTH_KEY_JSON        "zcash_auth_key"
+#define SIMULATOR_FLASH_BLOCK_SIZE                  (64 * 1024)
 
 typedef int32_t (*OperateStorageDataFunc)(uint32_t addr, uint8_t *buffer, uint32_t size);
 
@@ -37,124 +38,12 @@ static int32_t SimulatorVerifyPasswordInternal(uint8_t *accountIndex, const char
 static int32_t SimulatorVerifyCurrentPasswordInternal(uint8_t accountIndex, const char *password,
                                                        const uint8_t *subkeyDomain,
                                                        uint8_t *derivedKey);
+static int32_t ClearSimulatorStoragePath(const char *path);
+static const char *GetSimulatorAccountSecretPath(uint8_t accountIndex);
+static bool IsAllZero32(const uint8_t *data);
 
 int32_t StorageGetDataSize(uint32_t addr, uint8_t *buffer, uint32_t size);
 int32_t StorageSetDataSize(uint32_t addr, uint8_t *buffer, uint32_t size);
-int32_t StorageGetData(uint32_t addr, uint8_t *buffer, uint32_t size);
-int32_t StorageSetData(uint32_t addr, uint8_t *buffer, uint32_t size);
-
-#define PC_SIMULATOR_PATH "C:/assets"
-
-SimulatorFlashPath g_simulatorPathMap[] = {
-    {SPI_FLASH_ADDR_NORMAL_PARAM, PC_SIMULATOR_PATH "/device_setting.json", StorageGetDataSize, StorageSetDataSize},
-    {SPI_FLASH_ADDR_NORMAL_PARAM + 4, PC_SIMULATOR_PATH "/device_setting.json", StorageGetData, StorageSetData,
-     SPI_FLASH_SIZE_NORMAL_PARAM - 4},
-
-    {SPI_FLASH_ADDR_USER1_DATA, PC_SIMULATOR_PATH "/user1_data.json", StorageGetDataSize, StorageSetDataSize},
-    {SPI_FLASH_ADDR_USER1_DATA + 4, PC_SIMULATOR_PATH "/user1_data.json", StorageGetData, StorageSetData,
-     SPI_FLASH_SIZE_USER1_DATA - 4},
-    {SPI_FLASH_ADDR_USER1_MULTI_SIG_DATA, PC_SIMULATOR_PATH "/user1_multisig.json", StorageGetDataSize, StorageSetDataSize},
-    {SPI_FLASH_ADDR_USER1_MULTI_SIG_DATA + 4, PC_SIMULATOR_PATH "/user1_multisig.json", StorageGetData, StorageSetData,
-     SPI_FLASH_SIZE_USER1_MULTI_SIG_DATA - 4},
-    {SPI_FLASH_ADDR_USER1_MUTABLE_DATA, PC_SIMULATOR_PATH "/coin1.json", StorageGetDataSize, StorageSetDataSize},
-    {SPI_FLASH_ADDR_USER1_MUTABLE_DATA + 4, PC_SIMULATOR_PATH "/coin1.json", StorageGetData, StorageSetData,
-     SPI_FLASH_SIZE_USER1_MUTABLE_DATA - 4},
-    {SIMULATOR_USER1_SECRET_ADDR, PC_SIMULATOR_PATH "/user1_secret.json", StorageGetData, StorageSetData},
-    {SPI_FLASH_RSA_USER1_DATA, PC_SIMULATOR_PATH "/user1_rsa.json", StorageGetData, StorageSetData,
-     SPI_FLASH_RSA_SIZE_USER1_DATA},
-
-    {SPI_FLASH_ADDR_USER2_DATA, PC_SIMULATOR_PATH "/user2_data.json", StorageGetDataSize, StorageSetDataSize},
-    {SPI_FLASH_ADDR_USER2_DATA + 4, PC_SIMULATOR_PATH "/user2_data.json", StorageGetData, StorageSetData,
-     SPI_FLASH_SIZE_USER2_DATA - 4},
-    {SPI_FLASH_ADDR_USER2_MULTI_SIG_DATA, PC_SIMULATOR_PATH "/user2_multisig.json", StorageGetDataSize, StorageSetDataSize},
-    {SPI_FLASH_ADDR_USER2_MULTI_SIG_DATA + 4, PC_SIMULATOR_PATH "/user2_multisig.json", StorageGetData, StorageSetData,
-     SPI_FLASH_SIZE_USER2_MULTI_SIG_DATA - 4},
-    {SPI_FLASH_ADDR_USER2_MUTABLE_DATA, PC_SIMULATOR_PATH "/coin2.json", StorageGetDataSize, StorageSetDataSize},
-    {SPI_FLASH_ADDR_USER2_MUTABLE_DATA + 4, PC_SIMULATOR_PATH "/coin2.json", StorageGetData, StorageSetData,
-     SPI_FLASH_SIZE_USER2_MUTABLE_DATA - 4},
-    {SIMULATOR_USER2_SECRET_ADDR, PC_SIMULATOR_PATH "/user2_secret.json", StorageGetData, StorageSetData},
-    {SPI_FLASH_RSA_USER2_DATA, PC_SIMULATOR_PATH "/user2_rsa.json", StorageGetData, StorageSetData,
-     SPI_FLASH_RSA_SIZE_USER2_DATA},
-
-    {SPI_FLASH_ADDR_USER3_DATA, PC_SIMULATOR_PATH "/user3_data.json", StorageGetDataSize, StorageSetDataSize},
-    {SPI_FLASH_ADDR_USER3_DATA + 4, PC_SIMULATOR_PATH "/user3_data.json", StorageGetData, StorageSetData,
-     SPI_FLASH_SIZE_USER3_DATA - 4},
-    {SPI_FLASH_ADDR_USER3_MULTI_SIG_DATA, PC_SIMULATOR_PATH "/user3_multisig.json", StorageGetDataSize, StorageSetDataSize},
-    {SPI_FLASH_ADDR_USER3_MULTI_SIG_DATA + 4, PC_SIMULATOR_PATH "/user3_multisig.json", StorageGetData, StorageSetData,
-     SPI_FLASH_SIZE_USER3_MULTI_SIG_DATA - 4},
-    {SPI_FLASH_ADDR_USER3_MUTABLE_DATA, PC_SIMULATOR_PATH "/coin3.json", StorageGetDataSize, StorageSetDataSize},
-    {SPI_FLASH_ADDR_USER3_MUTABLE_DATA + 4, PC_SIMULATOR_PATH "/coin3.json", StorageGetData, StorageSetData,
-     SPI_FLASH_SIZE_USER3_MUTABLE_DATA - 4},
-    {SIMULATOR_USER3_SECRET_ADDR, PC_SIMULATOR_PATH "/user3_secret.json", StorageGetData, StorageSetData},
-    {SPI_FLASH_RSA_USER3_DATA, PC_SIMULATOR_PATH "/user3_rsa.json", StorageGetData, StorageSetData,
-     SPI_FLASH_RSA_SIZE_USER3_DATA},
-
-    {DS28S60_DATA_ADDR, PC_SIMULATOR_PATH "/ds28s60.json", StorageGetData, StorageSetData},
-    {ATECC608B_DATA_ADDR, PC_SIMULATOR_PATH "/atecc608b.json", StorageGetData, StorageSetData},
-};
-
-static SimulatorFlashPath *FindSimulatorFlashEntry(uint32_t addr)
-{
-    for (int i = 0; i < sizeof(g_simulatorPathMap) / sizeof(g_simulatorPathMap[0]); i++) {
-        if (g_simulatorPathMap[i].addr == addr) {
-            return &g_simulatorPathMap[i];
-        }
-    }
-    for (int i = 0; i < sizeof(g_simulatorPathMap) / sizeof(g_simulatorPathMap[0]); i++) {
-        SimulatorFlashPath *entry = &g_simulatorPathMap[i];
-        if (entry->span != 0 && addr > entry->addr && addr - entry->addr < entry->span) {
-            return entry;
-        }
-    }
-    return NULL;
-}
-
-const char *FindSimulatorFlashPath(uint32_t addr)
-{
-    SimulatorFlashPath *entry = FindSimulatorFlashEntry(addr);
-    return entry == NULL ? NULL : entry->path;
-}
-
-OperateStorageDataFunc FindSimulatorStorageFunc(uint32_t addr, bool get)
-{
-    SimulatorFlashPath *entry = FindSimulatorFlashEntry(addr);
-    return entry == NULL ? NULL : (get ? entry->getFunc : entry->setFunc);
-}
-
-int32_t StorageGetDataSize(uint32_t addr, uint8_t *buffer, uint32_t size)
-{
-    int32_t readBytes = 0;
-    lv_fs_file_t fd;
-    lv_fs_res_t ret = LV_FS_RES_OK;
-    char tmpBuff[JSON_MAX_LEN] = {0};
-    const char *path = FindSimulatorFlashPath(addr);
-    if (path == NULL) {
-        return -1;
-    }
-
-    ret = lv_fs_open(&fd, path, LV_FS_MODE_ALWAYS | LV_FS_MODE_RD);
-    if (ret != LV_FS_RES_OK) {
-        printf("lv_fs_open failed %s ret = %d line = %d\n", path, ret, __LINE__);
-        return -1;
-    }
-
-    ret = lv_fs_read(&fd, tmpBuff, JSON_MAX_LEN, &readBytes);
-    if (ret != LV_FS_RES_OK) {
-        printf("lv_fs_read failed %s ret = %d line = %d\n", path, ret, __LINE__);
-        lv_fs_close(&fd);
-        return -1;
-    }
-    *(uint32_t *)buffer = readBytes;
-    lv_fs_close(&fd);
-
-    return size;
-}
-
-int32_t StorageSetDataSize(uint32_t addr, uint8_t *buffer, uint32_t size)
-{
-    return size;
-}
-
 int32_t StorageGetData(uint32_t addr, uint8_t *buffer, uint32_t size)
 {
     int32_t readBytes = 0;
@@ -175,12 +64,16 @@ int32_t StorageGetData(uint32_t addr, uint8_t *buffer, uint32_t size)
 
     if (offset != 0) {
         ret = lv_fs_seek(&fd, offset, LV_FS_SEEK_SET);
+        if (ret != LV_FS_RES_OK) {
+            printf("lv_fs_seek failed %s ret = %d line = %d\n", path, ret, __LINE__);
+            lv_fs_close(&fd);
+            return -1;
+        }
     }
-    if (ret == LV_FS_RES_OK) {
-        ret = lv_fs_read(&fd, buffer, size, &readBytes);
-    }
+    ret = lv_fs_read(&fd, buffer, size, &readBytes);
     if (ret != LV_FS_RES_OK) {
         printf("lv_fs_read failed %s ret = %d line = %d\n", path, ret, __LINE__);
+        lv_fs_close(&fd);
         return -1;
     }
     lv_fs_close(&fd);
@@ -211,12 +104,16 @@ int32_t StorageSetData(uint32_t addr, uint8_t *buffer, uint32_t size)
 
     if (offset != 0) {
         ret = lv_fs_seek(&fd, offset, LV_FS_SEEK_SET);
+        if (ret != LV_FS_RES_OK) {
+            printf("lv_fs_seek failed %s ret = %d line = %d\n", path, ret, __LINE__);
+            lv_fs_close(&fd);
+            return -1;
+        }
     }
-    if (ret == LV_FS_RES_OK) {
-        ret = lv_fs_write(&fd, buffer, size, &readBytes);
-    }
+    ret = lv_fs_write(&fd, buffer, size, &readBytes);
     if (ret != LV_FS_RES_OK) {
         printf("lv_fs_write failed %s ret = %d line = %d\n", path, ret, __LINE__);
+        lv_fs_close(&fd);
         return -1;
     }
     lv_fs_close(&fd);
@@ -230,10 +127,8 @@ int32_t Gd25FlashReadBuffer(uint32_t addr, uint8_t *buffer, uint32_t size)
     if (func == NULL) {
         printf("%s failed, addr = 0x%x\n", __func__, addr);
         return -1;
-    } else {
-        return func(addr, buffer, size);
     }
-    return func ? func(addr, buffer, size) : -1;
+    return func(addr, buffer, size);
 }
 
 int32_t Gd25FlashWriteBuffer(uint32_t addr, const uint8_t *buffer, uint32_t size)
@@ -244,13 +139,38 @@ int32_t Gd25FlashWriteBuffer(uint32_t addr, const uint8_t *buffer, uint32_t size
 
 int32_t Gd25FlashBlockErase(uint32_t addr)
 {
+    uint32_t blockStart = addr - (addr % SIMULATOR_FLASH_BLOCK_SIZE);
+    uint32_t blockEnd = blockStart + SIMULATOR_FLASH_BLOCK_SIZE;
 
+    for (int i = 0; i < sizeof(g_simulatorPathMap) / sizeof(g_simulatorPathMap[0]); i++) {
+        uint32_t pathAddr = g_simulatorPathMap[i].addr;
+        if (pathAddr >= blockStart && pathAddr < blockEnd) {
+            ClearSimulatorStoragePath(g_simulatorPathMap[i].path);
+        }
+    }
+
+
+    return SUCCESS_CODE;
 }
 
 int32_t Gd25FlashSectorErase(uint32_t addr)
 {
     (void)addr;
     return SUCCESS_CODE;
+}
+
+int32_t SimulatorWipeStorage(void)
+{
+    int32_t ret = SUCCESS_CODE;
+
+    for (int i = 0; i < sizeof(g_simulatorPathMap) / sizeof(g_simulatorPathMap[0]); i++) {
+        if (ClearSimulatorStoragePath(g_simulatorPathMap[i].path) != SUCCESS_CODE) {
+            ret = ERR_GENERAL_FAIL;
+        }
+    }
+
+
+    return ret;
 }
 
 void InsertJsonU8Array(cJSON *root, const uint8_t *data, uint8_t len, char *key)
@@ -272,6 +192,45 @@ void GetJsonArrayData(cJSON *root, uint8_t *data, uint8_t len, char *key)
         cJSON *item2 = cJSON_GetArrayItem(item, i);
         data[i] = item2->valueint;
     }
+}
+
+static int32_t ClearSimulatorStoragePath(const char *path)
+{
+    lv_fs_file_t fd;
+    lv_fs_res_t ret = lv_fs_open(&fd, path, LV_FS_MODE_WR);
+    if (ret != LV_FS_RES_OK) {
+        printf("lv_fs_open failed %s ret = %d line = %d\n", path, ret, __LINE__);
+        return ERR_GENERAL_FAIL;
+    }
+    lv_fs_close(&fd);
+    return SUCCESS_CODE;
+}
+
+static const char *GetSimulatorAccountSecretPath(uint8_t accountIndex)
+{
+    switch (accountIndex) {
+    case 0:
+        return PC_SIMULATOR_PATH "/user1_secret.json";
+    case 1:
+        return PC_SIMULATOR_PATH "/user2_secret.json";
+    case 2:
+        return PC_SIMULATOR_PATH "/user3_secret.json";
+    default:
+        return NULL;
+    }
+}
+
+static bool IsAllZero32(const uint8_t *data)
+{
+    if (data == NULL) {
+        return false;
+    }
+    for (uint32_t i = 0; i < 32; i++) {
+        if (data[i] != 0) {
+            return false;
+        }
+    }
+    return true;
 }
 
 static int32_t WriteSimulatorAccountSecretJson(uint8_t accountIndex, cJSON *rootJson)
@@ -638,6 +597,11 @@ int32_t SE_HmacEncryptWrite(const uint8_t *data, uint8_t page)
     } else if (page == account *  PAGE_NUM_PER_ACCOUNT + PAGE_INDEX_LEGACY_PASSWORD_HASH) {
         // ModifyJsonArrayData(rootJson, data, 32, "password_hash");
     } else if (page == account *  PAGE_NUM_PER_ACCOUNT + PAGE_INDEX_PARAM) {
+        if (IsAllZero32(data)) {
+            const char *path = GetSimulatorAccountSecretPath(account);
+            cJSON_Delete(rootJson);
+            return path == NULL ? ERR_GENERAL_FAIL : ClearSimulatorStoragePath(path);
+        }
         ModifyJsonArrayData(rootJson, data, sizeof(AccountInfo_t), "param");
         AccountInfo_t *pAccountInfo = (AccountInfo_t *)data;
         // printf("write.....\n");
@@ -661,6 +625,10 @@ int32_t SE_HmacEncryptWrite(const uint8_t *data, uint8_t page)
     if (func) {
         func(SIMULATOR_USER1_SECRET_ADDR + account * 0x1000, buff, strlen(buff));
     }
+    if (buff != NULL) {
+        free(buff);
+    }
+    cJSON_Delete(rootJson);
 
     return SUCCESS_CODE;
 }

@@ -298,6 +298,7 @@ int32_t TempAccountPublicInfo(uint8_t accountIndex, const char *password, bool s
 int32_t DeleteAccountPublicInfo(uint8_t accountIndex);
 int32_t DeleteAccountPublicInfoFlash(uint8_t accountIndex);
 char *GetCurrentAccountPublicKey(ChainType chain);
+char *GetCurrentAccountPublicKeyByName(const char *name);
 char *GetCurrentAccountPath(ChainType chain);
 uint8_t SpecifiedXPubExist(const char *xPub);
 int32_t FindAccountByXpub(const char *xPub, uint8_t *accountIndex);
