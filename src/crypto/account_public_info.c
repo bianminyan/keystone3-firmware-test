@@ -1291,6 +1291,15 @@ static bool HasReadableStoredArweaveRsaKey(void)
     SRAM_FREE(primes);
     return true;
 }
+
+static bool HasValidStoredArweavePublicInfo(cJSON *keyJson)
+{
+    cJSON *arJson = cJSON_GetObjectItem(keyJson, "ar");
+    cJSON *valueJson = arJson == NULL ? NULL : cJSON_GetObjectItem(arJson, "value");
+    return cJSON_IsString(valueJson) &&
+           valueJson->valuestring != NULL &&
+           strnlen_s(valueJson->valuestring, PUB_KEY_MAX_LENGTH) == 1024;
+}
 #endif
 
 static bool GetPublicKeyFromJsonString(const char *string)
@@ -1320,7 +1329,7 @@ static bool GetPublicKeyFromJsonString(const char *string)
         }
 
 #ifdef WEB3_VERSION
-        if (cJSON_GetObjectItem(keyJson, "ar") == NULL && HasReadableStoredArweaveRsaKey()) {
+        if (!HasValidStoredArweavePublicInfo(keyJson) && HasReadableStoredArweaveRsaKey()) {
             printf("stored ar rsa key exists, need regenerate public info\r\n");
             ret = false;
             break;
