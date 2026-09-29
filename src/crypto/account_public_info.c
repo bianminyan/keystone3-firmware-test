@@ -1163,6 +1163,23 @@ char *GetCurrentAccountPublicKey(ChainType chain)
     return g_accountPublicInfo[chain].value;
 }
 
+char *GetCurrentAccountPublicKeyByName(const char *name)
+{
+    uint8_t accountIndex;
+
+    accountIndex = GetCurrentAccountIndex();
+    if (name == NULL || accountIndex > 2) {
+        return NULL;
+    }
+
+    for (uint32_t i = 0; i < NUMBER_OF_ARRAYS(g_chainTable); i++) {
+        if (strcmp(name, g_chainTable[i].name) == 0) {
+            return g_accountPublicInfo[i].value;
+        }
+    }
+    return NULL;
+}
+
 /// @brief Get if the xPub already Exists.
 /// @param[in] xPub
 /// @return accountIndex, if not exists, return 255.
