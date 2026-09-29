@@ -55,6 +55,7 @@
 #include "usb_task.h"
 #include "device_setting.h"
 #include "gui_model.h"
+#include "rsa.h"
 
 #define CMD_MAX_ARGC                                16
 #define DEFAULT_TEST_BUFF_LEN                       1024
@@ -923,6 +924,20 @@ static void AccountPublicInfoTestFunc(int argc, char *argv[])
 
 
 #ifdef WEB3_VERSION
+static uint32_t MigrationGetRsaAddress(uint8_t accountIndex)
+{
+    switch (accountIndex) {
+    case 0:
+        return SPI_FLASH_RSA_USER1_DATA;
+    case 1:
+        return SPI_FLASH_RSA_USER2_DATA;
+    case 2:
+        return SPI_FLASH_RSA_USER3_DATA;
+    default:
+        return 0;
+    }
+}
+
 static void MigrationPrintArReceiveFromPublicKey(uint8_t accountIndex, const char *publicKey)
 {
     if (publicKey == NULL || publicKey[0] == '\0') {
@@ -944,6 +959,52 @@ static void MigrationPrintArReceiveFromPublicKey(uint8_t accountIndex, const cha
     printf("MigrationArReceiveAddress=%s\r\n", address->data);
     printf("MigrationArReceiveDone=1\r\n");
     free_simple_response_c_char(address);
+}
+
+static void MigrationPrintArReceiveFromRsaStorage(uint8_t accountIndex)
+{
+    uint32_t rsaAddress = MigrationGetRsaAddress(accountIndex);
+    uint8_t fullData[SPI_FLASH_RSA_DATA_FULL_SIZE] = {0};
+    Rsa_primes_t *primes = NULL;
+    SimpleResponse_c_char *publicKey = NULL;
+
+    if (rsaAddress == 0 ||
+            Gd25FlashReadBuffer(rsaAddress, fullData, sizeof(fullData)) != sizeof(fullData)) {
+        printf("MigrationArReceive=-1,accountIndex=%d,status=storage_read_error\r\n", accountIndex);
+        printf("MigrationArReceiveDone=1\r\n");
+        return;
+    }
+    if (CheckAllFF(fullData, sizeof(fullData))) {
+        printf("MigrationArReceive=0,accountIndex=%d,status=no_ar_primes\r\n", accountIndex);
+        printf("MigrationArReceiveDone=1\r\n");
+        return;
+    }
+
+    primes = FlashReadRsaPrimes();
+    if (primes == NULL) {
+        printf("MigrationArReceive=0,accountIndex=%d,status=invalid_ar_primes\r\n", accountIndex);
+        printf("MigrationArReceiveDone=1\r\n");
+        return;
+    }
+
+    publicKey = generate_rsa_public_key(primes->p, SPI_FLASH_RSA_PRIME_SIZE, primes->q, SPI_FLASH_RSA_PRIME_SIZE);
+    memset_s(primes->p, SPI_FLASH_RSA_PRIME_SIZE, 0, SPI_FLASH_RSA_PRIME_SIZE);
+    memset_s(primes->q, SPI_FLASH_RSA_PRIME_SIZE, 0, SPI_FLASH_RSA_PRIME_SIZE);
+    memset_s(primes, sizeof(Rsa_primes_t), 0, sizeof(Rsa_primes_t));
+    SRAM_FREE(primes);
+
+    if (publicKey == NULL || publicKey->error_code != SUCCESS_CODE || publicKey->data == NULL) {
+        int32_t ret = publicKey == NULL ? ERR_GENERAL_FAIL : publicKey->error_code;
+        printf("MigrationArReceive=%d,accountIndex=%d,status=public_key_error\r\n", ret, accountIndex);
+        printf("MigrationArReceiveDone=1\r\n");
+        if (publicKey != NULL) {
+            free_simple_response_c_char(publicKey);
+        }
+        return;
+    }
+
+    MigrationPrintArReceiveFromPublicKey(accountIndex, publicKey->data);
+    free_simple_response_c_char(publicKey);
 }
 #endif
 
@@ -978,6 +1039,22 @@ static void MigrationTestFunc(int argc, char *argv[])
         }
         SecretCacheSetPassword(argv[1]);
         MigrationPrintArReceiveFromPublicKey(accountIndex, GetCurrentAccountPublicKey(XPUB_TYPE_ARWEAVE));
+#else
+        printf("MigrationArReceive=-1,accountIndex=0,status=unsupported\r\n");
+        printf("MigrationArReceiveDone=1\r\n");
+#endif
+    } else if (strcmp(argv[0], "ar_receive_storage_probe") == 0) {
+#ifdef WEB3_VERSION
+        VALUE_CHECK(argc, 2);
+        uint8_t accountIndex = 0;
+        int32_t ret = VerifyPasswordAndLogin(&accountIndex, argv[1]);
+        if (ret != SUCCESS_CODE) {
+            printf("MigrationArReceive=%d,accountIndex=%d,status=login_error\r\n", ret, accountIndex);
+            printf("MigrationArReceiveDone=1\r\n");
+            return;
+        }
+        SecretCacheSetPassword(argv[1]);
+        MigrationPrintArReceiveFromRsaStorage(accountIndex);
 #else
         printf("MigrationArReceive=-1,accountIndex=0,status=unsupported\r\n");
         printf("MigrationArReceiveDone=1\r\n");
