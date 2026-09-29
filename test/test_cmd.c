@@ -57,6 +57,7 @@
 #include "cjson/cJSON.h"
 #include "flash_address.h"
 #include "gui_model.h"
+#include "rsa.h"
 
 #define CMD_MAX_ARGC                                16
 #define DEFAULT_TEST_BUFF_LEN                       1024
@@ -1008,6 +1009,94 @@ static void MigrationPrintArReceiveFromPublicKey(uint8_t accountIndex, const cha
     free_simple_response_c_char(address);
 }
 
+static SimpleResponse_c_char *MigrationGenerateArPublicKeyFromStoredRsa(void)
+{
+    Rsa_primes_t *primes = FlashReadRsaPrimes();
+    if (primes == NULL) {
+        return NULL;
+    }
+    SimpleResponse_c_char *publicKey = generate_rsa_public_key(primes->p, SPI_FLASH_RSA_PRIME_SIZE, primes->q, SPI_FLASH_RSA_PRIME_SIZE);
+    memset_s(primes, sizeof(Rsa_primes_t), 0, sizeof(Rsa_primes_t));
+    SRAM_FREE(primes);
+    return publicKey;
+}
+
+static uint32_t MigrationGetRsaStorageAddress(uint8_t accountIndex)
+{
+    switch (accountIndex) {
+    case 0:
+        return SPI_FLASH_RSA_USER1_DATA;
+    case 1:
+        return SPI_FLASH_RSA_USER2_DATA;
+    case 2:
+        return SPI_FLASH_RSA_USER3_DATA;
+    default:
+        return 0;
+    }
+}
+
+static void MigrationPrintArStorageDebug(uint8_t accountIndex)
+{
+    uint32_t address = MigrationGetRsaStorageAddress(accountIndex);
+    uint8_t fullData[SPI_FLASH_RSA_DATA_FULL_SIZE] = {0};
+    char headHex[32 * 2 + 1] = {0};
+    char hashHex[SPI_FLASH_RSA_HASH_SIZE * 2 + 1] = {0};
+
+    printf("MigrationArStorageDebug=0,accountIndex=%d\r\n", accountIndex);
+    if (address == 0) {
+        printf("MigrationArStorageStatus=invalid_account\r\n");
+        printf("MigrationArStorageDone=1\r\n");
+        return;
+    }
+
+    int32_t readLen = Gd25FlashReadBuffer(address, fullData, sizeof(fullData));
+    printf("MigrationArStorageAddress=0x%08X\r\n", (unsigned int)address);
+    printf("MigrationArStorageReadLen=%d\r\n", readLen);
+    if (readLen != (int32_t)sizeof(fullData)) {
+        printf("MigrationArStorageStatus=read_error\r\n");
+        printf("MigrationArStorageDone=1\r\n");
+        return;
+    }
+
+    ByteArrayToHexStr(fullData, 32, headHex);
+    ByteArrayToHexStr(fullData + SPI_FLASH_RSA_DATA_SIZE, SPI_FLASH_RSA_HASH_SIZE, hashHex);
+    printf("MigrationArStorageAllFF=%d\r\n", CheckAllFF(fullData, sizeof(fullData)) ? 1 : 0);
+    printf("MigrationArStorageAllZero=%d\r\n", CheckAllZero(fullData, sizeof(fullData)) ? 1 : 0);
+    printf("MigrationArStorageHashAllFF=%d\r\n", CheckAllFF(fullData + SPI_FLASH_RSA_DATA_SIZE, SPI_FLASH_RSA_HASH_SIZE) ? 1 : 0);
+    printf("MigrationArStorageHashAllZero=%d\r\n", CheckAllZero(fullData + SPI_FLASH_RSA_DATA_SIZE, SPI_FLASH_RSA_HASH_SIZE) ? 1 : 0);
+    printf("MigrationArStorageHead=%s\r\n", headHex);
+    printf("MigrationArStorageFlashHash=%s\r\n", hashHex);
+
+    if (CheckAllFF(fullData, sizeof(fullData)) || CheckAllZero(fullData, sizeof(fullData))) {
+        printf("MigrationArStorageReadPrimes=skipped_empty\r\n");
+        printf("MigrationArStorageDone=1\r\n");
+        return;
+    }
+
+    printf("MigrationArStorageReadPrimes=attempt\r\n");
+    SimpleResponse_c_char *publicKey = MigrationGenerateArPublicKeyFromStoredRsa();
+    if (publicKey == NULL) {
+        printf("MigrationArStorageReadPrimes=null\r\n");
+        printf("MigrationArStorageDone=1\r\n");
+        return;
+    }
+    printf("MigrationArStorageReadPrimes=ok\r\n");
+
+    if (publicKey == NULL || publicKey->error_code != SUCCESS_CODE || publicKey->data == NULL) {
+        printf("MigrationArStoragePublicKey=%d\r\n", publicKey->error_code);
+        if (publicKey != NULL) {
+            free_simple_response_c_char(publicKey);
+        }
+        printf("MigrationArStorageDone=1\r\n");
+        return;
+    }
+
+    printf("MigrationArStoragePublicKey=0\r\n");
+    MigrationPrintArReceiveFromPublicKey(accountIndex, publicKey->data);
+    free_simple_response_c_char(publicKey);
+    printf("MigrationArStorageDone=1\r\n");
+}
+
 static void AddressPrintResult(SimpleResponse_c_char *result)
 {
     if (result == NULL) {
@@ -1233,6 +1322,16 @@ static void AddressTestFunc(int argc, char *argv[])
 }
 #endif
 
+static int32_t MigrationVerifyPasswordAndLogin(uint8_t *accountIndex, char *password)
+{
+    SecretCacheSetPassword(password);
+    int32_t ret = VerifyPasswordAndLogin(accountIndex, password);
+    if (ret != SUCCESS_CODE) {
+        ClearSecretCache();
+    }
+    return ret;
+}
+
 static void MigrationTestFunc(int argc, char *argv[])
 {
     if (argc < 1) {
@@ -1243,9 +1342,8 @@ static void MigrationTestFunc(int argc, char *argv[])
 #ifdef WEB3_VERSION
         VALUE_CHECK(argc, 2);
         uint8_t accountIndex = 0;
-        int32_t ret = VerifyPasswordAndLogin(&accountIndex, argv[1]);
+        int32_t ret = MigrationVerifyPasswordAndLogin(&accountIndex, argv[1]);
         if (ret == SUCCESS_CODE) {
-            SecretCacheSetPassword(argv[1]);
             ret = RsaGenerateKeyPair(false);
         }
         printf("MigrationArSetup=%d,accountIndex=%d\r\n", ret, accountIndex);
@@ -1256,13 +1354,12 @@ static void MigrationTestFunc(int argc, char *argv[])
 #ifdef WEB3_VERSION
         VALUE_CHECK(argc, 2);
         uint8_t accountIndex = 0;
-        int32_t ret = VerifyPasswordAndLogin(&accountIndex, argv[1]);
+        int32_t ret = MigrationVerifyPasswordAndLogin(&accountIndex, argv[1]);
         if (ret != SUCCESS_CODE) {
             printf("MigrationArReceive=%d,accountIndex=%d,status=login_error\r\n", ret, accountIndex);
             printf("MigrationArReceiveDone=1\r\n");
             return;
         }
-        SecretCacheSetPassword(argv[1]);
         MigrationPrintArReceiveFromPublicKey(accountIndex, GetCurrentAccountPublicKey(XPUB_TYPE_ARWEAVE));
 #else
         printf("MigrationArReceive=-1,status=unsupported\r\n");
@@ -1272,13 +1369,12 @@ static void MigrationTestFunc(int argc, char *argv[])
 #ifdef WEB3_VERSION
         VALUE_CHECK(argc, 2);
         uint8_t accountIndex = 0;
-        int32_t ret = VerifyPasswordAndLogin(&accountIndex, argv[1]);
+        int32_t ret = MigrationVerifyPasswordAndLogin(&accountIndex, argv[1]);
         if (ret != SUCCESS_CODE) {
             printf("MigrationArReceive=%d,accountIndex=%d,status=login_error\r\n", ret, accountIndex);
             printf("MigrationArReceiveDone=1\r\n");
             return;
         }
-        SecretCacheSetPassword(argv[1]);
         char *publicKey = GetCurrentAccountPublicKey(XPUB_TYPE_ARWEAVE);
         if (publicKey == NULL || strlen(publicKey) != 1024) {
             printf("MigrationArPublicInfo=absent\r\n");
@@ -1312,6 +1408,21 @@ static void MigrationTestFunc(int argc, char *argv[])
         printf("MigrationArReceive=-1,status=unsupported\r\n");
         printf("MigrationArReceiveDone=1\r\n");
 #endif
+    } else if (strcmp(argv[0], "ar_storage_debug") == 0) {
+#ifdef WEB3_VERSION
+        VALUE_CHECK(argc, 2);
+        uint8_t accountIndex = 0;
+        int32_t ret = MigrationVerifyPasswordAndLogin(&accountIndex, argv[1]);
+        if (ret != SUCCESS_CODE) {
+            printf("MigrationArStorageDebug=%d,accountIndex=%d,status=login_error\r\n", ret, accountIndex);
+            printf("MigrationArStorageDone=1\r\n");
+            return;
+        }
+        MigrationPrintArStorageDebug(accountIndex);
+#else
+        printf("MigrationArStorageDebug=-1,accountIndex=0,status=unsupported\r\n");
+        printf("MigrationArStorageDone=1\r\n");
+#endif
     } else if (strcmp(argv[0], "address_display_probe") == 0) {
 #ifdef WEB3_VERSION
         if (argc < 3) {
@@ -1319,7 +1430,7 @@ static void MigrationTestFunc(int argc, char *argv[])
             return;
         }
         uint8_t accountIndex = 0;
-        int32_t ret = VerifyPasswordAndLogin(&accountIndex, argv[1]);
+        int32_t ret = MigrationVerifyPasswordAndLogin(&accountIndex, argv[1]);
         if (ret != SUCCESS_CODE) {
             printf("MigrationAddressDisplay=%d,accountIndex=%d,status=login_error\r\n", ret, accountIndex);
             printf("MigrationAddressDisplayDone=1\r\n");

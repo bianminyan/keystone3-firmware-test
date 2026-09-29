@@ -1280,9 +1280,22 @@ static int GetChainTableSizeFromJson(cJSON *keyJson)
 #endif
 }
 
+#ifdef WEB3_VERSION
+static bool HasReadableStoredArweaveRsaKey(void)
+{
+    Rsa_primes_t *primes = FlashReadRsaPrimes();
+    if (primes == NULL) {
+        return false;
+    }
+    memset_s(primes, sizeof(Rsa_primes_t), 0, sizeof(Rsa_primes_t));
+    SRAM_FREE(primes);
+    return true;
+}
+#endif
+
 static bool GetPublicKeyFromJsonString(const char *string)
 {
-    cJSON *rootJson, *keyJson, *chainJson;
+    cJSON *rootJson = NULL, *keyJson = NULL, *chainJson = NULL;
     char pubKeyString[PUB_KEY_MAX_LENGTH], versionString[VERSION_MAX_LENGTH];
     bool ret = true;
     uint32_t i;
@@ -1305,6 +1318,14 @@ static bool GetPublicKeyFromJsonString(const char *string)
             ret = false;
             break;
         }
+
+#ifdef WEB3_VERSION
+        if (cJSON_GetObjectItem(keyJson, "ar") == NULL && HasReadableStoredArweaveRsaKey()) {
+            printf("stored ar rsa key exists, need regenerate public info\r\n");
+            ret = false;
+            break;
+        }
+#endif
 
         int arraySize = GetChainTableSizeFromJson(keyJson);
 

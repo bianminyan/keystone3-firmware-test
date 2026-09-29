@@ -81,7 +81,11 @@ Rsa_primes_t *FlashReadRsaPrimes(void)
         memcpy_s(primes->q, SPI_FLASH_RSA_PRIME_SIZE, encData->data + SPI_FLASH_RSA_PRIME_SIZE, SPI_FLASH_RSA_PRIME_SIZE);
 
         memcpy_s(hash, sizeof(hash), fullData + SPI_FLASH_RSA_DATA_SIZE, sizeof(hash));
-        ASSERT(HasMatchingPrimesHash(primes, hash));
+        if (!HasMatchingPrimesHash(primes, hash)) {
+            printf("rsa primes hash mismatch\n");
+            ret = ERR_GENERAL_FAIL;
+            break;
+        }
     } while (0);
 
     if (encData) {
