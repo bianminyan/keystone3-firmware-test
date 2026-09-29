@@ -1,0 +1,33 @@
+env:
+  REVIEW_CI_BRANCH: "${REVIEW_CI_BRANCH:-master}"
+  REVIEW_REPOSITORY: "${REVIEW_REPOSITORY:-KeystoneHQ/keystone3-firmware-internal}"
+  REVIEW_PROVIDER: "${REVIEW_PROVIDER:-openai-responses}"
+  REVIEW_MODEL: "${REVIEW_MODEL:-gpt-5.6-sol}"
+  REVIEW_EFFORT: "${REVIEW_EFFORT:-medium}"
+  REVIEW_PASS: "${REVIEW_PASS:-both}"
+  REVIEW_MODE: "${REVIEW_MODE:-chained}"
+  REVIEW_PUBLISH: "${REVIEW_PUBLISH:-true}"
+
+steps:
+  - label: ":mag: OCR review (shadow)"
+    key: ai-review-shadow
+    if: 'build.pull_request.id != null || build.env("REVIEW_PR") != null'
+    agents:
+      queue: "keystone-staging:build"
+    plugins:
+      - ecr#v2.3.0:
+          login: true
+          region: "eu-west-1"
+    # Load the CI files even when the PR branch does not contain them.
+    # Keep the checkout and BUILDKITE_COMMIT on the PR being reviewed.
+    command: |
+      set -euo pipefail
+      git check-ref-format "refs/heads/$$REVIEW_CI_BRANCH"
+      printf 'Load review scripts from branch: %s\n' "$$REVIEW_CI_BRANCH"
+      git fetch --no-tags origin "refs/heads/$$REVIEW_CI_BRANCH"
+      review_ci_dir=$$(mktemp -d)
+      trap 'rm -rf "$$review_ci_dir"' EXIT
+      git archive FETCH_HEAD ci/ai-review | tar -x -C "$$review_ci_dir"
+      bash "$$review_ci_dir/ci/ai-review/review-pr.sh"
+    artifact_paths:
+      - "tmp/ai-review/**/*"
