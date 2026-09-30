@@ -1398,13 +1398,7 @@ static void MigrationTestFunc(int argc, char *argv[])
             printf("MigrationArReceiveDone=1\r\n");
             return;
         }
-        ret = AccountPublicInfoSwitch(accountIndex, argv[1], true);
-        printf("MigrationArRebuild=%d,accountIndex=%d\r\n", ret, accountIndex);
-        if (ret != SUCCESS_CODE) {
-            printf("MigrationArReceive=%d,accountIndex=%d,status=rebuild_error\r\n", ret, accountIndex);
-            printf("MigrationArReceiveDone=1\r\n");
-            return;
-        }
+        printf("MigrationArRebuild=0,accountIndex=%d,status=login_path\r\n", accountIndex);
         char *publicKey = GetCurrentAccountPublicKey(XPUB_TYPE_ARWEAVE);
         if (publicKey == NULL || strlen(publicKey) != 1024) {
             printf("MigrationArPublicInfo=absent\r\n");
