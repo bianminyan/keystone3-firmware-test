@@ -87,7 +87,6 @@ void GetBootVersionNumber(char *version)
 #ifndef COMPILE_SIMULATOR
 bool NeedUpdateBoot(void)
 {
-    return false;
     uint32_t major, minor, build;
     if (GetBootSoftwareVersion(&major, &minor, &build) == false) {
         return true;

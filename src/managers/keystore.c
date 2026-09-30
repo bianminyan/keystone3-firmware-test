@@ -829,12 +829,10 @@ void KeyStoreTest(int argc, char *argv[])
         }
     } else if (strcmp(argv[0], "login") == 0) {
         VALUE_CHECK(argc, 2);
-        SecretCacheSetPassword(argv[1]);
         ret = VerifyPasswordAndLogin(&accountIndex, argv[1]);
         if (ret == SUCCESS_CODE) {
             printf("login ok,accountIndex=%d\r\n", accountIndex);
         } else {
-            ClearSecretCache();
             printf("login err=%d\r\n", ret);
         }
     } else if (strcmp(argv[0], "change_password") == 0) {

@@ -1136,9 +1136,75 @@ static bool AddressArgIsDecimal(const char *arg)
     return true;
 }
 
+typedef struct {
+    const char *name;
+    ChainType type;
+} MigrationXpubNameMap_t;
+
+static const MigrationXpubNameMap_t g_migrationXpubNameMap[] = {
+    {"btc", XPUB_TYPE_BTC},
+    {"btc_legacy", XPUB_TYPE_BTC_LEGACY},
+    {"btc_nested_segwit", XPUB_TYPE_BTC_NATIVE_SEGWIT},
+    {"btc_taproot", XPUB_TYPE_BTC_TAPROOT},
+    {"ltc", XPUB_TYPE_LTC},
+    {"ltc_native_segwit", XPUB_TYPE_LTC_NATIVE_SEGWIT},
+    {"doge", XPUB_TYPE_DOGE},
+    {"dash", XPUB_TYPE_DASH},
+    {"bch", XPUB_TYPE_BCH},
+    {"eth_bip44_standard", XPUB_TYPE_ETH_BIP44_STANDARD},
+    {"eth_ledger_legacy", XPUB_TYPE_ETH_LEDGER_LEGACY},
+    {"eth_ledger_live_0", XPUB_TYPE_ETH_LEDGER_LIVE_0},
+    {"trx", XPUB_TYPE_TRX},
+    {"cosmos", XPUB_TYPE_COSMOS},
+    {"scrt", XPUB_TYPE_SCRT},
+    {"cro", XPUB_TYPE_CRO},
+    {"iov", XPUB_TYPE_IOV},
+    {"bld", XPUB_TYPE_BLD},
+    {"kava", XPUB_TYPE_KAVA},
+    {"terra", XPUB_TYPE_TERRA},
+    {"xrp", XPUB_TYPE_XRP},
+    {"thor", XPUB_TYPE_THOR},
+    {"avax_c", XPUB_TYPE_AVAX_BIP44_STANDARD},
+    {"avax_x_p_0", XPUB_TYPE_AVAX_X_P_0},
+    {"iota_0", XPUB_TYPE_IOTA_0},
+    {"iota_1", XPUB_TYPE_IOTA_1},
+    {"iota_2", XPUB_TYPE_IOTA_2},
+    {"sol_bip44_0", XPUB_TYPE_SOL_BIP44_0},
+    {"sol_bip44_1", XPUB_TYPE_SOL_BIP44_1},
+    {"sol_bip44_root", XPUB_TYPE_SOL_BIP44_ROOT},
+    {"sol_bip44_change_0", XPUB_TYPE_SOL_BIP44_CHANGE_0},
+    {"sui_0", XPUB_TYPE_SUI_0},
+    {"sui_1", XPUB_TYPE_SUI_1},
+    {"sui_2", XPUB_TYPE_SUI_2},
+    {"apt_0", XPUB_TYPE_APT_0},
+    {"apt_1", XPUB_TYPE_APT_1},
+    {"ada_0", XPUB_TYPE_ADA_0},
+    {"ada_1", XPUB_TYPE_ADA_1},
+    {"ada_ledger_0", XPUB_TYPE_LEDGER_ADA_0},
+    {"ar", XPUB_TYPE_ARWEAVE},
+    {"stellar_0", XPUB_TYPE_STELLAR_0},
+    {"stellar_1", XPUB_TYPE_STELLAR_1},
+    {"stellar_2", XPUB_TYPE_STELLAR_2},
+    {"ton_bip39", XPUB_TYPE_TON_BIP39},
+    {"zec_transparent_legacy", XPUB_TYPE_ZEC_TRANSPARENT_LEGACY},
+};
+
+static char *MigrationGetCurrentAccountPublicKeyByName(const char *name)
+{
+    if (name == NULL) {
+        return NULL;
+    }
+    for (uint32_t i = 0; i < NUMBER_OF_ARRAYS(g_migrationXpubNameMap); i++) {
+        if (strcmp(name, g_migrationXpubNameMap[i].name) == 0) {
+            return GetCurrentAccountPublicKey(g_migrationXpubNameMap[i].type);
+        }
+    }
+    return NULL;
+}
+
 static char *AddressGetXpubArg(char *arg)
 {
-    char *xpub = GetCurrentAccountPublicKeyByName(arg);
+    char *xpub = MigrationGetCurrentAccountPublicKeyByName(arg);
     if (xpub != NULL) {
         return xpub;
     }
