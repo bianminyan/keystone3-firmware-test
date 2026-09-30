@@ -1633,11 +1633,21 @@ static void GuiShowSolTxInstructionsOverview(lv_obj_t *parent, PtrT_DisplaySolan
         lv_obj_set_style_text_color(orderLabel, lv_color_hex(0xF5870A), LV_PART_MAIN);
         lv_obj_align(orderLabel, LV_ALIGN_TOP_LEFT, 24, 16);
 
+        lv_obj_t *programSection = GuiSolInstructionSection(container, _("solana_program_address"));
+        lv_obj_align_to(programSection, orderLabel, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 12);
+        lv_obj_update_layout(programSection);
+        lv_obj_t *programAddress = GuiCreateIllustrateLabel(
+            programSection, overview_instructions->data[i].program_address);
+        lv_obj_set_width(programAddress, lv_obj_get_content_width(programSection));
+        lv_label_set_long_mode(programAddress, LV_LABEL_LONG_WRAP);
+        lv_obj_set_height(programAddress, LV_SIZE_CONTENT);
+        lv_obj_update_layout(container);
+
         PtrT_VecFFI_PtrString accounts = overview_instructions->data[i].accounts;
-        lv_obj_t *lastSection = orderLabel;
+        lv_obj_t *lastSection = programSection;
         if (accounts->size != 0) {
             lv_obj_t *accountsSection = GuiSolInstructionSection(container, "accounts");
-            lv_obj_align_to(accountsSection, orderLabel, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 12);
+            lv_obj_align_to(accountsSection, programSection, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 12);
             GuiShowSolAccounts(accountsSection, accounts);
             lv_obj_update_layout(container);
             lastSection = accountsSection;
@@ -1659,16 +1669,6 @@ static void GuiShowSolTxInstructionsOverview(lv_obj_t *parent, PtrT_DisplaySolan
             GuiShowPagedMessageText(data_label, instructionData, true, NULL, NULL);
         }
         lv_obj_update_layout(container);
-
-        lv_obj_t *programTitle = GuiCreateIllustrateLabel(container, _("solana_program_address"));
-        lv_obj_set_style_text_opa(programTitle, LV_OPA_64, LV_PART_MAIN);
-        lv_obj_align_to(programTitle, dataSection, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 12);
-
-        lv_obj_t *programAddress_label = GuiCreateIllustrateLabel(
-            container, overview_instructions->data[i].program_address);
-        lv_obj_set_width(programAddress_label, SOL_COMPONENT_CONTENT_WIDTH);
-        lv_label_set_long_mode(programAddress_label, LV_LABEL_LONG_WRAP);
-        lv_obj_align_to(programAddress_label, programTitle, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 8);
 
         // calculate the height of the container
         lv_obj_update_layout(container);
