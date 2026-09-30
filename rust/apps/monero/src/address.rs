@@ -3,8 +3,8 @@ use crate::key::*;
 use crate::structs::{AddressType, Network};
 use crate::utils::{constants::PUBKEY_LEH, hash::keccak256};
 use alloc::format;
-use alloc::vec;
 use alloc::string::{String, ToString};
+use alloc::vec;
 use base58_monero::{decode, encode};
 use curve25519_dalek::edwards::EdwardsPoint;
 use curve25519_dalek::scalar::Scalar;
@@ -137,8 +137,10 @@ pub fn pub_keyring_to_address(
     if pub_keyring.len() != PUBKEY_LEH * 4 {
         return Err(MoneroError::PubKeyringLengthError);
     }
-    let spend_hex = hex::decode(&pub_keyring.as_bytes()[0..64]).map_err(|_| MoneroError::FormatError)?;
-    let view_hex = hex::decode(&pub_keyring.as_bytes()[64..128]).map_err(|_| MoneroError::FormatError)?;
+    let spend_hex =
+        hex::decode(&pub_keyring.as_bytes()[0..64]).map_err(|_| MoneroError::FormatError)?;
+    let view_hex =
+        hex::decode(&pub_keyring.as_bytes()[64..128]).map_err(|_| MoneroError::FormatError)?;
     let pub_spend_key = PublicKey::from_bytes(&spend_hex)?;
     let pub_view_key = PublicKey::from_bytes(&view_hex)?;
 

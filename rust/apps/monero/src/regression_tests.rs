@@ -683,13 +683,13 @@ fn signed_payment_id_must_match_the_displayed_integrated_address() {
         data
     };
 
-    assert!(validate_payment_id_binding(core::slice::from_ref(&with_extra(Some(
-        displayed_id
-    ))))
-    .is_ok());
+    assert!(
+        validate_payment_id_binding(core::slice::from_ref(&with_extra(Some(displayed_id)))).is_ok()
+    );
 
-    assert!(validate_payment_id_binding(core::slice::from_ref(&with_extra(Some(signed_id))))
-        .is_err());
+    assert!(
+        validate_payment_id_binding(core::slice::from_ref(&with_extra(Some(signed_id)))).is_err()
+    );
 
     assert!(validate_payment_id_binding(core::slice::from_ref(&with_extra(None))).is_err());
 
@@ -704,7 +704,10 @@ fn signed_payment_id_must_match_the_displayed_integrated_address() {
     let mut dummy = tx_data(vec![payee.standard_dest(2)], wallet.standard_dest(1));
     dummy.extra = nonce_field([0u8; 8]);
     assert!(validate_payment_id_binding(core::slice::from_ref(&dummy)).is_ok());
-    assert_eq!(dummy.requested_extra().unwrap().nonce.as_deref(), Some(&[1u8, 0, 0, 0, 0, 0, 0, 0, 0][..]));
+    assert_eq!(
+        dummy.requested_extra().unwrap().nonce.as_deref(),
+        Some(&[1u8, 0, 0, 0, 0, 0, 0, 0, 0][..])
+    );
 
     let mut integrated_but_dummy = tx_data(vec![dest.clone()], wallet.standard_dest(1));
     integrated_but_dummy.extra = nonce_field([0u8; 8]);
@@ -951,7 +954,9 @@ fn each_transaction_keeps_its_own_payment_id() {
     payload.extend_from_slice(&write_varinteger(0));
 
     let parsed = UnsignedTx::deserialize(&payload).unwrap();
-    let info = parsed.display_info(&keypair.get_public_spend(), &keypair.view).unwrap();
+    let info = parsed
+        .display_info(&keypair.get_public_spend(), &keypair.view)
+        .unwrap();
 
     assert_eq!(info.outputs.len(), 4);
     assert_eq!(info.outputs[0].payment_id, hex::encode(payment_id_a));
@@ -1024,7 +1029,9 @@ fn integrated_destinations_are_displayed_with_their_payment_id() {
     payload.extend_from_slice(&write_varinteger(0));
 
     let parsed = UnsignedTx::deserialize(&payload).unwrap();
-    let info = parsed.display_info(&keypair.get_public_spend(), &keypair.view).unwrap();
+    let info = parsed
+        .display_info(&keypair.get_public_spend(), &keypair.view)
+        .unwrap();
 
     assert_eq!(info.outputs.len(), 3);
     assert_eq!(
@@ -1040,7 +1047,10 @@ fn integrated_destinations_are_displayed_with_their_payment_id() {
         "plain destination stays a plain address"
     );
     assert!(!info.outputs[1].is_integrated);
-    assert!(info.outputs[2].is_change, "change is badged (it is our own address)");
+    assert!(
+        info.outputs[2].is_change,
+        "change is badged (it is our own address)"
+    );
     assert_eq!(info.outputs[0].payment_id, hex::encode(payment_id));
     assert_eq!(info.outputs[0].payment_id.len(), 16);
     assert!(info.outputs[1].payment_id.is_empty());
@@ -1084,8 +1094,7 @@ fn rings_are_normalised_to_ascending_output_indices() {
     let indices: Vec<u64> = source.outputs.iter().map(|output| output.index).collect();
     assert_eq!(indices, vec![500, 900], "ring must ascend by output index");
     assert_eq!(
-        source.outputs[source.real_output as usize].index,
-        500,
+        source.outputs[source.real_output as usize].index, 500,
         "the selected output must stay selected after normalisation"
     );
 }
@@ -1159,8 +1168,7 @@ fn change_destination_consistency() {
         Zeroizing::new(keypair.view.scalar * published.tx_key_pub),
         change_index,
     );
-    let expected_change =
-        subaddress_spend + EdwardsPoint::mul_base(&change_derivation.shared_key);
+    let expected_change = subaddress_spend + EdwardsPoint::mul_base(&change_derivation.shared_key);
 
     let subaddress_view = subaddress_spend * sender.view;
     let recipient_derivation = SharedKeyDerivations::output_derivations(
@@ -1426,13 +1434,21 @@ fn preflight_wallet_validation() {
     tx.sources[0].outputs[0].key.mask = point;
     let mut set = UnsignedTx::default();
     set.txes.push(tx);
-    assert!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view).is_ok());
+    assert!(set
+        .validate_for_wallet(&keys.get_public_spend(), &keys.view)
+        .is_ok());
     set.txes[0].sources[0].amount = 2;
-    assert!(matches!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view), Err(MoneroError::FormatError)));
+    assert!(matches!(
+        set.validate_for_wallet(&keys.get_public_spend(), &keys.view),
+        Err(MoneroError::FormatError)
+    ));
     set.txes[0].sources[0].amount = 4;
     set.txes[0].change_dts = recipient.standard_dest(1);
     set.txes[0].splitted_dsts[1] = recipient.standard_dest(1);
-    assert!(matches!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view), Err(MoneroError::ChangeAddressMismatch)));
+    assert!(matches!(
+        set.validate_for_wallet(&keys.get_public_spend(), &keys.view),
+        Err(MoneroError::ChangeAddressMismatch)
+    ));
 }
 
 #[test]
@@ -1487,20 +1503,45 @@ fn subaddress_output_order_consistency() {
             .unwrap()
             .get_outputs();
         let recover = |r: EdwardsPoint, index: usize, view: Scalar, spend: EdwardsPoint| {
-            let mut b=(view*r).mul_by_cofactor().compress().to_bytes().to_vec();
+            let mut b = (view * r).mul_by_cofactor().compress().to_bytes().to_vec();
             b.extend(write_varinteger(index as u64));
-            (spend+EdwardsPoint::mul_base(&hash_to_scalar(&b))).compress()
+            (spend + EdwardsPoint::mul_base(&hash_to_scalar(&b))).compress()
         };
-        let receiver_spend=PublicKey::from_bytes(&payment.addr.spend_public_key).unwrap().point.decompress().unwrap();
-        assert_eq!(recover(reference_public,payment_index,receiver.view,receiver_spend)==reference_outputs[payment_index].key,!change_first);
-        let (r,additional,public,_)=data.transaction_keys();
+        let receiver_spend = PublicKey::from_bytes(&payment.addr.spend_public_key)
+            .unwrap()
+            .point
+            .decompress()
+            .unwrap();
+        assert_eq!(
+            recover(
+                reference_public,
+                payment_index,
+                receiver.view,
+                receiver_spend
+            ) == reference_outputs[payment_index].key,
+            !change_first
+        );
+        let (r, additional, public, _) = data.transaction_keys();
         assert!(additional.is_empty());
-        assert_eq!(public,r.scalar*receiver_spend);
-        let outputs=data.outputs(&wallet,&r,&additional,&public).unwrap().get_outputs();
-        assert_eq!(recover(public,payment_index,receiver.view,receiver_spend),outputs[payment_index].key);
-        let ci=1-payment_index;
-        let change_spend=PublicKey::from_bytes(&change.addr.spend_public_key).unwrap().point.decompress().unwrap();
-        assert_eq!(recover(public,ci,sender.view,change_spend),outputs[ci].key);
+        assert_eq!(public, r.scalar * receiver_spend);
+        let outputs = data
+            .outputs(&wallet, &r, &additional, &public)
+            .unwrap()
+            .get_outputs();
+        assert_eq!(
+            recover(public, payment_index, receiver.view, receiver_spend),
+            outputs[payment_index].key
+        );
+        let ci = 1 - payment_index;
+        let change_spend = PublicKey::from_bytes(&change.addr.spend_public_key)
+            .unwrap()
+            .point
+            .decompress()
+            .unwrap();
+        assert_eq!(
+            recover(public, ci, sender.view, change_spend),
+            outputs[ci].key
+        );
     }
 }
 
@@ -1815,8 +1856,8 @@ fn preflight_supported_transaction_boundaries() {
 #[test]
 fn destination_type_consistency() {
     use crate::key::{KeyPair, PrivateKey};
-    use crate::transfer::UnsignedTx;
     use crate::structs::Network;
+    use crate::transfer::UnsignedTx;
     let wallet = Party::new();
     let recipient = Party::new();
     let sub = recipient.subaddress_dest(&Scalar::from(7u64), 2);
@@ -1831,12 +1872,16 @@ fn destination_type_consistency() {
     tx.sources[0].outputs[0].key.mask = point;
     let mut set = UnsignedTx::default();
     set.txes.push(tx);
-    assert!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view).is_ok());
+    assert!(set
+        .validate_for_wallet(&keys.get_public_spend(), &keys.view)
+        .is_ok());
     for first in [false, true] {
         set.txes[0].splitted_dsts[0].is_subaddress = first;
         set.txes[0].splitted_dsts[1].is_subaddress = !first;
         set.txes[0].splitted_dsts[1].original.clear();
-        assert!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view).is_err());
+        assert!(set
+            .validate_for_wallet(&keys.get_public_spend(), &keys.view)
+            .is_err());
         assert!(set.sign(&keys).is_err());
     }
     set.txes[0].splitted_dsts[0] = sub.clone();
@@ -1855,7 +1900,10 @@ fn short_nonce_destination_consistency() {
     let first = Party::new();
     let second = Party::new();
     let keys = KeyPair::new(PrivateKey::new(wallet.view), PrivateKey::new(wallet.spend));
-    let mut tx = tx_data(vec![first.standard_dest(2), second.standard_dest(2)], wallet.standard_dest(1));
+    let mut tx = tx_data(
+        vec![first.standard_dest(2), second.standard_dest(2)],
+        wallet.standard_dest(1),
+    );
     tx.sources[0].amount = 6;
     let point = wallet.spend_point().compress().to_bytes();
     tx.sources[0].real_out_tx_key = point;
@@ -1863,12 +1911,18 @@ fn short_nonce_destination_consistency() {
     tx.sources[0].outputs[0].key.mask = point;
     let mut set = UnsignedTx::default();
     set.txes.push(tx);
-    assert!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view).is_ok());
+    assert!(set
+        .validate_for_wallet(&keys.get_public_spend(), &keys.view)
+        .is_ok());
     set.txes[0].extra = vec![2, 9, 1, 0, 0, 0, 0, 0, 0, 0, 0];
-    assert!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view).is_err());
+    assert!(set
+        .validate_for_wallet(&keys.get_public_spend(), &keys.view)
+        .is_err());
     assert!(set.sign(&keys).is_err());
     set.txes[0].splitted_dsts[1] = first.standard_dest(2);
-    assert!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view).is_ok());
+    assert!(set
+        .validate_for_wallet(&keys.get_public_spend(), &keys.view)
+        .is_ok());
     assert!(set.txes[0].payment_id_destination_index().is_some());
 }
 

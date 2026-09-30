@@ -63,7 +63,11 @@ impl Display for DisplayTransactionInfo {
                 "  {:?} - {}{}{}",
                 output.address,
                 output.amount,
-                if output.is_integrated { " (integrated)" } else { "" },
+                if output.is_integrated {
+                    " (integrated)"
+                } else {
+                    ""
+                },
                 if output.payment_id.is_empty() {
                     String::new()
                 } else {
@@ -584,7 +588,9 @@ pub fn validate_payment_id_binding(txes: &[TxConstructionData]) -> Result<()> {
         let mut unique_payments: Vec<AccountPublicAddress> = vec![];
 
         for entry in tx.splitted_dsts.iter() {
-            if entry.amount > 0 && entry.addr != change_addr && !unique_payments.contains(&entry.addr)
+            if entry.amount > 0
+                && entry.addr != change_addr
+                && !unique_payments.contains(&entry.addr)
             {
                 unique_payments.push(entry.addr);
             }
@@ -657,7 +663,9 @@ pub fn validate_destinations(txes: &[TxConstructionData]) -> Result<()> {
 
         let mut address_types: Vec<(AccountPublicAddress, bool)> = vec![];
         for entry in entries {
-            if let Some((_, is_subaddress)) = address_types.iter().find(|(addr, _)| *addr == entry.addr) {
+            if let Some((_, is_subaddress)) =
+                address_types.iter().find(|(addr, _)| *addr == entry.addr)
+            {
                 if *is_subaddress != entry.is_subaddress {
                     return Err(MoneroError::FormatError);
                 }

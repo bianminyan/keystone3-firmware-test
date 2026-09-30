@@ -1447,10 +1447,13 @@ mod monero_budget_tests {
         let cbor = vec![0; app_monero::utils::io::MAX_REQUEST_BYTES];
         let mut encoder = ur::Encoder::new(&cbor, 200, "xmr-txunsigned").unwrap();
         let mut parts: Vec<String> = (0..encoder.fragment_count())
-            .map(|_| encoder.next_part().unwrap()).collect();
+            .map(|_| encoder.next_part().unwrap())
+            .collect();
         parts.reverse();
         let mut decoder = KeystoneURDecoder::from_first_part(&parts[0]).unwrap();
-        for part in &parts[1..] { decoder.receive(part).unwrap(); }
+        for part in &parts[1..] {
+            decoder.receive(part).unwrap();
+        }
         assert!(decoder.complete());
         assert_eq!(decoder.message().unwrap(), cbor);
         let too_large = vec![0; cbor.len() + 1];

@@ -71,7 +71,10 @@ impl FragmentBudget {
             (limit, max_parts, max_work)
         };
         #[cfg(feature = "monero")]
-        let (limit, max_parts, max_work) = if prefix.get(..7).is_some_and(|s| s.eq_ignore_ascii_case("ur:xmr-")) {
+        let (limit, max_parts, max_work) = if prefix
+            .get(..7)
+            .is_some_and(|s| s.eq_ignore_ascii_case("ur:xmr-"))
+        {
             (app_monero::utils::io::MAX_REQUEST_BYTES, 128, 192 * 1024)
         } else {
             (limit, max_parts, max_work)

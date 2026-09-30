@@ -62,12 +62,18 @@ impl<'a> Reader<'a> {
     }
 
     pub fn read_u32(&mut self) -> Result<u32> {
-        let bytes: [u8; 4] = self.read_bytes(4)?.try_into().map_err(|_| MoneroError::FormatError)?;
+        let bytes: [u8; 4] = self
+            .read_bytes(4)?
+            .try_into()
+            .map_err(|_| MoneroError::FormatError)?;
         Ok(u32::from_le_bytes(bytes))
     }
 
     pub fn read_u64(&mut self) -> Result<u64> {
-        let bytes: [u8; 8] = self.read_bytes(8)?.try_into().map_err(|_| MoneroError::FormatError)?;
+        let bytes: [u8; 8] = self
+            .read_bytes(8)?
+            .try_into()
+            .map_err(|_| MoneroError::FormatError)?;
         Ok(u64::from_le_bytes(bytes))
     }
 
@@ -76,7 +82,10 @@ impl<'a> Reader<'a> {
     }
 
     pub fn read_array32(&mut self) -> Result<[u8; 32]> {
-        let bytes: [u8; 32] = self.read_bytes(32)?.try_into().map_err(|_| MoneroError::FormatError)?;
+        let bytes: [u8; 32] = self
+            .read_bytes(32)?
+            .try_into()
+            .map_err(|_| MoneroError::FormatError)?;
         Ok(bytes)
     }
 

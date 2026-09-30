@@ -188,14 +188,20 @@ impl TxConstructionData {
         while reader.remaining() > 0 {
             match reader.read_u8()? {
                 0x00 => res.padding += 1,
-                0x01 => { reader.read_bytes(32)?; }
-                0x02 => { res.nonce = Some(reader.read_vec_u8(255)?); }
+                0x01 => {
+                    reader.read_bytes(32)?;
+                }
+                0x02 => {
+                    res.nonce = Some(reader.read_vec_u8(255)?);
+                }
                 0x03 => {
                     let length = reader.read_count(self.extra.len())?;
                     let mut field = Reader::new(reader.read_bytes(length)?);
                     field.read_varint()?;
                     field.read_bytes(32)?;
-                    if field.remaining() != 0 { return Err(MoneroError::FormatError); }
+                    if field.remaining() != 0 {
+                        return Err(MoneroError::FormatError);
+                    }
                 }
                 0x04 => {
                     let count = reader.read_count(self.extra.len() / 32)?;
@@ -217,14 +223,21 @@ impl TxConstructionData {
                 continue;
             }
             unique.push(dst.addr);
-            if unique.len() > 1 { return None; }
+            if unique.len() > 1 {
+                return None;
+            }
             chosen = Some(i);
         }
-        chosen.or_else(|| self.splitted_dsts.iter().position(|dst| dst.addr == change_addr))
+        chosen.or_else(|| {
+            self.splitted_dsts
+                .iter()
+                .position(|dst| dst.addr == change_addr)
+        })
     }
 
     fn destination_payment_id_xor(&self, payment_id_xors: &[[u8; 8]]) -> Option<[u8; 8]> {
-        self.payment_id_destination_index().and_then(|index| payment_id_xors.get(index).copied())
+        self.payment_id_destination_index()
+            .and_then(|index| payment_id_xors.get(index).copied())
     }
 
     pub fn extra(
