@@ -482,6 +482,18 @@ void GuiWidgetBaseInit(lv_obj_t *obj, cJSON *json)
                 continue;
             }
 #endif
+#ifdef FEATURE_TRON
+            cJSON *trxType = cJSON_GetObjectItem(child, "type");
+            cJSON *trxTextFunc = cJSON_GetObjectItem(child, "text_func");
+            if (trxType != NULL && trxTextFunc != NULL &&
+                !strcmp(trxType->valuestring, "label") &&
+                (!strcmp(trxTextFunc->valuestring, "GetTrxMessageUtf8") ||
+                 !strcmp(trxTextFunc->valuestring, "GetTrxMessageRaw"))) {
+                GuiShowTrxMessagePaged(obj, g_totalData,
+                                       !strcmp(trxTextFunc->valuestring, "GetTrxMessageRaw"));
+                continue;
+            }
+#endif
             GuiWidgetFactoryCreate(obj, child);
         }
     }

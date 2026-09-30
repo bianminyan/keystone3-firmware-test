@@ -1,4 +1,5 @@
 #include "gui_analyze.h"
+#include "gui_chain_components.h"
 #include "rust.h"
 #include "account_public_info.h"
 #include "keystore.h"
@@ -486,6 +487,19 @@ void GetTrxMessageRaw(void *indata, void *param, uint32_t maxLen)
     } else {
         snprintf((char *)indata, maxLen, "%s%s", message && message->raw_message ? message->raw_message : "", warning);
     }
+}
+
+void GuiShowTrxMessagePaged(lv_obj_t *parent, void *param, bool raw)
+{
+    DisplayTRONPersonalMessage *message = (DisplayTRONPersonalMessage *)param;
+    const char *text = message == NULL ? NULL :
+                       (raw ? message->raw_message : message->utf8_message);
+    GuiShowPagedMessageText(
+        parent,
+        text,
+        !raw,
+        raw ? _("solana_blind_sign_title") : NULL,
+        raw ? _("solana_unparsed_message_warning") : NULL);
 }
 
 bool GetTrxMessageFromExist(void *indata, void *param)
