@@ -57,6 +57,8 @@
 #include "cjson/cJSON.h"
 #include "flash_address.h"
 #include "gui_model.h"
+#include "gui_ar.h"
+#include "gui_general_home_widgets.h"
 #include "rsa.h"
 
 #define CMD_MAX_ARGC                                16
@@ -1009,6 +1011,22 @@ static void MigrationPrintArReceiveFromPublicKey(uint8_t accountIndex, const cha
     free_simple_response_c_char(address);
 }
 
+static bool MigrationGetArManagedState(void)
+{
+    WalletState_t walletState[HOME_WALLET_CARD_BUTT] = {
+        {HOME_WALLET_CARD_BTC, false, "BTC", true},
+        HOME_WALLET_STATE_SURPLUS,
+    };
+
+    AccountPublicHomeCoinGet(walletState, NUMBER_OF_ARRAYS(walletState));
+    for (uint32_t i = 0; i < NUMBER_OF_ARRAYS(walletState); i++) {
+        if (walletState[i].index == HOME_WALLET_CARD_ARWEAVE) {
+            return walletState[i].state;
+        }
+    }
+    return false;
+}
+
 static void MigrationPrintArStorageDerivedReceive(uint8_t accountIndex, const char *publicKey)
 {
     if (publicKey == NULL || publicKey[0] == '\0') {
@@ -1494,6 +1512,32 @@ static void MigrationTestFunc(int argc, char *argv[])
             return;
         }
         MigrationPrintArReceiveFromPublicKey(accountIndex, publicKey);
+#else
+        printf("MigrationArReceive=-1,status=unsupported\r\n");
+        printf("MigrationArReceiveDone=1\r\n");
+#endif
+    } else if (strcmp(argv[0], "ar_receive_ui_entry_probe") == 0) {
+#ifdef WEB3_VERSION
+        VALUE_CHECK(argc, 2);
+        uint8_t accountIndex = 0;
+        int32_t ret = MigrationVerifyPasswordAndLogin(&accountIndex, argv[1]);
+        if (ret != SUCCESS_CODE) {
+            printf("MigrationArUiEntry=%d,accountIndex=%d,status=login_error\r\n", ret, accountIndex);
+            printf("MigrationArReceive=%d,accountIndex=%d,status=login_error\r\n", ret, accountIndex);
+            printf("MigrationArReceiveDone=1\r\n");
+            return;
+        }
+        bool arManaged = MigrationGetArManagedState();
+        bool setupComplete = IsArweaveSetupComplete();
+        printf("MigrationArUiEntry=0,accountIndex=%d,managed=%d,setupComplete=%d\r\n",
+               accountIndex, arManaged ? 1 : 0, setupComplete ? 1 : 0);
+        if (!setupComplete) {
+            printf("MigrationArPublicInfo=absent\r\n");
+            printf("MigrationArReceive=0,accountIndex=%d,status=setup_required\r\n", accountIndex);
+            printf("MigrationArReceiveDone=1\r\n");
+            return;
+        }
+        MigrationPrintArReceiveFromPublicKey(accountIndex, GetCurrentAccountPublicKey(XPUB_TYPE_ARWEAVE));
 #else
         printf("MigrationArReceive=-1,status=unsupported\r\n");
         printf("MigrationArReceiveDone=1\r\n");
