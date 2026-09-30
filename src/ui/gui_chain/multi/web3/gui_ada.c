@@ -2027,40 +2027,40 @@ void GuiShowAdaSignTxHashDetails(lv_obj_t *parent, void *totalData)
     lv_obj_t *from_label = GuiCreateTextLabel(from_container, "From");
     lv_obj_set_style_text_opa(from_label, 144, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_align_to(from_label, from_container, LV_ALIGN_OUT_BOTTOM_LEFT, 24, 16);
-    // address + path card
+    // Addresses and signing paths are independent lists.
     Ptr_VecFFI_PtrString addressList = hashData->address_list;
     Ptr_VecFFI_PtrString pathList = hashData->path;
-    if (addressList == NULL || pathList == NULL || addressList->size != pathList->size ||
-        (addressList->size > 0 && (addressList->data == NULL || pathList->data == NULL))) {
+    if (addressList == NULL || pathList == NULL ||
+        (addressList->size > 0 && addressList->data == NULL) ||
+        (pathList->size > 0 && pathList->data == NULL)) {
         return;
     }
     for (size_t i = 0; i < addressList->size; i++) {
-        if (addressList->data[i] == NULL || pathList->data[i] == NULL) {
+        if (addressList->data[i] == NULL) {
+            return;
+        }
+    }
+    for (size_t i = 0; i < pathList->size; i++) {
+        if (pathList->data[i] == NULL) {
             return;
         }
     }
     for (size_t i = 0; i < addressList->size; i++) {
-        char *address = addressList->data[i];
-        char *path = pathList->data[i];
-        char formattedPath[128] = {0};
-        snprintf(formattedPath, sizeof(formattedPath), "m/%s", path);
-        char num[BUFFER_SIZE_32] = {0};
-        snprintf(num, sizeof(num), "%u", (unsigned int)(i + 1));
-        lv_obj_t *num_label = GuiCreateIllustrateLabel(from_container, num);
-        lv_obj_set_style_text_color(num_label, WHITE_COLOR, LV_PART_MAIN);
-        lv_obj_set_style_text_opa(num_label, 144, LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_align_to(num_label, from_container, LV_ALIGN_OUT_TOP_LEFT, 24, 16);
-        lv_obj_t *address_label = GuiCreateIllustrateLabel(from_container, address);
+        lv_obj_t *address_label = GuiCreateIllustrateLabel(from_container, addressList->data[i]);
         lv_obj_set_width(address_label, lv_pct(90));
         lv_obj_set_style_text_color(address_label, WHITE_COLOR, LV_PART_MAIN);
         lv_label_set_long_mode(address_label, LV_LABEL_LONG_WRAP);
-        lv_obj_align_to(address_label, num_label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 4);
+    }
+    lv_obj_t *paths_label = GuiCreateTextLabel(from_container, "Derivation Paths");
+    lv_obj_set_style_text_opa(paths_label, 144, LV_PART_MAIN | LV_STATE_DEFAULT);
+    for (size_t i = 0; i < pathList->size; i++) {
+        char formattedPath[128] = {0};
+        snprintf(formattedPath, sizeof(formattedPath), "m/%s", pathList->data[i]);
         lv_obj_t *path_label = GuiCreateIllustrateLabel(from_container, formattedPath);
         lv_obj_set_width(path_label, lv_pct(90));
         lv_label_set_long_mode(path_label, LV_LABEL_LONG_WRAP);
         lv_obj_set_style_text_color(path_label, WHITE_COLOR, LV_PART_MAIN);
         lv_obj_set_style_text_opa(path_label, 144, LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_align_to(path_label, address_label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 4);
     }
     // calculate the height of from_container
     lv_obj_update_layout(from_container);
