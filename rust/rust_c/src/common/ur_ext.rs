@@ -385,9 +385,8 @@ impl InferViewType for BtcSignRequest {
 #[cfg(feature = "solana")]
 impl InferViewType for SolSignRequest {
     fn infer(&self) -> Result<ViewType, URError> {
-        if self.get_sign_type() == ur_registry::solana::sol_sign_request::SignType::Transaction {
-            return Ok(ViewType::SolanaTx);
-        }
+        // The payload decides the review flow, not the host's type hint: requesters
+        // do send Sign-In With Solana messages labelled as transactions.
         match app_solana::classify_payload(&self.get_sign_data()) {
             app_solana::SolanaPayloadType::Transaction
             | app_solana::SolanaPayloadType::MalformedTransaction => Ok(ViewType::SolanaTx),
@@ -471,8 +470,9 @@ impl InferViewType for QRHardwareCall {
 mod tests {
     #[cfg(feature = "solana")]
     #[test]
-    fn solana_transaction_fixtures_never_fall_back_to_message_view() {
+    fn solana_view_type_follows_the_payload_not_the_type_hint() {
         use super::{InferViewType, SolSignRequest, ViewType};
+        use ur_registry::solana::sol_sign_request::SignType;
         let dataset: serde_json::Value =
             serde_json::from_str(include_str!("../../tests/fixtures/solana-security.json"))
                 .unwrap();
@@ -483,16 +483,30 @@ mod tests {
                     .receive(&frame.as_str().unwrap().to_lowercase())
                     .unwrap();
             }
-            let request = SolSignRequest::try_from(decoder.message().unwrap().unwrap()).unwrap();
-            if request.get_sign_type()
-                == ur_registry::solana::sol_sign_request::SignType::Transaction
-            {
-                assert!(
-                    matches!(request.infer(), Ok(ViewType::SolanaTx)),
-                    "{}",
-                    fixture["id"]
-                );
-            }
+            let mut request =
+                SolSignRequest::try_from(decoder.message().unwrap().unwrap()).unwrap();
+            let expected = match app_solana::classify_payload(&request.get_sign_data()) {
+                app_solana::SolanaPayloadType::Message => ViewType::SolanaMessage,
+                app_solana::SolanaPayloadType::Transaction
+                | app_solana::SolanaPayloadType::MalformedTransaction => ViewType::SolanaTx,
+            };
+            assert_eq!(
+                request.infer().ok().as_ref(),
+                Some(&expected),
+                "{}",
+                fixture["id"]
+            );
+            // The review flow must not change when the host mislabels the request.
+            request.set_sign_type(match request.get_sign_type() {
+                SignType::Transaction => SignType::Message,
+                SignType::Message => SignType::Transaction,
+            });
+            assert_eq!(
+                request.infer().ok().as_ref(),
+                Some(&expected),
+                "type hint changed the view type of {}",
+                fixture["id"]
+            );
         }
     }
     use alloc::vec::Vec;

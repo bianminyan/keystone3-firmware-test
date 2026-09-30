@@ -2,13 +2,13 @@
 
 ## 背景
 
-固件已有 Legacy、V0、V1 交易支持和 Details 分页。交易请求来自不可信主机或二维码，需要避免请求类型与内容不一致、已支持指令解析失败后降级，以及聚合页面遗漏实际签名动作。
+固件已有 Legacy、V0、V1 交易支持和 Details 分页。交易请求来自不可信主机或二维码，主机声明的 `SignType` 只是提示，可能与载荷内容不符（dApp 会把 Sign-In With Solana 消息标成 Transaction）；因此需要以载荷内容判定请求类型，同时避免已支持指令解析失败后降级，以及聚合页面遗漏实际签名动作。
 
 本文描述当前行为契约与验证入口，供实现、QA 和 review 对照。实现与规范冲突时应报告差异，不能用本文代替代码验证。关联 PR：#73。
 
 ## 目标
 
-- 扫描、解析和最终签名采用一致的请求类型约束。
+- 扫描、解析、视图路由和最终签名采用一致的**内容分类**（`classify_payload`）结果；主机声明的 `SignType` 不参与判定。
 - 检查路径、钱包归属与 required signer，签名原始请求字节。
 - 完整披露指令顺序、未知程序、未解析账户与 V1 配置。
 - 提供结构化 Advanced 和可还原原始 message 的 Details JSON。
@@ -25,8 +25,9 @@
 ### Transaction 请求
 
 - 扫描检查、两个交易解析入口（`solana_parse_tx` / `solana_parse_tx_with_pubkey`）及最终签名前均通过 `validated_payload` 验证；交易解析入口仅接受 Transaction 结果。
-- `SignType::Transaction` 必须通过完整交易解析及所支持指令的语义解析；失败直接返回错误，不自动降级为消息签名。
-- 扫码视图路由按 Transaction 请求进入交易检查，不能因交易解析失败而转成普通消息页面。
+- 内容分类为 Transaction 时必须通过完整交易解析及所支持指令的语义解析；失败直接返回错误，不自动降级为消息签名。
+- 主机声明 `SignType::Transaction` 不构成约束：载荷内容分类为 Message 时按消息处理（`validated_payload` 返回 Message，最终签名走消息路径），只有 MalformedTransaction 被拒绝。
+- 扫码视图路由按内容分类决定：Transaction / MalformedTransaction 进入交易检查页，Message 进入消息页；不因 `SignType` 声明改变页面。
 - 最终签名从 seed 和请求路径派生公钥，验证其属于交易 required signers。
 - 签名对象是请求中的原始 sign_data，不是展示 JSON 或重建后的交易。
 
@@ -41,13 +42,23 @@
 3. 仍具有可解析的交易前缀：MalformedTransaction。
 4. 其余数据：Message。
 
-Message 请求仅接受最后一种结果。因此，完整交易改标为 Message、可识别交易前缀附加尾随数据，以及损坏的 V1，都不能通过消息签名路径。
+消息路径仅接受最后一种结果（按内容分类，不看 `SignType` 声明）。因此完整交易、可识别交易前缀附加尾随数据，以及损坏的 V1，都不能通过消息签名路径，即使请求声明为 Message。反向同理：声明为 Transaction 但内容是普通文本（如 SIWS）会被识别为消息并进入消息签名，不再以“类型不符”拒绝。
 
 **当前不能声称所有畸形交易均被识别：** 截断 V0、未知版本等数据可能落入第四种结果。该边界尚待明确兼容策略和补充测试；不应在 review 中将其视为已修复。
 
 不能仅以首字节最高位为 1 就拒绝消息：UTF-8 文本可能以高位字节开头，标准 offchain 消息也使用 `0xff` 起始。现有实现识别 offchain v0 正文，不代表完整支持所有 offchain 版本。修复分类时应同时验证普通 UTF-8、合法 offchain 格式以及交易伪装，不应只检查一个前缀。
 
 实现入口：`rust/apps/solana/src/lib.rs` 的 `classify_payload`、`parse_offchain_message_v0`、`parse_message`。
+
+### 类型提示与内容分类的取舍
+
+2026-09-14 的加固（`58a3e207a`）曾把 `SignType` 放在内容判断之前，类型不符即拒绝，并新增 `transaction-security--07/08` 两个“消息被标成交易”的固件用例。实际生态中 dApp（如 Magic Eden）会把 Sign-In With Solana 消息放进 `SignType::Transaction` 请求，这类请求在扫描阶段被当作交易解析而失败（`SolanaInvalidData`/603，UI 只显示通用错误页）。
+
+2026-09-24 恢复内容优先（即 `756df0e73` 的行为）：
+
+- `validated_payload` 与 `ur_ext::infer` 均以 `classify_payload` 结果为准；`SignType` 不再参与判定。
+- MalformedTransaction 仍被拒绝，交易不会以不透明字节进入消息签名路径。
+- 代价：不再强制请求方声明正确，类型提示也不再影响结果 —— 判据只有载荷本身。解析不成完整交易、也不带交易前缀的字节（`classify_payload`）一律按消息签名，展示形态由 `parse_message` 决定：可打印、非 CJK、不含 NUL 的 UTF-8（例如 Magic Eden 的 SIWS 正文、`transaction-security--08` 这类短文本）进入 `utf8_message`，按普通消息页展示，**不带** `solana_blind_sign_title`，也**不显示** `solana_unparsed_message_warning`；只有 CJK、含 NUL 或非 UTF-8 的载荷才进入 `raw_message`（十六进制），才带盲签标题与该提示（`gui_analyze.c` 按模板分支传 `raw`，拼提示见 `gui_sol.c` 的 `GuiShowSolMessagePaged`）。因此“未解析消息必须提示”目前只覆盖 raw 分支；若产品要求给不带 offchain 封装的文本加提示，或收紧为只放行 SIWS/offchain 结构，应在此处补充并同步用例。
 
 ## 修改方式
 
@@ -232,14 +243,17 @@ cargo test -p rust_c --offline --no-default-features --features simulator-multi-
 
 关键回归：
 
-- `canonical_fixtures_check_and_sign`：有效请求、错误类型、缺失/错误 fingerprint、空指针与最终签名。
-- `v1_security_checks_apply_at_final_signing`：V1 最终签名及两个交易解析入口的类型一致性。
+- `canonical_fixtures_check_and_sign`：有效请求、错误类型、缺失/错误 fingerprint、空指针与最终签名；并断言两种 `SignType` 提示下分类与签名结果完全一致。其中 `transaction-security--07/08` 是“消息被标成交易”的用例，期望 success。
+- `v1_security_checks_apply_at_final_signing`：V1 最终签名，以及两个交易解析入口在两种类型提示下结果一致。
 - `canonical_display_regressions_preserve_order_alt_and_message_length`：顺序、ALT 与消息长度。
 - `squads_creation_and_transfers_use_complete_raw_review`：两种创建指令及多笔转账完整披露。
 - `raw_squads_review_preserves_message_config`：默认/显式 V1 配置及原始指令、JSON 往返。
-- `solana_transaction_fixtures_never_fall_back_to_message_view`：UR 路由。
+- `solana_view_type_follows_the_payload_not_the_type_hint`：UR 路由按内容分类，且两种提示下视图类型一致。
+- `message_payload_with_transaction_hint_follows_the_payload`：SIWS 文本加 Transaction 提示时判定为消息并签名成功（Magic Eden 场景）。
 - `every_config_mask_and_full_u64_fee`、`assert_json_roundtrip`：合法 mask、完整 u64 与 JSON 还原。
 
 fixtures 使用公开 abandon 测试助记词，仅用于测试；CI 不依赖开发者本地 fixtures 仓库。
 
 最近一次代码验证（2026-09-20，rebase origin/master 后）：90 项 app_solana 测试、4 项 SOL FFI 测试通过；C 语法及差异检查通过。翻译与字体重新生成无额外差异。未完成本轮真机或模拟器视觉验证，不据此声称 UI 已全面验证。
+
+2026-09-24 内容优先调整后：`cargo test -p rust_c --no-default-features --features simulator-multi-coins --lib` 86 项通过（含上述 SOL 用例）；`cargo fmt -p rust_c -- --check` 干净；WEB3 模拟器重建、链接与签名通过。仍未做真机或模拟器视觉验证。

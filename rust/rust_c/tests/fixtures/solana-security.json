@@ -30,17 +30,19 @@
     },
     {
       "id": "transaction-security--07",
-      "expected_result": "rejected",
+      "expected_result": "success",
       "ur": [
         "UR:SOL-SIGN-REQUEST/1-1/LPADADCSRDCYFRHYJOIMHDRDOXADTPDAGDFMDPIABNATTBOXHGIAPYFPDWKPSPOLHTAOHDLEADAEADAXWLRPAMDEFPRKMSKNTDCAVDCKSOHSMHAMEOSAJLCLETGLADHPADGEIAKNHSGAMDFLCPCPCPCPCPCPCPCPCPCPCPCPCPCPCPCPCPCPCPCPCPCPCPCPCPCPCPCPCPCPCPCPAEAEAEAEAEAEAEAEAEAEAEAEAEAEAEAEAEAEAEAEAEAEAEAEAEAEAEAEAEAEAEAEKTKTKTKTKTKTKTKTKTKTKTKTKTKTKTKTKTKTKTKTKTKTKTKTKTKTKTKTKTKTKTKTADASADAEADADAXTAADDYOEADLNCSDWYKCFADYKYKAEYKAOCYJKSKTNBKAMADKNOEPMMY"
-      ]
+      ],
+      "note": "host labels a message payload as a transaction; the payload decides"
     },
     {
       "id": "transaction-security--08",
-      "expected_result": "rejected",
+      "expected_result": "success",
       "ur": [
         "UR:SOL-SIGN-REQUEST/1-1/LPADADCSEMCYFYKOPMLTHDEMOXADTPDAGDWZLDJTTDHLVEKNSPDAIEDALGTDMUAYOSAOFDADAEAELSLALALAAEAXTAADDYOEADLNCSDWYKCFADYKYKAEYKAOCYJKSKTNBKAMADKGVDJLTN"
-      ]
+      ],
+      "note": "host labels a message payload as a transaction; the payload decides"
     },
     {
       "id": "transaction-security--11",

@@ -9,7 +9,7 @@ use app_solana::errors::SolanaError;
 use app_solana::parse_message;
 use cty::c_char;
 use structs::{DisplaySolanaMessage, DisplaySolanaTx};
-use ur_registry::solana::sol_sign_request::{SignType, SolSignRequest};
+use ur_registry::solana::sol_sign_request::SolSignRequest;
 use ur_registry::solana::sol_signature::SolSignature;
 use ur_registry::traits::RegistryItem;
 
@@ -21,15 +21,19 @@ pub mod structs;
 fn validated_payload(
     request: &SolSignRequest,
 ) -> Result<app_solana::SolanaPayloadType, SolanaError> {
+    // The payload decides, not the host's type hint: requesters do send Sign-In With
+    // Solana messages labelled as transactions (and the reverse), and the bytes are
+    // what gets signed. Malformed transactions stay rejected, so a transaction can
+    // never reach the message path as opaque bytes.
     let data = request.get_sign_data();
-    if request.get_sign_type() == SignType::Transaction {
-        app_solana::parse(&data)?;
-        return Ok(app_solana::SolanaPayloadType::Transaction);
-    }
     match app_solana::classify_payload(&data) {
         app_solana::SolanaPayloadType::Message => Ok(app_solana::SolanaPayloadType::Message),
-        _ => Err(SolanaError::InvalidData(
-            "transaction payload cannot be signed as a message".to_string(),
+        app_solana::SolanaPayloadType::Transaction => {
+            app_solana::parse(&data)?;
+            Ok(app_solana::SolanaPayloadType::Transaction)
+        }
+        app_solana::SolanaPayloadType::MalformedTransaction => Err(SolanaError::InvalidData(
+            "invalid or unsupported transaction data".to_string(),
         )),
     }
 }
@@ -37,6 +41,36 @@ fn validated_payload(
 #[cfg(test)]
 mod fixture_tests {
     use super::*;
+    use ur_registry::solana::sol_sign_request::SignType;
+
+    /// Number of the two exported parse-tx entry points that produced a result.
+    unsafe fn parse_tx_results(request: &mut SolSignRequest) -> usize {
+        use crate::common::free::Free;
+        let ptr = request as *mut _ as PtrUR;
+        let signer = app_solana::message::Message::read_exact(&mut request.get_sign_data())
+            .ok()
+            .and_then(|message| {
+                message
+                    .accounts
+                    .first()
+                    .map(|account| hex::encode(&account.value))
+            })
+            .unwrap_or_else(|| "00".repeat(32));
+        let pubkey = cstr_core::CString::new(signer).unwrap();
+        let mut produced = 0;
+        for result in [
+            solana_parse_tx(ptr),
+            solana_parse_tx_with_pubkey(ptr, pubkey.as_ptr() as PtrString),
+        ] {
+            // TransactionParseResult is repr(C), with data first.
+            if !(*(result as *const *mut DisplaySolanaTx)).is_null() {
+                produced += 1;
+            }
+            let result = alloc::boxed::Box::from_raw(result);
+            result.free();
+        }
+        produced
+    }
 
     #[test]
     fn squads_no_argument_trailing_bytes_rejected_at_final_signing() {
@@ -114,47 +148,22 @@ mod fixture_tests {
                     fixture["id"]
                 );
             }
-            request.set_sign_type(SignType::Message);
-            assert!(validated_payload(&request).is_err(), "{}", fixture["id"]);
-            // Exercise both exported UI entry points with the wrong type hint.
-            unsafe {
-                use crate::common::free::Free;
-                let ptr = &mut request as *mut _ as PtrUR;
-                let signer = app_solana::message::Message::read_exact(&mut request.get_sign_data())
-                    .ok()
-                    .and_then(|message| {
-                        message
-                            .accounts
-                            .first()
-                            .map(|account| hex::encode(&account.value))
-                    })
-                    .unwrap_or_else(|| "00".repeat(32));
-                let pubkey = cstr_core::CString::new(signer).unwrap();
-                if expected {
-                    request.set_sign_type(SignType::Transaction);
-                    for result in [
-                        solana_parse_tx(ptr),
-                        solana_parse_tx_with_pubkey(ptr, pubkey.as_ptr() as PtrString),
-                    ] {
-                        assert!(!(*(result as *const *mut DisplaySolanaTx)).is_null());
-                        let result = alloc::boxed::Box::from_raw(result);
-                        result.free();
-                    }
-                    request.set_sign_type(SignType::Message);
-                }
-                for result in [
-                    solana_parse_tx(ptr),
-                    solana_parse_tx_with_pubkey(ptr, pubkey.as_ptr() as PtrString),
-                ] {
-                    // TransactionParseResult is repr(C), with data first.
-                    assert!((*(result as *const *mut DisplaySolanaTx)).is_null());
-                    let result = alloc::boxed::Box::from_raw(result);
-                    result.free();
-                }
+            // The payload decides, not the host's type hint: the same request must be
+            // checked, parsed and signed identically with either hint.
+            let mut outcomes = alloc::vec::Vec::new();
+            for hint in [SignType::Transaction, SignType::Message] {
+                request.set_sign_type(hint);
+                let checked = validated_payload(&request).is_ok();
+                let parsed = unsafe { parse_tx_results(&mut request) };
+                let signed =
+                    unsafe { build_sign_result(&mut request as *mut _ as PtrUR, &seed).is_ok() };
+                outcomes.push((checked, parsed, signed));
             }
-            unsafe {
-                assert!(build_sign_result(&mut request as *mut _ as PtrUR, &seed).is_err());
-            }
+            assert_eq!(
+                outcomes[0], outcomes[1],
+                "type hint changed the outcome of {}",
+                fixture["id"]
+            );
             if fixture["id"] == "v1--transfer" {
                 request.set_sign_type(SignType::Transaction);
                 let mut data = request.get_sign_data();
@@ -347,25 +356,76 @@ mod fixture_tests {
                         crate::common::errors::ErrorCodes::InvalidMasterFingerprint as u32
                     );
                     crate::common::structs::free_TransactionCheckResult(checked);
-                    // Changing the host's type hint must not turn a transaction
-                    // into a message signature (or plain text into a transaction).
+                    // The host's type hint must not change what the payload is: the
+                    // bytes decide how the request is reviewed and signed.
+                    let classified = validated_payload(&request).ok();
+                    let signed = build_sign_result(ptr, &seed).is_ok();
                     request.set_sign_type(if request.get_sign_type() == SignType::Transaction {
                         SignType::Message
                     } else {
                         SignType::Transaction
                     });
-                    assert!(
-                        validated_payload(&request).is_err(),
-                        "type mismatch {}",
+                    assert_eq!(
+                        validated_payload(&request).ok(),
+                        classified,
+                        "type hint changed the classification {}",
                         fixture["id"]
                     );
-                    assert!(
-                        build_sign_result(ptr, &seed).is_err(),
-                        "sign type mismatch {}",
+                    assert_eq!(
+                        build_sign_result(ptr, &seed).is_ok(),
+                        signed,
+                        "type hint changed the signing outcome {}",
                         fixture["id"]
                     );
                 }
             }
+        }
+    }
+    #[test]
+    fn message_payload_with_transaction_hint_follows_the_payload() {
+        // Magic Eden labels its Sign-In With Solana request as a transaction. Its payload
+        // is a real offchain envelope (the vector app_solana parses in
+        // test_solana_offchain_message_is_not_treated_as_transaction), so the bytes must
+        // be reviewed and signed as a message instead of being parsed as a transaction.
+        const SIWS_PAYLOAD_HEX: &str = "ff736f6c616e61206f6666636861696e000127026d616769636564656e2e696f2077616e747320796f7520746f207369676e20696e207769746820796f757220536f6c616e61206163636f756e743a0a4841676b31344a704d514c6774367256677637634251464a5746746f3544717869343732755433444b70716b0a0a57656c636f6d6520746f204d61676963204564656e2e205369676e696e6720697320746865206f6e6c79207761792077652063616e207472756c79206b6e6f77207468617420796f752061726520746865206f776e6572206f66207468652077616c6c657420796f752061726520636f6e6e656374696e672e205369676e696e67206973206120736166652c206761732d6c657373207472616e73616374696f6e207468617420646f6573206e6f7420696e20616e79207761792067697665204d61676963204564656e207065726d697373696f6e20746f20706572666f726d20616e79207472616e73616374696f6e73207769746820796f75722077616c6c65742e0a0a5552493a2068747470733a2f2f6d616769636564656e2e696f2f6d61726b6574706c6163652f73636f6f6279647269700a56657273696f6e3a20310a4e6f6e63653a2037326131633866623062393134376165383631363130303632393330383563620a4973737565642041743a20323032362d30382d30335430373a30373a33382e3234335a0a526571756573742049443a2063313331346235622d656365382d346234662d613837392d333839346464613336346534";
+        let seed = hex::decode("5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4").unwrap();
+        let dataset: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/solana-security.json"))
+                .unwrap();
+        let fixture = dataset["fixtures"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|fixture| fixture["id"] == "transaction-security--01")
+            .expect("transaction fixture");
+        let mut decoder = ur::Decoder::default();
+        for frame in fixture["ur"].as_array().unwrap() {
+            decoder
+                .receive(&frame.as_str().unwrap().to_lowercase())
+                .unwrap();
+        }
+        let mut request = SolSignRequest::try_from(decoder.message().unwrap().unwrap()).unwrap();
+        let payload = hex::decode(SIWS_PAYLOAD_HEX).unwrap();
+        request.set_sign_type(SignType::Transaction);
+        request.set_sign_data(payload.clone());
+        assert_eq!(
+            validated_payload(&request).ok(),
+            Some(app_solana::SolanaPayloadType::Message)
+        );
+        // The message parser renders the real SIWS body, and signing follows the payload.
+        let parsed = parse_message(payload, &alloc::string::String::new()).unwrap();
+        assert!(parsed
+            .utf8_message
+            .contains("magiceden.io wants you to sign in"));
+        unsafe {
+            use crate::common::free::Free;
+            let ptr = &mut request as *mut _ as PtrUR;
+            assert!(build_sign_result(ptr, &seed).is_ok());
+            let pubkey = cstr_core::CString::new("").unwrap();
+            let rendered = solana_parse_message(ptr, pubkey.as_ptr() as PtrString);
+            assert!(!(*(rendered as *const *mut DisplaySolanaMessage)).is_null());
+            let rendered = alloc::boxed::Box::from_raw(rendered);
+            rendered.free();
         }
     }
 }
