@@ -1035,7 +1035,9 @@ fn _decode_ur<T: RegistryItem + TryFrom<Vec<u8>, Error = URError> + InferViewTyp
                 Err(error) => URParseResult::from(error),
             };
         }
-        Ok((ur::ur::Kind::SinglePart, _)) => {}
+        Ok((ur::ur::Kind::SinglePart, cbor)) => {
+            let _ = cbor;
+        }
         Err(error) => {
             return URParseResult::from(URError::UrDecodeError(error.to_string()));
         }
@@ -1433,5 +1435,26 @@ mod tron_limit_tests {
         assert!(decoder.receive(&part).is_err());
         let mut decoder = KeystoneURDecoder::from_first_part(&part).unwrap();
         assert!(decoder.receive(&other).is_err());
+    }
+}
+
+#[cfg(all(test, feature = "monero"))]
+mod monero_budget_tests {
+    use super::*;
+
+    #[test]
+    fn monero_reassembly_boundaries() {
+        let cbor = vec![0; app_monero::utils::io::MAX_REQUEST_BYTES];
+        let mut encoder = ur::Encoder::new(&cbor, 200, "xmr-txunsigned").unwrap();
+        let mut parts: Vec<String> = (0..encoder.fragment_count())
+            .map(|_| encoder.next_part().unwrap()).collect();
+        parts.reverse();
+        let mut decoder = KeystoneURDecoder::from_first_part(&parts[0]).unwrap();
+        for part in &parts[1..] { decoder.receive(part).unwrap(); }
+        assert!(decoder.complete());
+        assert_eq!(decoder.message().unwrap(), cbor);
+        let too_large = vec![0; cbor.len() + 1];
+        let mut encoder = ur::Encoder::new(&too_large, 200, "xmr-txunsigned").unwrap();
+        assert!(KeystoneURDecoder::from_first_part(&encoder.next_part().unwrap()).is_err());
     }
 }

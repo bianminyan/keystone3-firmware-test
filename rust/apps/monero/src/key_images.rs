@@ -115,13 +115,18 @@ fn calc_output_key_offset(
     Some(key_offset)
 }
 
-/// Every transaction key an output could have been derived from: the main one
-/// first, then the additional keys
-/// (`cryptonote_format_utils.cpp:406-433`).
-fn candidate_tx_keys(tx_pubkey: &[u8; 32], additional_tx_keys: &[PublicKey]) -> Vec<[u8; 32]> {
-    let mut keys = Vec::with_capacity(1 + additional_tx_keys.len());
+/// Try the main transaction key and the additional key at this output index.
+fn candidate_tx_keys(
+    tx_pubkey: &[u8; 32],
+    additional_tx_keys: &[PublicKey],
+    output_index: u64,
+) -> Vec<[u8; 32]> {
+    let mut keys = Vec::with_capacity(2);
     keys.push(*tx_pubkey);
-    for key in additional_tx_keys.iter() {
+    if let Some(key) = usize::try_from(output_index)
+        .ok()
+        .and_then(|index| additional_tx_keys.get(index))
+    {
         keys.push(key.as_bytes());
     }
     keys
@@ -138,7 +143,7 @@ fn verified_key_image_offset(
 ) -> Option<Scalar> {
     let target = PublicKey::from_bytes(pubkey).ok()?.point.decompress()?;
 
-    for key in candidate_tx_keys(tx_pubkey, additional_tx_keys).iter() {
+    for key in candidate_tx_keys(tx_pubkey, additional_tx_keys, internal_output_index).iter() {
         if let Some(offset) =
             calc_output_key_offset(keypair, key, internal_output_index, major, minor)
         {
@@ -218,7 +223,7 @@ pub fn try_to_generate_image(
     let output_public_key = PublicKey::from_bytes(output_pubkey)?;
 
     // Every candidate transaction key, the main one first.
-    let candidate_keys = candidate_tx_keys(tx_pubkey, &additional_tx_keys);
+    let candidate_keys = candidate_tx_keys(tx_pubkey, &additional_tx_keys, internal_output_index);
 
     // The account's primary address (minor 0) is always a valid candidate, even if
     // the host sent an empty subaddress index list.
@@ -294,6 +299,9 @@ pub fn generate_export_ur_data<R: RngCore + CryptoRng>(
     request_data: Vec<u8>,
     mut rng: R,
 ) -> Result<Vec<u8>> {
+    if request_data.len() > crate::utils::io::MAX_REQUEST_BYTES {
+        return Err(MoneroError::FormatError);
+    }
     let decrypted_data = decrypt_data_with_pvk(
         keypair.view.to_bytes().try_into().unwrap(),
         request_data.clone(),

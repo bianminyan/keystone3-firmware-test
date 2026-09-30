@@ -8,6 +8,9 @@
 #include "stdio.h"
 #include "account_manager.h"
 #include "se_manager.h"
+#ifdef CYPHERPUNK_VERSION
+#include "gui_monero.h"
+#endif
 
 static char *g_passwordCache = NULL;
 static char *g_newPasswordCache = NULL;
@@ -240,6 +243,9 @@ uint32_t SecretCacheGetDiceRollsLen(void)
 
 void ClearSecretCache(void)
 {
+#ifdef CYPHERPUNK_VERSION
+    GuiClearMoneroSensitiveState();
+#endif
     uint32_t len;
     g_identifier = 0;
     g_iteration = 0;

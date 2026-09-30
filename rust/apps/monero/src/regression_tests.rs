@@ -106,7 +106,7 @@ fn tx_data(payments: Vec<TxDestinationEntry>, change: TxDestinationEntry) -> TxC
         rct_config: crate::transfer::RCTConfig {
             version: 2,
             range_proof_type: crate::transfer::RangeProofType::CLSAG,
-            bp_version: crate::transfer::RctType::RCTTypeCLSAG,
+            bp_version: crate::transfer::RctType::RCTTypeNull,
         },
         dests: vec![],
         subaddr_account: 0,
@@ -507,7 +507,6 @@ fn subaddr_account_mismatch_fails_the_input_ownership_check() {
     .is_err());
 }
 
-
 #[test]
 fn destination_type_is_checked_against_the_address_string() {
     use crate::address::Address;
@@ -587,9 +586,6 @@ fn requested_payment_id_is_carried_into_the_signed_extra() {
 
     assert_eq!(*extra.last().unwrap(), 0x00);
 }
-
-
-
 
 #[test]
 fn integrated_and_subaddress_flags_together_are_rejected() {
@@ -714,7 +710,6 @@ fn signed_payment_id_must_match_the_displayed_integrated_address() {
     integrated_but_dummy.extra = nonce_field([0u8; 8]);
     assert!(validate_payment_id_binding(core::slice::from_ref(&integrated_but_dummy)).is_err());
 }
-
 
 #[test]
 fn payment_id_declared_only_in_dests_is_rejected() {
@@ -903,7 +898,6 @@ fn padding_is_counted_from_fields_not_from_zero_bytes() {
     assert_eq!(extra.len(), 44 + 3, "padding must survive signing");
     assert_eq!(&extra[extra.len() - 3..], &[0u8, 0, 0]);
 }
-
 
 #[test]
 fn each_transaction_keeps_its_own_payment_id() {
@@ -1113,8 +1107,8 @@ fn malformed_payloads_return_an_error() {
 
 #[test]
 fn change_destination_consistency() {
-    use crate::structs::Network;
     use crate::key::{KeyPair, PrivateKey};
+    use crate::structs::Network;
     use monero_wallet::SharedKeyDerivations;
     use zeroize::Zeroizing;
 
@@ -1405,15 +1399,21 @@ impl TxConstructionData {
         tx_key_pub: &EdwardsPoint,
         additional_keys_pub: &Vec<EdwardsPoint>,
     ) -> Vec<u8> {
-        self.extra(keypair, tx_key, additional_keys, tx_key_pub, additional_keys_pub)
-            .unwrap()
+        self.extra(
+            keypair,
+            tx_key,
+            additional_keys,
+            tx_key_pub,
+            additional_keys_pub,
+        )
+        .unwrap()
     }
 }
 
 #[test]
 fn preflight_wallet_validation() {
-    use crate::key::{KeyPair, PrivateKey};
     use crate::errors::MoneroError;
+    use crate::key::{KeyPair, PrivateKey};
     use crate::transfer::UnsignedTx;
     let wallet = Party::new();
     let recipient = Party::new();
@@ -1439,9 +1439,13 @@ fn preflight_wallet_validation() {
 fn preflight_envelope_validation() {
     use crate::transfer::check_unsigned;
     use crate::utils::constants::UNSIGNED_TX_PREFIX;
-    for payload in [vec![], vec![0; 8], UNSIGNED_TX_PREFIX.as_bytes().to_vec(),
-                    [UNSIGNED_TX_PREFIX.as_bytes(), &[0;71]].concat()] {
-        assert!(check_unsigned(payload, [0;32], [0;32], [0;32]).is_err());
+    for payload in [
+        vec![],
+        vec![0; 8],
+        UNSIGNED_TX_PREFIX.as_bytes().to_vec(),
+        [UNSIGNED_TX_PREFIX.as_bytes(), &[0; 71]].concat(),
+    ] {
+        assert!(check_unsigned(payload, [0; 32], [0; 32], [0; 32]).is_err());
     }
 }
 
@@ -1452,18 +1456,36 @@ fn subaddress_output_order_consistency() {
     let sender = Party::new();
     let receiver = Party::new();
     let wallet = KeyPair::new(PrivateKey::new(sender.view), PrivateKey::new(sender.spend));
-    let change = dest(wallet.get_public_sub_spend(0,1).point.decompress().unwrap(),
-                      wallet.get_public_sub_view(0,1).point.decompress().unwrap(),true,1);
-    let payment = receiver.subaddress_dest(&Scalar::from(7u64),2);
-    for change_first in [false,true] {
-        let mut data=tx_data(vec![payment.clone()],change.clone());
-        data.rct_config.bp_version=crate::transfer::RctType::RCTTypeNull;
-        if change_first {data.splitted_dsts.swap(0,1);}
-        let payment_index=if change_first {1}else{0};
-        let reference_key=PrivateKey::new(Scalar::from(123u64));
-        let first_sub=data.splitted_dsts.iter().find(|d|d.is_subaddress).unwrap();
-        let reference_public=reference_key.scalar*PublicKey::from_bytes(&first_sub.addr.spend_public_key).unwrap().point.decompress().unwrap();
-        let reference_outputs=data.outputs(&wallet,&reference_key,&vec![],&reference_public).unwrap().get_outputs();
+    let change = dest(
+        wallet
+            .get_public_sub_spend(0, 1)
+            .point
+            .decompress()
+            .unwrap(),
+        wallet.get_public_sub_view(0, 1).point.decompress().unwrap(),
+        true,
+        1,
+    );
+    let payment = receiver.subaddress_dest(&Scalar::from(7u64), 2);
+    for change_first in [false, true] {
+        let mut data = tx_data(vec![payment.clone()], change.clone());
+        data.rct_config.bp_version = crate::transfer::RctType::RCTTypeNull;
+        if change_first {
+            data.splitted_dsts.swap(0, 1);
+        }
+        let payment_index = if change_first { 1 } else { 0 };
+        let reference_key = PrivateKey::new(Scalar::from(123u64));
+        let first_sub = data.splitted_dsts.iter().find(|d| d.is_subaddress).unwrap();
+        let reference_public = reference_key.scalar
+            * PublicKey::from_bytes(&first_sub.addr.spend_public_key)
+                .unwrap()
+                .point
+                .decompress()
+                .unwrap();
+        let reference_outputs = data
+            .outputs(&wallet, &reference_key, &vec![], &reference_public)
+            .unwrap()
+            .get_outputs();
         let recover = |r: EdwardsPoint, index: usize, view: Scalar, spend: EdwardsPoint| {
             let mut b=(view*r).mul_by_cofactor().compress().to_bytes().to_vec();
             b.extend(write_varinteger(index as u64));
@@ -1480,4 +1502,399 @@ fn subaddress_output_order_consistency() {
         let change_spend=PublicKey::from_bytes(&change.addr.spend_public_key).unwrap().point.decompress().unwrap();
         assert_eq!(recover(public,ci,sender.view,change_spend),outputs[ci].key);
     }
+}
+
+#[test]
+fn change_address_index_boundaries() {
+    use crate::errors::MoneroError;
+    use crate::key::calc_subaddress_m;
+    use crate::key::{KeyPair, PrivateKey};
+    use crate::transfer::UnsignedTx;
+
+    let wallet = Party::new();
+    let recipient = Party::new();
+    let keys = KeyPair::new(PrivateKey::new(wallet.view), PrivateKey::new(wallet.spend));
+    for (major, minor) in [(0, 0), (0, 1), (1, 0)] {
+        let m =
+            Scalar::from_bytes_mod_order(calc_subaddress_m(&keys.view.to_bytes(), major, minor));
+        let change = wallet.subaddress_dest(&m, 1);
+        for indices in [vec![], vec![minor]] {
+            assert_eq!(
+                is_own_change_address(
+                    &keys.get_public_spend(),
+                    &keys.view,
+                    major,
+                    &indices,
+                    &change
+                ),
+                (major != 0 || minor != 0) && (minor == 0 || indices.contains(&minor))
+            );
+        }
+        let mut tx = tx_data(vec![recipient.standard_dest(2)], change);
+        tx.subaddr_account = major;
+        tx.subaddr_indices = vec![minor];
+        tx.sources[0].amount = 4;
+        let point = wallet.spend_point().compress().to_bytes();
+        tx.sources[0].real_out_tx_key = point;
+        tx.sources[0].outputs[0].key.dest = point;
+        tx.sources[0].outputs[0].key.mask = point;
+        let mut set = UnsignedTx::default();
+        set.txes.push(tx);
+        let result = set.validate_for_wallet(&keys.get_public_spend(), &keys.view);
+        if major == 0 && minor == 0 {
+            assert!(matches!(result, Err(MoneroError::ChangeAddressMismatch)));
+            assert!(matches!(
+                set.sign(&keys),
+                Err(MoneroError::ChangeAddressMismatch)
+            ));
+            let primary = wallet.standard_dest(1);
+            set.txes[0].change_dts = primary.clone();
+            set.txes[0].splitted_dsts[1] = primary;
+            assert!(set
+                .validate_for_wallet(&keys.get_public_spend(), &keys.view)
+                .is_ok());
+        } else {
+            assert!(result.is_ok());
+        }
+    }
+}
+
+#[test]
+fn amount_total_boundaries() {
+    let wallet = Party::new();
+    let mut tx = tx_data(vec![wallet.standard_dest(1)], wallet.standard_dest(0));
+    tx.sources[0].amount = u64::MAX;
+    assert_eq!(tx.sum_source_amounts().unwrap(), u64::MAX);
+    tx.sources.push(tx.sources[0].clone());
+    assert!(tx.sum_source_amounts().is_err());
+    assert!(tx.fee().is_err());
+    tx.splitted_dsts[0].amount = u64::MAX;
+    tx.splitted_dsts[1].amount = 1;
+    assert!(tx.sum_destination_amounts().is_err());
+}
+
+#[test]
+fn keyring_text_validation() {
+    let text = alloc::format!("{}é{}", "a".repeat(63), "a".repeat(63));
+    assert_eq!(text.len(), 128);
+    assert!(
+        crate::address::pub_keyring_to_address(crate::structs::Network::Mainnet, false, text)
+            .is_err()
+    );
+}
+
+#[test]
+fn extra_field_length_encoding() {
+    use crate::utils::io::write_varinteger;
+    let wallet = Party::new();
+    let mut tx = tx_data(vec![wallet.standard_dest(1)], wallet.standard_dest(0));
+    tx.extra = vec![2];
+    tx.extra.extend(write_varinteger(128));
+    tx.extra.extend(vec![1; 128]);
+    assert_eq!(tx.requested_extra().unwrap().nonce.unwrap().len(), 128);
+    tx.extra = vec![3, 33, 0];
+    tx.extra.extend([0; 32]);
+    assert!(tx.requested_extra().is_ok());
+    tx.extra.push(0);
+    assert_eq!(tx.requested_extra().unwrap().padding, 1);
+    tx.extra = vec![4];
+    tx.extra.extend(write_varinteger(128));
+    tx.extra.extend(vec![0; 128 * 32]);
+    tx.extra.extend([2, 1, 7]);
+    assert_eq!(tx.requested_extra().unwrap().nonce, Some(vec![7]));
+    tx.extra.pop();
+    assert!(tx.requested_extra().is_err());
+}
+
+#[test]
+fn request_discriminator_validation() {
+    use crate::outputs::ExportedTransferDetails;
+    use crate::transfer::UnsignedTx;
+    assert!(UnsignedTx::deserialize(&[2, 0, 0]).is_ok());
+    assert!(UnsignedTx::deserialize(&[3, 0, 0]).is_err());
+    assert!(UnsignedTx::deserialize(&[2, 0, 0, 0]).is_err());
+    assert!(ExportedTransferDetails::from_bytes(&[0]).is_ok());
+    assert!(ExportedTransferDetails::from_bytes(&[3, 16, 16, 0]).is_ok());
+    assert!(ExportedTransferDetails::from_bytes(&[3, 16, 16, 0, 0]).is_err());
+    assert!(ExportedTransferDetails::from_bytes(&[0, 1]).is_err());
+    assert!(ExportedTransferDetails::from_bytes(&[2]).is_err());
+    assert!(UnsignedTx::deserialize(&vec![0; crate::utils::io::MAX_REQUEST_BYTES + 1]).is_err());
+}
+
+#[test]
+fn transaction_set_total_boundaries() {
+    use crate::key::{KeyPair, PrivateKey};
+    use crate::transfer::UnsignedTx;
+    let wallet = Party::new();
+    let keys = KeyPair::new(PrivateKey::new(wallet.view), PrivateKey::new(wallet.spend));
+    let mut tx = tx_data(vec![wallet.standard_dest(1)], wallet.standard_dest(0));
+    tx.sources[0].amount = u64::MAX;
+    let point = wallet.spend_point().compress().to_bytes();
+    tx.sources[0].real_out_tx_key = point;
+    tx.sources[0].outputs[0].key.dest = point;
+    tx.sources[0].outputs[0].key.mask = point;
+    let mut set = UnsignedTx::default();
+    set.txes = vec![tx.clone()];
+    assert!(set
+        .validate_for_wallet(&keys.get_public_spend(), &keys.view)
+        .is_ok());
+    set.txes.push(tx);
+    assert!(set
+        .validate_for_wallet(&keys.get_public_spend(), &keys.view)
+        .is_err());
+    assert!(set
+        .display_info(&keys.get_public_spend(), &keys.view)
+        .is_err());
+}
+
+#[test]
+fn serialized_index_and_tag_boundaries() {
+    use crate::transfer::UnsignedTx;
+    use crate::utils::io::{write_tx_construction_data, write_varinteger};
+    let wallet = Party::new();
+    let mut tx = tx_data(vec![wallet.standard_dest(1)], wallet.standard_dest(0));
+    tx.subaddr_indices = vec![0];
+    let point = wallet.spend_point().compress().to_bytes();
+    tx.sources[0].real_out_tx_key = point;
+    tx.sources[0].outputs[0].key.dest = point;
+    tx.sources[0].outputs[0].key.mask = point;
+    let mut bytes = vec![2, 1];
+    bytes.extend(write_tx_construction_data(&tx));
+    bytes.push(0);
+    assert!(UnsignedTx::deserialize(&bytes).is_ok());
+    let mut bad_tag = bytes.clone();
+    bad_tag[4] = 3;
+    assert!(UnsignedTx::deserialize(&bad_tag).is_err());
+    bytes.truncate(bytes.len() - 2);
+    bytes.extend(write_varinteger(u32::MAX as u64 + 1));
+    bytes.push(0);
+    assert!(UnsignedTx::deserialize(&bytes).is_err());
+}
+
+#[test]
+fn integrated_payment_destination_identity() {
+    use crate::address::integrated_address_string;
+    use crate::key::{KeyPair, PrivateKey, PublicKey};
+    use crate::transfer::{validate_payment_id_binding, UnsignedTx};
+
+    let wallet = Party::new();
+    let payee = Party::new();
+    let other = Party::new();
+    let keys = KeyPair::new(PrivateKey::new(wallet.view), PrivateKey::new(wallet.spend));
+    for payment_id in [[0; 8], [0x11; 8]] {
+        let mut integrated = payee.standard_dest(2);
+        integrated.is_integrated = true;
+        integrated.original = integrated_address_string(
+            &PublicKey::new(payee.spend_point().compress()),
+            &PublicKey::new(payee.view_point().compress()),
+            &payment_id,
+        )
+        .unwrap();
+        let mut tx = tx_data(vec![integrated.clone()], wallet.standard_dest(1));
+        tx.extra = vec![2, 9, 1];
+        tx.extra.extend(payment_id);
+        tx.sources[0].amount = 4;
+        let point = wallet.spend_point().compress().to_bytes();
+        tx.sources[0].real_out_tx_key = point;
+        tx.sources[0].outputs[0].key.dest = point;
+        tx.sources[0].outputs[0].key.mask = point;
+        assert!(validate_payment_id_binding(core::slice::from_ref(&tx)).is_ok());
+        tx.splitted_dsts[0].amount = 0;
+        tx.splitted_dsts.insert(1, other.standard_dest(2));
+        let mut set = UnsignedTx::default();
+        set.txes.push(tx.clone());
+        assert!(set
+            .validate_for_wallet(&keys.get_public_spend(), &keys.view)
+            .is_err());
+        assert!(set.sign(&keys).is_err());
+        tx.splitted_dsts[1] = payee.standard_dest(2);
+        assert!(validate_payment_id_binding(core::slice::from_ref(&tx)).is_err());
+        tx.splitted_dsts[0] = integrated.clone();
+        assert!(validate_payment_id_binding(core::slice::from_ref(&tx)).is_ok());
+        tx.change_dts = integrated;
+        assert!(validate_payment_id_binding(core::slice::from_ref(&tx)).is_err());
+    }
+}
+
+#[test]
+fn display_amount_field_semantics() {
+    use crate::key::{KeyPair, PrivateKey};
+    use crate::transfer::UnsignedTx;
+    let wallet = Party::new();
+    let recipient = Party::new();
+    let keys = KeyPair::new(PrivateKey::new(wallet.view), PrivateKey::new(wallet.spend));
+    let mut tx = tx_data(
+        vec![recipient.standard_dest(2_000_000_000_000)],
+        wallet.standard_dest(1_000_000_000_000),
+    );
+    tx.sources[0].amount = 3_010_000_000_000;
+    let mut set = UnsignedTx::default();
+    set.txes.push(tx);
+    let display = set
+        .display_info(&keys.get_public_spend(), &keys.view)
+        .unwrap();
+    assert_eq!(display.input_amount, "3.01 XMR");
+    assert_eq!(display.output_amount, "3 XMR");
+    assert_eq!(display.fee, "0.01 XMR");
+}
+
+#[test]
+fn view_key_encoding_boundaries() {
+    use crate::key::PrivateKey;
+    assert!(PrivateKey::try_from_slice(&[0; 32]).is_err());
+    assert!(PrivateKey::try_from_slice(&[255; 32]).is_err());
+    assert!(PrivateKey::try_from_slice(&[1; 31]).is_err());
+    let scalar = Scalar::from(1u64).to_bytes();
+    assert_eq!(
+        PrivateKey::try_from_slice(&scalar).unwrap().to_bytes(),
+        scalar
+    );
+}
+
+#[test]
+fn envelope_length_boundaries() {
+    use crate::utils::{constants::*, decrypt_data_with_decrypt_key};
+    for magic in [
+        UNSIGNED_TX_PREFIX,
+        OUTPUT_EXPORT_MAGIC,
+        KEY_IMAGE_EXPORT_MAGIC,
+    ] {
+        for length in 0..140 {
+            let mut data = magic.as_bytes().to_vec();
+            data.extend(vec![0; length]);
+            assert!(
+                decrypt_data_with_decrypt_key([0; 32], Scalar::ONE.to_bytes(), data, magic)
+                    .is_err()
+            );
+        }
+        assert!(decrypt_data_with_decrypt_key(
+            [0; 32],
+            Scalar::ONE.to_bytes(),
+            vec![0; 256],
+            magic
+        )
+        .is_err());
+    }
+}
+
+#[test]
+fn preflight_supported_transaction_boundaries() {
+    use crate::key::PrivateKey;
+    use crate::transfer::{RctType, UnsignedTx};
+    let wallet = Party::new();
+    let view = PrivateKey::new(wallet.view);
+    let spend = PrivateKey::new(wallet.spend).get_public_key();
+    let mut set = UnsignedTx::default();
+    assert!(set.validate_for_wallet(&spend, &view).is_err());
+    let recipient = Party::new();
+    let mut tx = tx_data(vec![recipient.standard_dest(2)], wallet.standard_dest(1));
+    tx.sources[0].amount = 4;
+    let point = wallet.spend_point().compress().to_bytes();
+    tx.sources[0].real_out_tx_key = point;
+    tx.sources[0].outputs[0].key.dest = point;
+    tx.sources[0].outputs[0].key.mask = point;
+    set.txes.push(tx);
+    assert!(set.validate_for_wallet(&spend, &view).is_ok());
+    let valid = set.clone();
+    set.txes[0].rct_config.bp_version = RctType::RCTTypeCLSAG;
+    assert!(set.validate_for_wallet(&spend, &view).is_err());
+    set = valid.clone();
+    set.txes[0].splitted_dsts = vec![recipient.standard_dest(0); 17];
+    assert!(set.validate_for_wallet(&spend, &view).is_err());
+    set = valid.clone();
+    set.txes[0].sources.clear();
+    assert!(set.validate_for_wallet(&spend, &view).is_err());
+    set = valid.clone();
+    set.txes[0].splitted_dsts.clear();
+    assert!(set.validate_for_wallet(&spend, &view).is_err());
+    set = valid;
+    set.txes[0].subaddr_indices = (0..513).collect();
+    assert!(set.validate_for_wallet(&spend, &view).is_err());
+}
+
+#[test]
+fn destination_type_consistency() {
+    use crate::key::{KeyPair, PrivateKey};
+    use crate::transfer::UnsignedTx;
+    use crate::structs::Network;
+    let wallet = Party::new();
+    let recipient = Party::new();
+    let sub = recipient.subaddress_dest(&Scalar::from(7u64), 2);
+    let mut second = sub.clone();
+    second.original = second.addr.to_address(Network::Mainnet, true).to_string();
+    let keys = KeyPair::new(PrivateKey::new(wallet.view), PrivateKey::new(wallet.spend));
+    let mut tx = tx_data(vec![sub.clone(), second], wallet.standard_dest(1));
+    tx.sources[0].amount = 6;
+    let point = wallet.spend_point().compress().to_bytes();
+    tx.sources[0].real_out_tx_key = point;
+    tx.sources[0].outputs[0].key.dest = point;
+    tx.sources[0].outputs[0].key.mask = point;
+    let mut set = UnsignedTx::default();
+    set.txes.push(tx);
+    assert!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view).is_ok());
+    for first in [false, true] {
+        set.txes[0].splitted_dsts[0].is_subaddress = first;
+        set.txes[0].splitted_dsts[1].is_subaddress = !first;
+        set.txes[0].splitted_dsts[1].original.clear();
+        assert!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view).is_err());
+        assert!(set.sign(&keys).is_err());
+    }
+    set.txes[0].splitted_dsts[0] = sub.clone();
+    set.txes[0].splitted_dsts[1] = sub.clone();
+    let mut entry = sub;
+    entry.is_subaddress = false;
+    set.txes[0].dests.push(entry);
+    assert!(set.validate_destinations().is_err());
+}
+
+#[test]
+fn short_nonce_destination_consistency() {
+    use crate::key::{KeyPair, PrivateKey};
+    use crate::transfer::UnsignedTx;
+    let wallet = Party::new();
+    let first = Party::new();
+    let second = Party::new();
+    let keys = KeyPair::new(PrivateKey::new(wallet.view), PrivateKey::new(wallet.spend));
+    let mut tx = tx_data(vec![first.standard_dest(2), second.standard_dest(2)], wallet.standard_dest(1));
+    tx.sources[0].amount = 6;
+    let point = wallet.spend_point().compress().to_bytes();
+    tx.sources[0].real_out_tx_key = point;
+    tx.sources[0].outputs[0].key.dest = point;
+    tx.sources[0].outputs[0].key.mask = point;
+    let mut set = UnsignedTx::default();
+    set.txes.push(tx);
+    assert!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view).is_ok());
+    set.txes[0].extra = vec![2, 9, 1, 0, 0, 0, 0, 0, 0, 0, 0];
+    assert!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view).is_err());
+    assert!(set.sign(&keys).is_err());
+    set.txes[0].splitted_dsts[1] = first.standard_dest(2);
+    assert!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view).is_ok());
+    assert!(set.txes[0].payment_id_destination_index().is_some());
+}
+
+#[test]
+fn ring_member_identity_after_sorting() {
+    use crate::transfer::UnsignedTx;
+    use crate::utils::io::write_tx_construction_data;
+    let wallet = Party::new();
+    let mut tx = tx_data(vec![wallet.standard_dest(1)], wallet.standard_dest(0));
+    let point = wallet.spend_point().compress().to_bytes();
+    tx.sources[0].real_out_tx_key = point;
+    tx.sources[0].outputs[0].key.dest = point;
+    tx.sources[0].outputs[0].key.mask = point;
+    tx.sources[0].outputs[0].index = 20;
+    let selected = tx.sources[0].outputs[0].clone();
+    let mut other = selected.clone();
+    other.index = 10;
+    other.key.mask = wallet.view_point().compress().to_bytes();
+    tx.sources[0].outputs.push(other);
+    let mut bytes = vec![2, 1];
+    bytes.extend(write_tx_construction_data(&tx));
+    bytes.push(0);
+    let decoded = UnsignedTx::deserialize(&bytes).unwrap();
+    let source = &decoded.txes[0].sources[0];
+    assert_eq!(source.real_output, 1);
+    let restored = &source.outputs[source.real_output as usize];
+    assert_eq!(restored.index, selected.index);
+    assert_eq!(restored.key.mask, selected.key.mask);
 }

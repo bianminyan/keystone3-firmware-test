@@ -13,6 +13,13 @@ pub struct PrivateKey {
     pub scalar: Scalar,
 }
 
+impl Drop for PrivateKey {
+    fn drop(&mut self) {
+        use zeroize::Zeroize;
+        self.scalar.zeroize();
+    }
+}
+
 impl PrivateKey {
     pub fn new(scalar: Scalar) -> PrivateKey {
         PrivateKey { scalar }
@@ -28,9 +35,10 @@ impl PrivateKey {
     /// Fallible variant for data that comes from outside the crate.
     pub fn try_from_slice(bytes: &[u8]) -> Result<PrivateKey> {
         let bytes: [u8; PUBKEY_LEH] = bytes.try_into().map_err(|_| MoneroError::FormatError)?;
-        Ok(PrivateKey {
-            scalar: Scalar::from_bytes_mod_order(bytes),
-        })
+        let scalar = Option::<Scalar>::from(Scalar::from_canonical_bytes(bytes))
+            .filter(|s| *s != Scalar::ZERO)
+            .ok_or(MoneroError::InvalidPrivateViewKey)?;
+        Ok(PrivateKey { scalar })
     }
 
     pub fn to_bytes(&self) -> [u8; PUBKEY_LEH] {

@@ -7,6 +7,8 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
+pub const MAX_REQUEST_BYTES: usize = 14 * 1024;
+
 pub const MAX_TXES: usize = 256;
 pub const MAX_SOURCES: usize = 4096;
 pub const MAX_RING_SIZE: usize = 4096;
@@ -14,7 +16,7 @@ pub const MAX_DESTINATIONS: usize = 4096;
 pub const MAX_ADDITIONAL_KEYS: usize = 4096;
 pub const MAX_SELECTED_TRANSFERS: usize = 4096;
 pub const MAX_SUBADDR_INDICES: usize = 4096;
-pub const MAX_EXTRA_LEN: usize = 1 << 20;
+pub const MAX_EXTRA_LEN: usize = MAX_REQUEST_BYTES;
 pub const MAX_ADDRESS_STRING: usize = 512;
 
 pub struct Reader<'a> {

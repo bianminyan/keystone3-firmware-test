@@ -49,11 +49,14 @@ pub struct ExportedTransferDetails {
 
 impl ExportedTransferDetails {
     pub fn from_bytes(bytes: &[u8]) -> Result<ExportedTransferDetails> {
+        if bytes.len() > crate::utils::io::MAX_REQUEST_BYTES { return Err(MoneroError::FormatError); }
         use crate::utils::io::{Reader, MAX_ADDITIONAL_KEYS, MAX_DESTINATIONS};
 
         let mut reader = Reader::new(bytes);
-        let has_transfers = reader.read_varint()?;
-        if has_transfers == 0 {
+        let tuple_fields = reader.read_varint()?;
+        if tuple_fields != 0 && tuple_fields != 3 { return Err(MoneroError::FormatError); }
+        if tuple_fields == 0 {
+            if reader.remaining() != 0 { return Err(MoneroError::FormatError); }
             return Ok(ExportedTransferDetails {
                 offset: 0,
                 size: 0,
@@ -92,11 +95,12 @@ impl ExportedTransferDetails {
                 flags,
                 amount,
                 additional_tx_keys,
-                major: major as u32,
-                minor: minor as u32,
+                major: u32::try_from(major).map_err(|_| MoneroError::FormatError)?,
+                minor: u32::try_from(minor).map_err(|_| MoneroError::FormatError)?,
             });
         }
 
+        if reader.remaining() != 0 { return Err(MoneroError::FormatError); }
         Ok(ExportedTransferDetails {
             offset: value_offset,
             size: value_size as u64,
@@ -136,6 +140,7 @@ pub fn parse_display_info(
     decrypt_key: [u8; 32],
     pvk: [u8; 32],
 ) -> Result<DisplayMoneroOutput> {
+    if data.len() > crate::utils::io::MAX_REQUEST_BYTES { return Err(MoneroError::FormatError); }
     let decrypted_data =
         decrypt_data_with_decrypt_key(decrypt_key, pvk, data.to_vec(), OUTPUT_EXPORT_MAGIC)?;
     let outputs = ExportedTransferDetails::from_bytes(&decrypted_data.data)?;

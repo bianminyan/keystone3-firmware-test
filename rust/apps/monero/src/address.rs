@@ -137,8 +137,8 @@ pub fn pub_keyring_to_address(
     if pub_keyring.len() != PUBKEY_LEH * 4 {
         return Err(MoneroError::PubKeyringLengthError);
     }
-    let spend_hex = hex::decode(&pub_keyring[0..64]).map_err(|_| MoneroError::FormatError)?;
-    let view_hex = hex::decode(&pub_keyring[64..128]).map_err(|_| MoneroError::FormatError)?;
+    let spend_hex = hex::decode(&pub_keyring.as_bytes()[0..64]).map_err(|_| MoneroError::FormatError)?;
+    let view_hex = hex::decode(&pub_keyring.as_bytes()[64..128]).map_err(|_| MoneroError::FormatError)?;
     let pub_spend_key = PublicKey::from_bytes(&spend_hex)?;
     let pub_view_key = PublicKey::from_bytes(&view_hex)?;
 

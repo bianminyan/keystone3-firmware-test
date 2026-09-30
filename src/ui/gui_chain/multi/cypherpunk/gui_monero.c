@@ -186,14 +186,20 @@ UREncodeResult *GuiGetMoneroSignedTransactionQrCodeData(void)
     return encodeResult;
 }
 
+void GuiClearMoneroSensitiveState(void)
+{
+    memset_s(g_decryptKey, sizeof(g_decryptKey), 0, sizeof(g_decryptKey));
+    monero_clear_transaction_state();
+}
+
 void FreeMoneroMemory(void)
 {
+    GuiClearMoneroSensitiveState();
 #ifndef COMPILE_SIMULATOR
     CloseAllHintBox();
     CHECK_FREE_UR_RESULT(g_urResult, false);
     CHECK_FREE_UR_RESULT(g_urMultiResult, true);
     CHECK_FREE_PARSE_RESULT(g_parseResult);
-    memset(g_decryptKey, 0, sizeof(g_decryptKey));
     g_requestType = OutputRequest;
 #endif
 }
@@ -272,7 +278,7 @@ void GuiShowXmrTransactionOverview(lv_obj_t *parent, void *totalData)
     lv_obj_align(label, LV_ALIGN_DEFAULT, 24, 16);
     lv_obj_set_style_text_opa(label, 144, LV_PART_MAIN);
 
-    label = GuiCreateScrollLittleTitleLabel(amountContainer, data->input_amount, 360);
+    label = GuiCreateScrollLittleTitleLabel(amountContainer, data->output_amount, 360);
     lv_obj_set_style_text_color(label, lv_color_hex(16090890), LV_PART_MAIN);
     lv_obj_align(label, LV_ALIGN_DEFAULT, 24, 50);
 
@@ -374,9 +380,9 @@ void GuiShowXmrTransactionDetails(lv_obj_t *parent, void *totalData)
     GuiSetTransactionContainerStyle(amountContainer);
     lv_coord_t y = 16;
     y = AddXmrDetailLabel(amountContainer, "Input Value", y, true, false);
-    y = AddXmrDetailLabel(amountContainer, data->output_amount, y + 6, false, false);
-    y = AddXmrDetailLabel(amountContainer, "Output Value", y + 16, true, false);
     y = AddXmrDetailLabel(amountContainer, data->input_amount, y + 6, false, false);
+    y = AddXmrDetailLabel(amountContainer, "Output Value", y + 16, true, false);
+    y = AddXmrDetailLabel(amountContainer, data->output_amount, y + 6, false, false);
     y = AddXmrDetailLabel(amountContainer, "Fee", y + 16, true, false);
     y = AddXmrDetailLabel(amountContainer, data->fee, y + 6, false, false);
     lv_obj_set_height(amountContainer, y + 16);

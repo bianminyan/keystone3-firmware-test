@@ -269,24 +269,28 @@ impl InnerOutputs {
 }
 
 impl TxConstructionData {
-    pub fn sum_source_amounts(&self) -> u64 {
+    pub fn sum_source_amounts(&self) -> Result<u64> {
         self.sources
             .iter()
             .map(|source| source.amount)
-            .fold(0u64, |acc, amount| acc.saturating_add(amount))
+            .try_fold(0u64, |acc, amount| {
+                acc.checked_add(amount).ok_or(MoneroError::FormatError)
+            })
     }
 
     /// Sum of the amounts of the outputs being created.
-    pub fn sum_destination_amounts(&self) -> u64 {
+    pub fn sum_destination_amounts(&self) -> Result<u64> {
         self.splitted_dsts
             .iter()
             .map(|dest| dest.amount)
-            .fold(0u64, |acc, amount| acc.saturating_add(amount))
+            .try_fold(0u64, |acc, amount| {
+                acc.checked_add(amount).ok_or(MoneroError::FormatError)
+            })
     }
 
     pub fn fee(&self) -> Result<u64> {
-        self.sum_source_amounts()
-            .checked_sub(self.sum_destination_amounts())
+        self.sum_source_amounts()?
+            .checked_sub(self.sum_destination_amounts()?)
             .ok_or(MoneroError::FormatError)
     }
 
@@ -481,6 +485,9 @@ fn own_change_addresses(
         minors.push(0);
     }
     for minor in minors {
+        if subaddr_account == 0 && minor == 0 {
+            continue;
+        }
         let m = Scalar::from_bytes_mod_order(calc_subaddress_m(
             &private_view.to_bytes(),
             subaddr_account,
@@ -568,8 +575,12 @@ pub fn validate_payment_id_binding(txes: &[TxConstructionData]) -> Result<()> {
             Some(_) => return Err(MoneroError::FormatError),
         };
 
+        if requested.nonce.is_some() && tx.payment_id_destination_index().is_none() {
+            return Err(MoneroError::FormatError);
+        }
+
         let change_addr = tx.change_dts.addr;
-        let mut displayed: Option<[u8; 8]> = None;
+        let mut displayed: Option<(AccountPublicAddress, [u8; 8])> = None;
         let mut unique_payments: Vec<AccountPublicAddress> = vec![];
 
         for entry in tx.splitted_dsts.iter() {
@@ -582,11 +593,15 @@ pub fn validate_payment_id_binding(txes: &[TxConstructionData]) -> Result<()> {
                 continue;
             }
 
+            if entry.amount == 0 || entry.addr == change_addr {
+                return Err(MoneroError::FormatError);
+            }
             let (_, _, payment_id) =
                 parse_integrated_address(&entry.original).ok_or(MoneroError::FormatError)?;
+            let identity = (entry.addr, payment_id);
             match displayed {
-                Some(existing) if existing != payment_id => return Err(MoneroError::FormatError),
-                _ => displayed = Some(payment_id),
+                Some(existing) if existing != identity => return Err(MoneroError::FormatError),
+                _ => displayed = Some(identity),
             }
         }
 
@@ -596,8 +611,10 @@ pub fn validate_payment_id_binding(txes: &[TxConstructionData]) -> Result<()> {
             // can only be bound to one destination - upstream refuses the
             // transaction otherwise ("Destinations have to have exactly one output
             // to support encrypted payment ids").
-            Some(displayed_payment_id) => {
-                if signed != displayed_payment_id || unique_payments.len() != 1 {
+            Some((displayed_address, displayed_payment_id)) => {
+                if signed != displayed_payment_id
+                    || unique_payments.as_slice() != [displayed_address]
+                {
                     return Err(MoneroError::FormatError);
                 }
             }
@@ -638,7 +655,15 @@ pub fn validate_destinations(txes: &[TxConstructionData]) -> Result<()> {
         entries.extend(tx.splitted_dsts.iter());
         entries.push(&tx.change_dts);
 
+        let mut address_types: Vec<(AccountPublicAddress, bool)> = vec![];
         for entry in entries {
+            if let Some((_, is_subaddress)) = address_types.iter().find(|(addr, _)| *addr == entry.addr) {
+                if *is_subaddress != entry.is_subaddress {
+                    return Err(MoneroError::FormatError);
+                }
+            } else {
+                address_types.push((entry.addr, entry.is_subaddress));
+            }
             // An integrated address is a standard address plus a payment ID; there is
             // no integrated subaddress. With both flags set the screen would show an
             // integrated address while the signing path used the subaddress
@@ -747,13 +772,61 @@ impl UnsignedTx {
     }
 
     /// Checks available before showing a confirmation page; no spend secret required.
-    pub fn validate_for_wallet(&self, public_spend: &PublicKey, private_view: &PrivateKey) -> Result<()> {
+    pub fn validate_for_wallet(
+        &self,
+        public_spend: &PublicKey,
+        private_view: &PrivateKey,
+    ) -> Result<()> {
         self.validate_all()?;
+        if self.txes.is_empty() {
+            return Err(MoneroError::FormatError);
+        }
+        let mut candidate_work = 0usize;
+        let mut totals = (0u64, 0u64, 0u64);
         for tx in &self.txes {
-            tx.fee()?;
-            if tx.has_change_output() && !is_own_change_address(
-                public_spend, private_view, tx.subaddr_account, &tx.subaddr_indices, &tx.change_dts,
-            ) {
+            if tx.sources.is_empty()
+                || tx.splitted_dsts.is_empty()
+                || tx.splitted_dsts.len() > 16
+                || !matches!(
+                    tx.rct_config.bp_version,
+                    RctType::RCTTypeFull | RctType::RCTTypeNull | RctType::RCTTypeBulletproof2
+                )
+            {
+                return Err(MoneroError::FormatError);
+            }
+            candidate_work = candidate_work
+                .checked_add(
+                    tx.sources
+                        .len()
+                        .checked_mul(tx.subaddr_indices.len().max(1))
+                        .and_then(|n| n.checked_mul(2))
+                        .ok_or(MoneroError::FormatError)?,
+                )
+                .ok_or(MoneroError::FormatError)?;
+            if candidate_work > 1024 {
+                return Err(MoneroError::FormatError);
+            }
+            totals.0 = totals
+                .0
+                .checked_add(tx.sum_source_amounts()?)
+                .ok_or(MoneroError::FormatError)?;
+            totals.1 = totals
+                .1
+                .checked_add(tx.sum_destination_amounts()?)
+                .ok_or(MoneroError::FormatError)?;
+            totals.2 = totals
+                .2
+                .checked_add(tx.fee()?)
+                .ok_or(MoneroError::FormatError)?;
+            if tx.has_change_output()
+                && !is_own_change_address(
+                    public_spend,
+                    private_view,
+                    tx.subaddr_account,
+                    &tx.subaddr_indices,
+                    &tx.change_dts,
+                )
+            {
                 return Err(MoneroError::ChangeAddressMismatch);
             }
         }
@@ -826,28 +899,37 @@ impl UnsignedTx {
         let mut input_amount = 0u64;
         let mut fee = 0u64;
         for tx in self.txes.iter() {
-            output_amount = output_amount.saturating_add(tx.sum_destination_amounts());
-            input_amount = input_amount.saturating_add(tx.sum_source_amounts());
-            fee = fee.saturating_add(tx.fee()?);
+            output_amount = output_amount
+                .checked_add(tx.sum_destination_amounts()?)
+                .ok_or(MoneroError::FormatError)?;
+            input_amount = input_amount
+                .checked_add(tx.sum_source_amounts()?)
+                .ok_or(MoneroError::FormatError)?;
+            fee = fee.checked_add(tx.fee()?).ok_or(MoneroError::FormatError)?;
         }
 
         Ok(DisplayTransactionInfo {
             inputs,
             outputs,
-            input_amount: fmt_monero_amount(output_amount),
-            output_amount: fmt_monero_amount(input_amount),
+            input_amount: fmt_monero_amount(input_amount),
+            output_amount: fmt_monero_amount(output_amount),
             fee: fmt_monero_amount(fee),
         })
     }
 
     pub fn deserialize(bytes: &[u8]) -> Result<UnsignedTx> {
+        if bytes.len() > crate::utils::io::MAX_REQUEST_BYTES {
+            return Err(MoneroError::FormatError);
+        }
         use crate::utils::io::{
             Reader, MAX_ADDITIONAL_KEYS, MAX_DESTINATIONS, MAX_EXTRA_LEN, MAX_RING_SIZE,
             MAX_SELECTED_TRANSFERS, MAX_SOURCES, MAX_SUBADDR_INDICES, MAX_TXES,
         };
 
         let mut reader = Reader::new(bytes);
-        let _version = reader.read_varint()?; // should be 0x02
+        if reader.read_varint()? != 2 {
+            return Err(MoneroError::FormatError);
+        }
         let txes_len = reader.read_count(MAX_TXES)?;
         let mut txes = Vec::with_capacity(txes_len.min(4));
 
@@ -858,7 +940,9 @@ impl UnsignedTx {
                 let outputs_len = reader.read_count(MAX_RING_SIZE)?;
                 let mut outputs = Vec::with_capacity(outputs_len.min(32));
                 for _ in 0..outputs_len {
-                    let _tag = reader.read_varint()?; // should be 0x02
+                    if reader.read_varint()? != 2 {
+                        return Err(MoneroError::FormatError);
+                    }
                     let index = reader.read_varint()?;
                     let dest = reader.read_array32()?;
                     let mask = reader.read_array32()?;
@@ -890,7 +974,7 @@ impl UnsignedTx {
                     return Err(MoneroError::FormatError);
                 }
 
-                let selected = outputs[real_output as usize].key.dest;
+                let selected_index = outputs[real_output as usize].index;
                 outputs.sort_by_key(|output| output.index);
                 for pair in outputs.windows(2) {
                     if pair[0].index == pair[1].index {
@@ -899,7 +983,7 @@ impl UnsignedTx {
                 }
                 let real_output = match outputs
                     .iter()
-                    .position(|output| output.key.dest == selected)
+                    .position(|output| output.index == selected_index)
                 {
                     Some(position) => position as u64,
                     None => return Err(MoneroError::FormatError),
@@ -928,7 +1012,9 @@ impl UnsignedTx {
             let selected_transfers_len = reader.read_count(MAX_SELECTED_TRANSFERS)?;
             let mut selected_transfers = Vec::with_capacity(selected_transfers_len.min(32));
             for _ in 0..selected_transfers_len {
-                selected_transfers.push(reader.read_varint()? as usize);
+                selected_transfers.push(
+                    usize::try_from(reader.read_varint()?).map_err(|_| MoneroError::FormatError)?,
+                );
             }
 
             let extra = reader.read_vec_u8(MAX_EXTRA_LEN)?;
@@ -957,7 +1043,7 @@ impl UnsignedTx {
                 _ => return Err(MoneroError::FormatError),
             };
             let rct_config = RCTConfig {
-                version: version as u32,
+                version: u32::try_from(version).map_err(|_| MoneroError::FormatError)?,
                 range_proof_type,
                 bp_version,
             };
@@ -972,7 +1058,9 @@ impl UnsignedTx {
             let subaddr_indices_len = reader.read_count(MAX_SUBADDR_INDICES)?;
             let mut subaddr_indices = Vec::with_capacity(subaddr_indices_len.min(32));
             for _ in 0..subaddr_indices_len {
-                subaddr_indices.push(reader.read_varint()? as u32);
+                subaddr_indices.push(
+                    u32::try_from(reader.read_varint()?).map_err(|_| MoneroError::FormatError)?,
+                );
             }
 
             txes.push(TxConstructionData {
@@ -1207,17 +1295,28 @@ pub fn check_unsigned(
     pvk: [u8; 32],
     public_spend: [u8; 32],
 ) -> Result<UnsignedTx> {
-    let envelope = request_data.strip_prefix(UNSIGNED_TX_PREFIX.as_bytes()).unwrap_or(&request_data);
+    if request_data.len() > crate::utils::io::MAX_REQUEST_BYTES {
+        return Err(MoneroError::FormatError);
+    }
+    let decrypt_key = zeroize::Zeroizing::new(decrypt_key);
+    let pvk = zeroize::Zeroizing::new(pvk);
+    let envelope = request_data
+        .strip_prefix(UNSIGNED_TX_PREFIX.as_bytes())
+        .ok_or(MoneroError::FormatError)?;
     if request_data.len() < UNSIGNED_TX_PREFIX.len() || envelope.len() < 72 {
         return Err(MoneroError::FormatError);
     }
-    let decrypted_data = decrypt_data_with_decrypt_key(decrypt_key, pvk, request_data, UNSIGNED_TX_PREFIX)
-        .map_err(|e| match e {
-            MoneroError::DecryptInvalidSignature => MoneroError::MismatchedMfp,
-            _ => e,
-        })?;
+    let decrypted_data =
+        decrypt_data_with_decrypt_key(*decrypt_key, *pvk, request_data, UNSIGNED_TX_PREFIX)
+            .map_err(|e| match e {
+                MoneroError::DecryptInvalidSignature => MoneroError::MismatchedMfp,
+                _ => e,
+            })?;
     let unsigned_tx = UnsignedTx::deserialize(&decrypted_data.data)?;
-    unsigned_tx.validate_for_wallet(&PublicKey::from_bytes(&public_spend)?, &PrivateKey::from_bytes(&pvk))?;
+    unsigned_tx.validate_for_wallet(
+        &PublicKey::from_bytes(&public_spend)?,
+        &PrivateKey::from_bytes(pvk.as_ref()),
+    )?;
     Ok(unsigned_tx)
 }
 
@@ -1227,11 +1326,19 @@ pub fn parse_unsigned(
     pvk: [u8; 32],
     public_spend: [u8; 32],
 ) -> Result<DisplayTransactionInfo> {
-    let unsigned_tx = check_unsigned(request_data, decrypt_key, pvk, public_spend)?;
-    unsigned_tx.display_info(&PublicKey::from_bytes(&public_spend)?, &PrivateKey::from_bytes(&pvk))
+    let decrypt_key = zeroize::Zeroizing::new(decrypt_key);
+    let pvk = zeroize::Zeroizing::new(pvk);
+    let unsigned_tx = check_unsigned(request_data, *decrypt_key, *pvk, public_spend)?;
+    unsigned_tx.display_info(
+        &PublicKey::from_bytes(&public_spend)?,
+        &PrivateKey::from_bytes(pvk.as_ref()),
+    )
 }
 
 pub fn sign_tx(keypair: KeyPair, request_data: Vec<u8>) -> Result<Vec<u8>> {
+    if request_data.len() > crate::utils::io::MAX_REQUEST_BYTES {
+        return Err(MoneroError::FormatError);
+    }
     let decrypted_data = match decrypt_data_with_pvk(
         keypair.view.to_bytes(),
         request_data.clone(),

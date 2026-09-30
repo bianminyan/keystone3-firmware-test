@@ -183,39 +183,23 @@ impl TxConstructionData {
 
     pub(crate) fn requested_extra(&self) -> Result<RequestedExtra> {
         let mut res = RequestedExtra::default();
-        let mut offset = 0usize;
-
-        // Advance by `delta` bytes, rejecting anything that leaves the buffer.
-        fn advance(offset: usize, delta: usize, len: usize) -> Result<usize> {
-            let next = offset.checked_add(delta).ok_or(MoneroError::FormatError)?;
-            if next > len {
-                return Err(MoneroError::FormatError);
-            }
-            Ok(next)
-        }
-
-        while offset < self.extra.len() {
-            let tag = self.extra[offset];
-            offset += 1;
-
-            match tag {
-                // On the wire every `0x00` byte is one padding field.
+        use crate::utils::io::Reader;
+        let mut reader = Reader::new(&self.extra);
+        while reader.remaining() > 0 {
+            match reader.read_u8()? {
                 0x00 => res.padding += 1,
-                0x01 => offset = advance(offset, 32, self.extra.len())?,
-                0x02 => {
-                    let len = *self.extra.get(offset).ok_or(MoneroError::FormatError)? as usize;
-                    offset = advance(offset, 1, self.extra.len())?;
-                    let end = advance(offset, len, self.extra.len())?;
-                    res.nonce = Some(self.extra[offset..end].to_vec());
-                    offset = end;
-                }
+                0x01 => { reader.read_bytes(32)?; }
+                0x02 => { res.nonce = Some(reader.read_vec_u8(255)?); }
                 0x03 => {
-                    let len = *self.extra.get(offset).ok_or(MoneroError::FormatError)? as usize;
-                    offset = advance(offset, 1 + len + 32, self.extra.len())?;
+                    let length = reader.read_count(self.extra.len())?;
+                    let mut field = Reader::new(reader.read_bytes(length)?);
+                    field.read_varint()?;
+                    field.read_bytes(32)?;
+                    if field.remaining() != 0 { return Err(MoneroError::FormatError); }
                 }
                 0x04 => {
-                    let count = *self.extra.get(offset).ok_or(MoneroError::FormatError)? as usize;
-                    offset = advance(offset, 1 + 32 * count, self.extra.len())?;
+                    let count = reader.read_count(self.extra.len() / 32)?;
+                    reader.read_bytes(count.checked_mul(32).ok_or(MoneroError::FormatError)?)?;
                 }
                 _ => return Err(MoneroError::FormatError),
             }
@@ -224,33 +208,23 @@ impl TxConstructionData {
         Ok(res)
     }
 
-    fn destination_payment_id_xor(&self, payment_id_xors: &[[u8; 8]]) -> Option<[u8; 8]> {
+    pub(crate) fn payment_id_destination_index(&self) -> Option<usize> {
         let change_addr = self.change_dts.addr;
         let mut unique: Vec<AccountPublicAddress> = vec![];
-        let mut chosen: Option<[u8; 8]> = None;
-
-        for (dst, xor) in self.splitted_dsts.iter().zip(payment_id_xors) {
+        let mut chosen = None;
+        for (i, dst) in self.splitted_dsts.iter().enumerate() {
             if dst.amount == 0 || dst.addr == change_addr || unique.contains(&dst.addr) {
                 continue;
             }
             unique.push(dst.addr);
-            if unique.len() > 1 {
-                return None;
-            }
-            chosen = Some(*xor);
+            if unique.len() > 1 { return None; }
+            chosen = Some(i);
         }
+        chosen.or_else(|| self.splitted_dsts.iter().position(|dst| dst.addr == change_addr))
+    }
 
-        if chosen.is_none() {
-            // No non-change destination: fall back to the change address.
-            return self
-                .splitted_dsts
-                .iter()
-                .zip(payment_id_xors)
-                .find(|(dst, _)| dst.addr == change_addr)
-                .map(|(_, xor)| *xor);
-        }
-
-        chosen
+    fn destination_payment_id_xor(&self, payment_id_xors: &[[u8; 8]]) -> Option<[u8; 8]> {
+        self.payment_id_destination_index().and_then(|index| payment_id_xors.get(index).copied())
     }
 
     pub fn extra(
