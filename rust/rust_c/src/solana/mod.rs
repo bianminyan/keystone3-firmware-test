@@ -100,6 +100,12 @@ mod fixture_tests {
                 let check = alloc::boxed::Box::from_raw(solana_check(ptr, mfp.as_mut_ptr(), 4));
                 assert_eq!(*(&*check as *const TransactionCheckResult as *const u32), 0, "{path}");
                 check.free();
+                for (public_key, expected) in [(signer, true), ([9; 32], false), ([8; 32], false)] {
+                    let key = cstr_core::CString::new(hex::encode(public_key)).unwrap();
+                    let checked = solana_check_tx_signer(ptr, key.as_ptr() as PtrString);
+                    assert_eq!(*(checked as *const u32) == 0, expected, "{path}");
+                    crate::common::structs::free_TransactionCheckResult(checked);
+                }
                 assert_eq!(parse_tx_results(&mut request), 2, "{path}");
                 assert!(build_sign_result(ptr, &seed).is_ok(), "{path}");
                 let transaction = request.get_sign_data();
@@ -558,6 +564,32 @@ pub unsafe extern "C" fn solana_check(
         return TransactionCheckResult::from(RustCError::MasterFingerprintMismatch).c_ptr();
     };
     TransactionCheckResult::from(RustCError::InvalidMasterFingerprint).c_ptr()
+}
+
+/// Check the cached device key before opening transaction review. Custom paths
+/// without a cached key retain the seed-derived signer check at final signing.
+#[no_mangle]
+pub unsafe extern "C" fn solana_check_tx_signer(
+    ptr: PtrUR,
+    pubkey: PtrString,
+) -> PtrT<TransactionCheckResult> {
+    let request = extract_ptr_with_type!(ptr, SolSignRequest);
+    if pubkey.is_null() {
+        return TransactionCheckResult::from(SolanaError::InvalidData(
+            "missing Solana signer public key".to_string(),
+        )).c_ptr();
+    }
+    let signer: [u8; 32] = match hex::decode(recover_c_char(pubkey))
+        .ok().and_then(|value| value.try_into().ok()) {
+        Some(value) => value,
+        None => return TransactionCheckResult::from(SolanaError::InvalidData(
+            "invalid Solana signer public key".to_string(),
+        )).c_ptr(),
+    };
+    match app_solana::validate_tx_signer(&mut request.get_sign_data(), &signer) {
+        Ok(()) => TransactionCheckResult::new().c_ptr(),
+        Err(error) => TransactionCheckResult::from(error).c_ptr(),
+    }
 }
 
 #[no_mangle]

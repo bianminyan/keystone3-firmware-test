@@ -105,7 +105,18 @@ PtrT_TransactionCheckResult GuiGetSolCheckResult(void)
     uint8_t mfp[4];
     void *data = g_isMulti ? g_urMultiResult->data : g_urResult->data;
     GetMasterFingerPrint(mfp);
-    return solana_check(data,  mfp, sizeof(mfp));
+    PtrT_TransactionCheckResult result = solana_check(data, mfp, sizeof(mfp));
+    if (result == NULL || result->error_code != 0 || g_viewType != SolanaTx) {
+        return result;
+    }
+    char *path = sol_get_path(data);
+    ChainType pubkeyIndex = CheckSolPathSupport(path);
+    free_ptr_string(path);
+    if (pubkeyIndex == XPUB_TYPE_NUM) {
+        return result;
+    }
+    free_TransactionCheckResult(result);
+    return solana_check_tx_signer(data, GetCurrentAccountPublicKey(pubkeyIndex));
 }
 
 bool GetSolMessageFromExist(void *indata, void *param)
