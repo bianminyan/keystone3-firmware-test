@@ -1624,6 +1624,7 @@ static void GuiShowSolTxInstructionsOverview(lv_obj_t *parent, PtrT_DisplaySolan
         lv_obj_t *container = GuiCreateContainerWithParent(parent, SOL_COMPONENT_WIDTH, LV_SIZE_CONTENT);
         lv_obj_align(container, LV_ALIGN_DEFAULT, 0, containerYOffset);
         SetContainerDefaultStyle(container);
+        lv_obj_set_style_pad_bottom(container, 16, LV_PART_MAIN);
 
         lv_obj_t *orderLabel = lv_label_create(container);
         char order[BUFFER_SIZE_16] = {0};
