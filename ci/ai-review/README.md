@@ -36,10 +36,11 @@ Review step 使用 `ecr#v2.3.0` 插件在执行脚本前登录 `eu-west-1` 的 E
 
 当前 agent 是 Unclustered，沿用基础设施已有的 AWS KMS + `shush` 方式，不使用 Buildkite 原生 `secrets:` 字段。现有加密脚本使用 `eu-west-1` 的 `alias/keystone`。本地身份需要该 key 的加密权限，agent 的 task role 需要解密权限；实际权限以 KMS 返回为准。
 
-明文文件为 `ci/ai-review/secrets.env`，格式如下。保留字段名，把占位值替换为实际 key。已有文件只需补上 `GITHUB_TOKEN`，保留原来的模型 key：
+明文文件为 `ci/ai-review/secrets.env`，格式如下。保留字段名，把占位值替换为实际 key。保留 `GITHUB_TOKEN`，只需填写实际使用的模型 provider 对应的 key；不用的模型 key 可以省略：
 
 ```dotenv
 OPENAI_APIKEY=xxxx
+OPENROUTER_API_KEY=xxxx
 GITHUB_TOKEN=xxxx
 ```
 
@@ -58,7 +59,7 @@ AWS_DEFAULT_REGION=eu-west-1 \
 mv ci/ai-review/secrets.env.encrypted.tmp ci/ai-review/secrets.env.encrypted
 ```
 
-密文必须由 `shush encrypt` 生成，不能直接换成 `aws kms encrypt` 的输出。把 `secrets.env.encrypted` 和 CI 代码一起提交并合入 `master`（默认的 `REVIEW_CI_BRANCH`）。Buildkite 从该分支读取脚本和密文；本地直接运行 `review-pr.sh` 时读取脚本同目录的密文。无需设置 `KMS_ENCRYPTED_OCR_CONFIG` 或 `KMS_ENCRYPTED_GITHUB_TOKEN`，也无需新增 agent hook。若已按旧方案配置 GitHub token 的 hook，移除该段及其密文变量；同时删除旧的明文 token 环境变量，才能使用文件中的新 token。无需为本次修改重建 agent 或 review 镜像。
+密文必须由 `shush encrypt` 生成，不能直接换成 `aws kms encrypt` 的输出。把 `secrets.env.encrypted` 和 CI 代码一起提交并合入 `master`（默认的 `REVIEW_CI_BRANCH`）。Buildkite 从该分支读取脚本和密文；本地直接运行 `review-pr.sh` 时读取脚本同目录的密文。无需设置 `KMS_ENCRYPTED_OCR_CONFIG` 或 `KMS_ENCRYPTED_GITHUB_TOKEN`，也无需新增 agent hook。若已按旧方案配置 GitHub token 的 hook，移除该段及其密文变量；同时删除旧的明文 token 环境变量，才能使用文件中的新 token。仅轮换凭据无需重建 agent 或 review 镜像；首次启用内置 OpenRouter provider 时需要发布升级到 OCR 1.12.11 的 review 镜像。
 
 提交和推送后，在对应分支的新提交上新建手动构建，沿用成功预检的设置，并设置：
 
@@ -72,7 +73,19 @@ REVIEW_PASS=both
 REVIEW_MODE=chained
 ```
 
-脚本在读取 PR metadata 之前按需解密文件，每次运行最多解密一次。`GITHUB_TOKEN` 导出为 agent 侧的 `GH_TOKEN`，供读取 PR 和回写 review 使用；`OPENAI_APIKEY` 组装成 `OCR_CONFIG_JSON` 传给 review 容器，GitHub token 不传入容器。脚本不把明文写入日志或宿主机产物。空行和 `#` 注释可用，值可以加成对的单引号或双引号；文件按文本解析，不进行 Shell 展开或命令执行。容器入口校验 JSON 并创建内部配置文件。该 key 文件的模型配置支持 `openai` 和 `openai-responses` provider；本次 GPT 配置使用 `openai-responses`，自定义 endpoint 或其他 provider 可通过完整 OCR 配置传入。
+脚本在读取 PR metadata 之前按需解密文件，每次运行最多解密一次。`GITHUB_TOKEN` 导出为 agent 侧的 `GH_TOKEN`，供读取 PR 和回写 review 使用；选中 provider 的模型 key 组装成 `OCR_CONFIG_JSON` 传给 review 容器，GitHub token 和其他 provider 的 key 不传入容器。脚本不把明文写入日志或宿主机产物。空行和 `#` 注释可用，值可以加成对的单引号或双引号；文件按文本解析，不进行 Shell 展开或命令执行。容器入口校验 JSON 并创建内部配置文件。`openai` 和 `openai-responses` 读取 `OPENAI_APIKEY`，`openrouter` 读取 `OPENROUTER_API_KEY`。自定义 endpoint 或其他 provider 可通过完整 OCR 配置传入。
+
+使用 OpenRouter 时，在上述加密文件中加入 `OPENROUTER_API_KEY`，重新加密并提交。Buildkite 设置：
+
+```text
+REVIEW_PROVIDER=openrouter
+REVIEW_MODEL=<OpenRouter model ID>
+REVIEW_EFFORT=medium
+REVIEW_PASS=both
+REVIEW_MODE=chained
+```
+
+将模型占位值替换为 OpenRouter 中可用的完整模型 ID（含供应商前缀）。OCR 1.12.11 内置 `openrouter` provider，使用 OpenAI Chat Completions 协议和 `https://openrouter.ai/api/v1`；CI 生成 `providers.openrouter` 配置，不需要填写 `custom_providers` 或改审查规则。这里只选择模型，不新增模型推理强度参数。
 
 `REVIEW_MODEL` 同时写入所选 provider 的 `model` 和 `models`。OCR 会用内置模型列表加上 `models` 校验 `--model`；只提供 API key 会使未收录的新模型在请求 API 前报错。显式登记模型解决的是 OCR 本地校验，API 端的模型可用性仍由服务端决定。推理参数使用 provider 默认值，`REVIEW_EFFORT=medium` 控制 OCR 的审查力度。
 

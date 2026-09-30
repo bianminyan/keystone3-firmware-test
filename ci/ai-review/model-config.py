@@ -4,6 +4,13 @@ import json
 import sys
 
 
+PROVIDER_KEYS = {
+    'openai': 'OPENAI_APIKEY',
+    'openai-responses': 'OPENAI_APIKEY',
+    'openrouter': 'OPENROUTER_API_KEY',
+}
+
+
 def read_secret(key, lines):
     secret = None
     for number, raw in enumerate(lines, 1):
@@ -28,15 +35,16 @@ def read_secret(key, lines):
 
 
 def model_config(provider, model, lines):
-    if provider not in ('openai', 'openai-responses'):
+    key = PROVIDER_KEYS.get(provider)
+    if key is None:
         raise ValueError(
             f'Unsupported REVIEW_PROVIDER: {ascii(provider)}. '
-            'The OPENAI_APIKEY file supports openai and openai-responses. '
+            f'Supported providers: {", ".join(PROVIDER_KEYS)}. '
             'For other providers, use OCR_CONFIG_JSON or OCR_CONFIG_FILE.'
         )
     if not model.strip():
         raise ValueError('Model is required.')
-    api_key = read_secret('OPENAI_APIKEY', lines)
+    api_key = read_secret(key, lines)
     # OCR validates --model against its built-in list plus this models list.
     return {'providers': {provider: {'api_key': api_key, 'model': model, 'models': [model]}}}
 

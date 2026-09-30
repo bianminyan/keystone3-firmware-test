@@ -2,7 +2,7 @@ env:
   REVIEW_CI_BRANCH: "${REVIEW_CI_BRANCH:-master}"
   REVIEW_REPOSITORY: "${REVIEW_REPOSITORY:-KeystoneHQ/keystone3-firmware-internal}"
   REVIEW_PROVIDER: "${REVIEW_PROVIDER:-openai-responses}"
-  REVIEW_MODEL: "${REVIEW_MODEL:-gpt-5.6-sol}"
+  REVIEW_MODEL: "${REVIEW_MODEL:-gpt-6.1-sol}"
   REVIEW_EFFORT: "${REVIEW_EFFORT:-medium}"
   REVIEW_PASS: "${REVIEW_PASS:-both}"
   REVIEW_MODE: "${REVIEW_MODE:-chained}"
