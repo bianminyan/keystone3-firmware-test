@@ -11,7 +11,15 @@ env:
 steps:
   - label: ":mag: OCR review (shadow)"
     key: ai-review-shadow
-    if: 'build.pull_request.id != null || build.env("REVIEW_PR") != null'
+    if: |
+      (build.pull_request.id != null || build.env("REVIEW_PR") != null) &&
+      (
+        build.source != "webhook" ||
+        (
+          build.source_event == "pull_request" &&
+          (build.source_action == "opened" || build.source_action == "ready_for_review")
+        )
+      )
     agents:
       queue: "keystone-staging:build"
     plugins:

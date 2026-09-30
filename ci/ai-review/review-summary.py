@@ -45,7 +45,7 @@ def summarize(folder, code, preview, failure):
         publish_line = f'GitHub review: `{publish_status}`.'
         if publish.get('review_url'):
             publish_line += f' [Open review]({publish["review_url"]}).'
-        elif publish.get('reason'):
+        if publish.get('reason'):
             publish_line += ' ' + str(publish['reason'])
         lines += [publish_line, '']
     if code:

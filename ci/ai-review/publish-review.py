@@ -188,14 +188,49 @@ def location(finding):
     return path
 
 
-def render_review_body(active, general, inline_count, run_url, review_marker):
+def review_metadata(run_folder, report):
+    run_path = run_folder / 'review' / 'run.json'
+    run = read_object(run_path) if run_path.is_file() else {}
+    usage = report.get('tokens')
+    if not isinstance(usage, dict):
+        usage = {}
+    metadata = {
+        key: scrub(run[key]) if isinstance(run.get(key), str) and run[key] else None
+        for key in ('provider', 'model')
+    }
+    # The combined report already totals all passes. Do not sum them again.
+    metadata['tokens'] = {
+        key: usage[key] if type(usage.get(key)) is int and usage[key] >= 0 else None
+        for key in ('input_tokens', 'output_tokens', 'total_tokens',
+                    'cache_read_tokens', 'cache_write_tokens')
+    }
+    return metadata
+
+
+def token_count(value):
+    return f'{value:,}' if value is not None else 'not recorded'
+
+
+def render_review_body(active, general, inline_count, run_url, review_marker, metadata):
     blockers = sum(item.get('classification') == 'blocker' for item in active)
+    usage = metadata['tokens']
     lines = [
         '## AI code review',
         '',
         f'Found {len(active)} issue(s), including {blockers} blocker(s). '
         f'{inline_count} finding(s) are attached to code lines.',
+        '',
+        f'Model: `{metadata["model"] or "not recorded"}`. '
+        f'Provider: `{metadata["provider"] or "not recorded"}`.',
+        f'Tokens reported by OCR (all passes): **{token_count(usage["total_tokens"])} total** '
+        f'({token_count(usage["input_tokens"])} input, {token_count(usage["output_tokens"])} output).',
     ]
+    cache = []
+    for key, label in (('cache_read_tokens', 'Cache read'), ('cache_write_tokens', 'Cache write')):
+        if usage[key] is not None:
+            cache.append(f'{label}: {token_count(usage[key])}')
+    if cache:
+        lines += ['; '.join(cache) + '. Cache counts are not added again to the total.']
     if general:
         lines += ['', 'These findings could not be attached safely to the current diff:', '']
         for finding in general:
@@ -246,12 +281,13 @@ def prepare(repository_root, run_folder):
         path, line = anchor
         inline.append({'path': path, 'line': line, 'side': 'RIGHT', 'body': finding_text(finding)})
 
+    metadata = review_metadata(run_folder, report)
     review_marker = marker(repository, number, head)
     body = render_review_body(
-        active, general, len(inline), scrub(os.environ.get('BUILDKITE_BUILD_URL')), review_marker,
+        active, general, len(inline), scrub(os.environ.get('BUILDKITE_BUILD_URL')), review_marker, metadata,
     )
     payload = {'commit_id': head, 'event': 'COMMENT', 'body': body, 'comments': inline}
-    return snapshot, active, general, review_marker, payload
+    return snapshot, active, general, review_marker, payload, metadata
 
 
 def main():
@@ -263,9 +299,10 @@ def main():
 
     run_folder = arguments.run_folder.resolve()
     result_path = run_folder / 'publish.json'
-    snapshot, active, general, review_marker, payload = prepare(
+    snapshot, active, general, review_marker, payload, metadata = prepare(
         arguments.repository_root.resolve(), run_folder,
     )
+    run_url = scrub(os.environ.get('BUILDKITE_BUILD_URL'))
     result = {
         'status': 'prepared' if arguments.dry_run else 'pending',
         'repository': snapshot['repository'],
@@ -274,7 +311,10 @@ def main():
         'active_findings': len(active),
         'inline_findings': len(payload['comments']),
         'summary_findings': len(general),
+        **metadata,
     }
+    if run_url:
+        result['build_url'] = run_url
     if arguments.dry_run:
         result['payload'] = payload
         write_result(result_path, result)
@@ -305,16 +345,22 @@ def main():
         return
 
     for review in list_reviews(token, encoded_repository, snapshot['number']):
-        if review_marker in (review.get('body') or ''):
-            result.update({
-                'status': 'skipped',
-                'reason': 'A review for this head commit already exists.',
-                'review_id': review.get('id'),
-                'review_url': review.get('html_url'),
-            })
-            write_result(result_path, result)
-            print('Skipped GitHub review: this head commit was already published.')
-            return
+        body = review.get('body') or ''
+        if review_marker not in body:
+            continue
+        # The existing build link also identifies reviews posted by older scripts.
+        if run_url and f'[Open the Buildkite run]({run_url})' not in body:
+            continue
+        scope = 'build' if run_url else 'head commit'
+        result.update({
+            'status': 'skipped',
+            'reason': f'A review for this {scope} already exists.',
+            'review_id': review.get('id'),
+            'review_url': review.get('html_url'),
+        })
+        write_result(result_path, result)
+        print(f'Skipped GitHub review: this {scope} was already published.')
+        return
 
     try:
         response = api_request(token, 'POST', pull_path + '/reviews', payload)
@@ -322,7 +368,7 @@ def main():
         if not payload['comments'] or 'returned 422:' not in str(first_error):
             raise
         fallback_body = render_review_body(
-            active, active, 0, scrub(os.environ.get('BUILDKITE_BUILD_URL')), review_marker,
+            active, active, 0, run_url, review_marker, metadata,
         )
         fallback_payload = {
             'commit_id': snapshot['head_sha'],

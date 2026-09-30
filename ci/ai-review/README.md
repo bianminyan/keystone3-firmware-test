@@ -89,16 +89,33 @@ PR webhook 会 checkout PR 的提交，pipeline 的默认分支不会替代 PR c
 1. 将本次 CI 修改随 `ai-review` 分支合并到 `master`。将 Buildkite pipeline 的默认分支也改为 `master`，用于后续手动构建。
 2. 在 Buildkite pipeline 的 **Settings → Steps** 中，将 bootstrap 的 command 替换为 [`../.buildkite/ai-review-bootstrap.sh`](../.buildkite/ai-review-bootstrap.sh) 的完整内容。不能只填写 `bash ci/.buildkite/ai-review-bootstrap.sh`：PR 分支可能连这个文件也没有。保留 `queue=keystone-staging:build`。
 3. 删除旧的 `REVIEW_CI_REVISION`。自动构建不要设置固定的 `REVIEW_PR`、`REVIEW_BASE`、`REVIEW_HEAD` 或 `REVIEW_PR_JSON`；PR 编号来自 webhook。手动构建仍可单独设置 `REVIEW_PR`。
-4. 在 **Settings → GitHub** 中启用 **Build when pull request is opened or updated**、**Build when pull request is reopened** 和 **Build when pull request becomes ready for review**。关闭 **Build branches**、**Build tags**、**Allow builds from third-party forked repositories** 和 **Skip when pull request has existing build for commit and branch**。保留 **Skip when pull request is closed or merged**。
-5. 新建 PR，或向已有 PR 推送一次新提交。确认生成的 build 带有正确的 PR 编号，加载 CI 后完成 review，并在 PR 上出现 review 结果。
+4. 在 **Settings → GitHub** 中启用 **Build when pull request is opened or updated** 和 **Build when pull request becomes ready for review**。关闭 **Build branches**、**Build tags**、**Build when pull request is reopened**、**Allow builds from third-party forked repositories** 和 **Skip when pull request has existing build for commit and branch**。保留 **Skip when pull request is closed or merged**。
+5. 在同一页面启用 **Filter builds using a conditional**，填写下面的条件。Buildkite 将 opened 和 updated 放在同一个开关中，必须配合事件过滤才能保留新建 PR、排除后续 push。
+6. 新建 PR，或将 draft PR 转为 ready。确认自动完成 review。随后向 PR 推送新提交，确认不再自动审查。
 
-这些事件由 Buildkite 已有的 GitHub webhook 处理，无需添加 GitHub Actions workflow，也无需在 GitHub 中新增 Buildkite API token。仓库内的 step 条件只允许 PR build，或显式提供 `REVIEW_PR` 的手动 build；无 PR 的普通分支构建在 bootstrap 就会退出。当前也会审查 draft PR；转为 ready 或重新打开同一 head 时可以再次运行，但 publisher 会跳过该 head 已发布的 review。
+```text
+build.source_event == "pull_request" &&
+(
+  build.source_action == "opened" ||
+  build.source_action == "ready_for_review"
+)
+```
+
+自动审查仅响应 PR 新建（包括 draft）和转为 ready；push、synchronize、reopened 和评论事件不自动审查。后续需要复审时，在 Buildkite 选择 **New Build**，branch 设为 `master`、commit 设为 `HEAD`，并为这次 build 设置 `REVIEW_PR=108`（替换成目标 PR 编号）。手动构建使用当前 PR 的 base/head，继续沿用 `medium`、`both`、`chained`。
+
+这些事件由 Buildkite 已有的 GitHub webhook 处理，无需添加 GitHub Actions workflow，也无需在 GitHub 中新增 Buildkite API token。页面条件在创建 webhook build 前过滤事件；YAML 也限制 review step 的事件。`review-pr.sh` 在读取凭据和启动模型之前再检查事件，让仍使用旧 YAML 的 PR 也能跳过 push。只更新代码而未保存页面条件时，push 仍可能产生一个跳过审查的 build，但不会调用模型。手动构建不受 webhook 事件过滤影响。
+
+同一 head 转为 ready 或手动新建 build 时可以再次审查并发布。只有同一个 build 对同一 PR/head 的重复发布会被跳过。
 
 仅修改仓库文件不会更新 Buildkite 页面中保存的 bootstrap command 或 GitHub 开关；需要在页面保存一次。之后每次运行自动获取 `REVIEW_CI_BRANCH` 的最新 CI 文件。触发机制见 [Buildkite GitHub 文档](https://buildkite.com/docs/pipelines/source-control/github)。
 
 YAML 为自动触发提供以下默认配置：`openai-responses`、`gpt-5.6-sol`、`medium`、`both`、`chained`，并开启回写。第二轮 blocker 审查接收第一轮 bug findings；如果加入 findings 后 background 超限，就省略 findings。通过 Buildkite 手动创建 build 时，可以传入同名变量覆盖这些值；pipeline upload 会把最终值写入 review step。
 
-完整审查成功后，脚本使用 `COMMENT` 类型提交一个 GitHub review，不会 approve 或 request changes。能确认属于当前 diff 的位置会成为行内评论，其余 findings 会放在 review body。发布前会重新读取 PR：如果 PR 已关闭或 head 在模型运行期间发生变化，就跳过旧结果。review body 带有 repo、PR 和 head marker，同一个 head 重试时不会重复发布。发布结果写入 `publish.json`，并显示在 Buildkite annotation 中。
+完整审查成功后，脚本使用 `COMMENT` 类型提交一个 GitHub review，不会 approve 或 request changes。能确认属于当前 diff 的位置会成为行内评论，其余 findings 会放在 review body。正文包含实际 provider、model 和本次所有审查轮次的输入、输出、总 token 数；缓存用量单独展示，不重复加到总数。模型信息读取 `review/run.json`，token 数直接读取汇总 `review/report.json` 的 `tokens`，缺失时显示 `not recorded`，不用当前环境变量猜测，也不把缺失记成 0。行内评论被 GitHub 拒绝而退回正文发布时，仍保留这些信息。
+
+发布前会重新读取 PR：如果 PR 已关闭或 head 在模型运行期间发生变化，就跳过旧结果。去重匹配 repo、PR、head marker 和完整 `BUILDKITE_BUILD_URL`：同一个 build 重试不会重复发布，新的 build 可以在相同 head 上发布新的审查结果，适用于修复后复审和换模型复测。已有旧 review 中的 Buildkite 链接同样参与匹配。直接在本地发布、未设置 `BUILDKITE_BUILD_URL` 时，保留按 PR/head 去重；从历史 build 的产物补发时，应设置原 build 的 URL。
+
+发布结果及模型/token 信息写入 `publish.json`。Buildkite annotation 同时显示发布状态、review 链接和跳过原因。
 
 当前仍是 shadow 阶段：Buildkite check 和 GitHub review 都不设为 required，也不决定是否允许合并。
 
@@ -126,4 +143,4 @@ bash ci/ai-review/review-pr.sh
 
 ## 当前边界
 
-2026-09-29：Build #42 已跑通两轮审查、KMS 凭据解密和 GitHub review 回写（PR #110，最终保留 0 项 finding）。本次补上从 CI 分支加载入口的流程，用于不含 CI 文件的 PR 分支；页面 bootstrap 更新后仍需验证一次真实 PR 自动构建。行内定位还需用包含保留 findings 的实际 PR 验证。当前结果仍只用于 shadow 对比，不接管合并门禁。
+2026-09-30：Build #42 已跑通两轮审查、KMS 凭据解密和 GitHub review 回写；Build #52 已确认自动构建使用 PR #108 的 base/head，并从 master 加载 CI 脚本。本次将自动审查限制为 opened / ready_for_review，事件过滤合入 master 并保存页面设置后需验证一次。当前结果仍只用于 shadow 对比，不接管合并门禁。

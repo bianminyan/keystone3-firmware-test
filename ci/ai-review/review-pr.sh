@@ -3,6 +3,19 @@
 set +x # Credentials must not appear in CI command traces.
 set -Eeuo pipefail
 
+# PR branches may still use an older YAML without the event filter.
+# Skip before reading secrets or starting a model request.
+if [[ "${BUILDKITE_SOURCE:-}" == webhook ]]; then
+  case "${BUILDKITE_GITHUB_EVENT:-}:${BUILDKITE_GITHUB_ACTION:-}" in
+    pull_request:opened|pull_request:ready_for_review) ;;
+    *)
+      printf 'Skip automatic review: GitHub event=%s action=%s.\n' \
+        "${BUILDKITE_GITHUB_EVENT:-unknown}" "${BUILDKITE_GITHUB_ACTION:-none}"
+      exit 0
+      ;;
+  esac
+fi
+
 REVIEW_IMAGE=${REVIEW_IMAGE:-623147552995.dkr.ecr.eu-west-1.amazonaws.com/code-review-agent-image:latest}
 REVIEW_PLATFORM=${REVIEW_PLATFORM:-linux/amd64}
 
