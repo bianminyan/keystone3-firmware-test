@@ -57,6 +57,7 @@ LV_IMG_DECLARE(imgConfirmSlider);
 LV_IMG_DECLARE(imgDenySign);
 LV_IMG_DECLARE(imgScan);
 LV_IMG_DECLARE(imgScan48);
+LV_IMG_DECLARE(imgVerifyAddress);
 LV_IMG_DECLARE(imgLTCorner);
 LV_IMG_DECLARE(imgUncheckCircle);
 LV_IMG_DECLARE(imgSkip);

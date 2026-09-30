@@ -177,5 +177,89 @@ int main(void) {
 ''')
 
 
+class ZcashScanViewTypeFilterTest(unittest.TestCase):
+    """A filtered entry (Receive > Verify Unified Address) accepts only its own QR type."""
+
+    def compile_and_run(self, harness):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / 'filter.c'
+            binary = Path(tmp) / 'filter'
+            source.write_text(harness)
+            subprocess.run(['cc', '-std=gnu11', str(source), '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
+    def test_filter_is_cleared_and_enforced(self):
+        source = (ROOT / 'src/ui/gui_widgets/gui_scan_widgets.c').read_text()
+        start = source.index('void GuiScanInit(void *param, uint16_t len)')
+        init_function = source[start:source.index('\n}\n', start) + 3]
+        helper_start = source.index('#if defined(BTC_ONLY) || defined(CYPHERPUNK_VERSION)')
+        helper_end = source.index('#endif', helper_start) + len('#endif')
+        helper = source[helper_start:helper_end] + '\n'
+        guard_start = source.index('        g_qrcodeViewType = urViewType.viewType;')
+        guard = source[guard_start:source.index('        if (g_qrcodeViewType == ZcashAddressCheck) {',
+                                                guard_start)] + '#endif\n'
+        self.compile_and_run(r'''
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#define CYPHERPUNK_VERSION 1
+#define NUMBER_OF_ARRAYS(array) (sizeof(array) / sizeof((array)[0]))
+#define ERR_INVALID_QRCODE 7
+typedef enum { BtcSignRequest = 9, ZcashAddressCheck = 42 } ViewType;
+typedef struct { ViewType viewType; } UrViewType_t;
+typedef struct { int unused; } PageWidget_t;
+static ViewType g_viewTypeFilter[2];
+static ViewType g_qrcodeViewType;
+static UrViewType_t urViewType;
+static PageWidget_t *g_pageWidget;
+static int errors, accepted;
+static PageWidget_t *CreatePageWidget(void) { static PageWidget_t page; return &page; }
+static void DestroyPageWidget(PageWidget_t *page) { (void)page; }
+static void GuiScanNavBarInit(void) {}
+static void ThrowError(int32_t code) { assert(code == ERR_INVALID_QRCODE); errors++; }
+static int memcpy_s(void *dest, size_t size, const void *src, size_t count) {
+    assert(count <= size);
+    memcpy(dest, src, count);
+    return 0;
+}
+''' + helper + init_function + r'''
+static void scan_guard(ViewType viewType) {
+    accepted = 0;
+    urViewType.viewType = viewType;
+''' + guard + r'''
+    accepted = 1;
+}
+int main(void) {
+    /* A scan opened without a filter must not inherit the previous one. */
+    g_viewTypeFilter[0] = BtcSignRequest;
+    g_viewTypeFilter[1] = BtcSignRequest;
+    GuiScanInit(NULL, 0);
+    assert(g_viewTypeFilter[0] == (ViewType)0xFF && g_viewTypeFilter[1] == (ViewType)0xFF);
+    scan_guard(BtcSignRequest);
+    assert(accepted && errors == 0);
+
+    /* Callers that pass a single entry must not leave a stale second entry. */
+    g_viewTypeFilter[0] = BtcSignRequest;
+    g_viewTypeFilter[1] = BtcSignRequest;
+    const ViewType single = ZcashAddressCheck;
+    GuiScanInit((void *)&single, sizeof(single));
+    assert(g_viewTypeFilter[0] == ZcashAddressCheck);
+    assert(g_viewTypeFilter[1] == (ViewType)0xFF);
+
+    /* The Zcash entry accepts the address payload ... */
+    errors = 0;
+    scan_guard(ZcashAddressCheck);
+    assert(accepted && errors == 0);
+
+    /* ... and rejects every other QR type without starting another flow. */
+    scan_guard(BtcSignRequest);
+    assert(!accepted && errors == 1);
+    return 0;
+}
+''')
+
+
 if __name__ == '__main__':
     unittest.main()

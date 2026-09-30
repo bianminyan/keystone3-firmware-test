@@ -93,6 +93,9 @@ static void GuiStandardReceiveGotoTile(StandardReceiveTile tile);
 static void GuiCreateQrCodeWidget(lv_obj_t *parent);
 static void GuiCreateSwitchAddressWidget(lv_obj_t *parent);
 static void GuiCreateSwitchAddressButtons(lv_obj_t *parent);
+#ifdef CYPHERPUNK_VERSION
+static void OpenZcashVerifyHandler(lv_event_t *e);
+#endif
 
 static void RefreshQrCode(void);
 static void RefreshSwitchAccount(void);
@@ -502,6 +505,16 @@ static void GuiCreateMoreWidgets(lv_obj_t *parent)
     lv_obj_add_event_cb(lv_obj_get_child(g_standardReceiveWidgets.moreCont, 0), CloseHintBoxHandler, LV_EVENT_CLICKED, &g_standardReceiveWidgets.moreCont);
     cont = g_standardReceiveWidgets.moreCont;
 
+#ifdef CYPHERPUNK_VERSION
+    if (g_chainCard == HOME_WALLET_CARD_ZEC && IsZcashSupportedForCurrentMnemonic()) {
+        // Same row layout as the BTC receive page's more menu.
+        btn = GuiCreateSelectButton(cont, _("zcash_verify_entry"), &imgVerifyAddress,
+                                    OpenZcashVerifyHandler, NULL, true);
+        lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, 120 + 572);
+        return;
+    }
+#endif
+
     btn = lv_btn_create(cont);
     lv_obj_set_size(btn, 456, 84);
     lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, 120 + 572);
@@ -518,6 +531,7 @@ static void GuiCreateMoreWidgets(lv_obj_t *parent)
 
 static void GuiStandardReceiveGotoTile(StandardReceiveTile tile)
 {
+    GUI_DEL_OBJ(g_standardReceiveWidgets.moreCont)
     g_StandardReceiveTileNow = tile;
     GuiStandardReceiveRefresh();
     lv_obj_set_tile_id(g_standardReceiveWidgets.tileView, g_StandardReceiveTileNow, 0, LV_ANIM_OFF);
@@ -541,6 +555,17 @@ static uint16_t GetAddrYExtend(void)
 #endif
     return 0;
 }
+
+#ifdef CYPHERPUNK_VERSION
+// Zcash Unified Addresses rotate, so the receive page links to the scanner that
+// checks whether a scanned address belongs to this wallet's Account 0.
+static void OpenZcashVerifyHandler(lv_event_t *e)
+{
+    // The entry lives in the more menu's bottom sheet; close it before switching.
+    GUI_DEL_OBJ(g_standardReceiveWidgets.moreCont)
+    GuiFrameOpenView(&g_zcashVerifyView);
+}
+#endif
 
 static void GuiCreateQrCodeWidget(lv_obj_t *parent)
 {
@@ -892,7 +917,12 @@ static bool IsAccountSwitchable()
 
 static bool HasMoreBtn()
 {
+#ifdef CYPHERPUNK_VERSION
+    // Zcash puts the address verification entry in the more menu, like BTC does.
+    return g_chainCard == HOME_WALLET_CARD_ZEC && IsZcashSupportedForCurrentMnemonic();
+#else
     return false;
+#endif
 }
 
 static void SwitchAddressHandler(lv_event_t *e)

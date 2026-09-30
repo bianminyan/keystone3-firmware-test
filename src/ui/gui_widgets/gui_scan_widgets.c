@@ -39,9 +39,7 @@ static void ThrowError(int32_t errorCode);
 static void GuiScanStart();
 static void GuiScanResumeAfterError();
 
-#ifdef BTC_ONLY
-static lv_obj_t *g_noticeWindow;
-
+#if defined(BTC_ONLY) || defined(CYPHERPUNK_VERSION)
 static bool IsViewTypeSupported(ViewType viewType, ViewType *viewTypeFilter, size_t filterSize)
 {
     for (size_t i = 0; i < filterSize; i++) {
@@ -53,6 +51,10 @@ static bool IsViewTypeSupported(ViewType viewType, ViewType *viewTypeFilter, siz
 }
 #endif
 
+#ifdef BTC_ONLY
+static lv_obj_t *g_noticeWindow;
+#endif
+
 #ifdef CYPHERPUNK_VERSION
 #define IsSlip39WalletNotSupported(viewType) (viewType == CHAIN_XMR)
 #endif
@@ -61,9 +63,31 @@ static PageWidget_t *g_pageWidget;
 static lv_obj_t *g_scanErrorHintBox = NULL;
 static ViewType g_qrcodeViewType;
 static uint8_t g_chainType = CHAIN_BUTT;
-static ViewType g_viewTypeFilter[2];
+// Entries default to unfiltered: a result can also be delivered to the home view
+// after this view is gone, and 0 would look like a filter nobody asked for.
+static ViewType g_viewTypeFilter[2] = {0xFF, 0xFF};
 
 #ifdef CYPHERPUNK_VERSION
+static void OpenZcashVerifyAboutHandler(lv_event_t *e)
+{
+    GuiQRCodeHintBoxOpen(_("zcash_verify_about_link"), _("zcash_verify_about_title"),
+                         _("zcash_verify_about_link"));
+}
+
+// Only a fully verified address may claim success; a partially verifiable one is
+// reported as not fully verified, everything else as not verified.
+static const char *ZcashVerifyTitle(ZcashAddressVerification result)
+{
+    switch (result) {
+    case ZcashAddressOwned:
+        return _("zcash_verify_title_owned");
+    case ZcashAddressUnsupported:
+        return _("zcash_verify_title_not_fully");
+    default:
+        return _("zcash_verify_title_not_verified");
+    }
+}
+
 static void GuiScanShowZcashAddress(const char *address)
 {
     if (g_pageWidget == NULL) {
@@ -100,10 +124,11 @@ static void GuiScanShowZcashAddress(const char *address)
     lv_obj_t *cont = g_pageWidget->contentZone;
     lv_obj_add_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(cont, LV_DIR_VER);
-    lv_obj_set_style_pad_all(cont, 24, LV_PART_MAIN);
+    lv_obj_set_style_pad_hor(cont, 36, LV_PART_MAIN);
+    lv_obj_set_style_pad_ver(cont, 24, LV_PART_MAIN);
     lv_obj_set_style_pad_row(cont, 24, LV_PART_MAIN);
     lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
-    lv_obj_t *label = GuiCreateLittleTitleLabel(cont, _("zcash_verify_title"));
+    lv_obj_t *label = GuiCreateLittleTitleLabel(cont, ZcashVerifyTitle(result));
     lv_obj_set_width(label, 408);
     label = GuiCreateIllustrateLabel(cont, message);
     lv_obj_set_width(label, 408);
@@ -111,18 +136,29 @@ static void GuiScanShowZcashAddress(const char *address)
     label = GuiCreateTextLabel(cont, address == NULL ? "" : address);
     lv_obj_set_width(label, 408);
     lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    // Same Learn More entry as the scanner's explanation page.
+    lv_obj_t *learnMore = GuiCreateContainerWithParent(cont, 144, 30);
+    lv_obj_add_flag(learnMore, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_opa(learnMore, LV_OPA_0, LV_PART_MAIN);
+    lv_obj_add_event_cb(learnMore, OpenZcashVerifyAboutHandler, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *learnLabel = GuiCreateIllustrateLabel(learnMore, _("learn_more"));
+    lv_obj_set_style_text_color(learnLabel, BLUE_GREEN_COLOR, LV_PART_MAIN);
+    lv_obj_t *learnImg = GuiCreateImg(learnMore, &imgQrcodeTurquoise);
+    lv_obj_align_to(learnImg, learnLabel, LV_ALIGN_TOP_RIGHT, 36, 3);
     // LVGL copies the address before the UI message is released.
 }
 #endif
 
 void GuiScanInit(void *param, uint16_t len)
 {
-    if (param == NULL) {
-        for (int i = 0; i < NUMBER_OF_ARRAYS(g_viewTypeFilter); i++) {
-            g_viewTypeFilter[i] = 0xFF;
-        }
-    } else {
-        memcpy_s(g_viewTypeFilter, sizeof(g_viewTypeFilter), param, len);
+    // Callers may pass fewer entries than the array holds; clear the whole array
+    // first so a filter left over from an earlier scan cannot widen this one.
+    for (int i = 0; i < NUMBER_OF_ARRAYS(g_viewTypeFilter); i++) {
+        g_viewTypeFilter[i] = 0xFF;
+    }
+    if (param != NULL) {
+        uint16_t copyLen = len > (uint16_t)sizeof(g_viewTypeFilter) ? (uint16_t)sizeof(g_viewTypeFilter) : len;
+        memcpy_s(g_viewTypeFilter, sizeof(g_viewTypeFilter), param, copyLen);
         for (int i = 0; i < NUMBER_OF_ARRAYS(g_viewTypeFilter); i++) {
             printf("g_viewTypeFilter %d = %d\n", i, g_viewTypeFilter[i]);
         }
@@ -137,6 +173,12 @@ void GuiScanInit(void *param, uint16_t len)
 
 void GuiScanDeInit()
 {
+    // The filter belongs to this scan session only. A result decoded just before the
+    // page closed is delivered to the home view afterwards, and it must not be judged
+    // against the filter of the entry the user has already left.
+    for (int i = 0; i < NUMBER_OF_ARRAYS(g_viewTypeFilter); i++) {
+        g_viewTypeFilter[i] = 0xFF;
+    }
     if (g_pageWidget != NULL) {
         DestroyPageWidget(g_pageWidget);
         g_pageWidget = NULL;
@@ -160,6 +202,13 @@ void GuiScanResult(bool result, void *param)
         UrViewType_t urViewType = *(UrViewType_t *)param;
         g_qrcodeViewType = urViewType.viewType;
 #ifdef CYPHERPUNK_VERSION
+        // A filtered entry (e.g. Zcash address verification) only accepts the QR
+        // types it asked for; anything else must not start another flow.
+        if (g_viewTypeFilter[0] != 0xFF &&
+                !IsViewTypeSupported(g_qrcodeViewType, g_viewTypeFilter, NUMBER_OF_ARRAYS(g_viewTypeFilter))) {
+            ThrowError(ERR_INVALID_QRCODE);
+            return;
+        }
         if (g_qrcodeViewType == ZcashAddressCheck) {
             GuiScanShowZcashAddress(((const ZcashAddressScanResult_t *)param)->address);
             return;

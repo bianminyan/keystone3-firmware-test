@@ -226,6 +226,7 @@ extern GUI_VIEW g_deriveContextHashRequestView;
 extern GUI_VIEW g_ethBatchTxView;
 #ifdef CYPHERPUNK_VERSION
 extern GUI_VIEW g_zcashBatchView;
+extern GUI_VIEW g_zcashVerifyView;
 #endif
 #endif
 extern GUI_VIEW g_checkDeleteWalletView;
