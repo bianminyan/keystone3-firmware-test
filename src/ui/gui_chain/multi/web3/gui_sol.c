@@ -1640,9 +1640,18 @@ static void GuiShowSolTxInstructionsOverview(lv_obj_t *parent, PtrT_DisplaySolan
             0,
             10);
 
-        lv_obj_t *data_label = GuiCreateContainerWithParent(container, SOL_COMPONENT_CONTENT_WIDTH, 220);
-        lv_obj_set_style_bg_opa(data_label, LV_OPA_TRANSP, LV_PART_MAIN);
-        GuiShowPagedMessageText(data_label, overview_instructions->data[i].data, true, NULL, NULL);
+        const char *instructionData = overview_instructions->data[i].data;
+        lv_obj_t *data_label;
+        if (instructionData == NULL || strlen(instructionData) <= 512) {
+            data_label = GuiCreateIllustrateLabel(container, instructionData == NULL ? "" : instructionData);
+            lv_obj_set_width(data_label, SOL_COMPONENT_CONTENT_WIDTH);
+            lv_label_set_long_mode(data_label, LV_LABEL_LONG_WRAP);
+            lv_obj_set_height(data_label, LV_SIZE_CONTENT);
+        } else {
+            data_label = GuiCreateContainerWithParent(container, SOL_COMPONENT_CONTENT_WIDTH, 220);
+            lv_obj_set_style_bg_opa(data_label, LV_OPA_TRANSP, LV_PART_MAIN);
+            GuiShowPagedMessageText(data_label, instructionData, true, NULL, NULL);
+        }
         lv_obj_align_to(data_label, dataTitle, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 8);
 
         lv_obj_t *programTitle = GuiCreateIllustrateLabel(container, _("solana_program_address"));
