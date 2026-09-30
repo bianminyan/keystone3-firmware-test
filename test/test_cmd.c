@@ -1009,6 +1009,26 @@ static void MigrationPrintArReceiveFromPublicKey(uint8_t accountIndex, const cha
     free_simple_response_c_char(address);
 }
 
+static void MigrationPrintArStorageDerivedReceive(uint8_t accountIndex, const char *publicKey)
+{
+    if (publicKey == NULL || publicKey[0] == '\0') {
+        printf("MigrationArStorageDerivedReceive=0,accountIndex=%d,status=no_ar_pubkey\r\n", accountIndex);
+        return;
+    }
+    SimpleResponse_c_char *address = arweave_get_address((char *)publicKey);
+    if (address == NULL || address->error_code != SUCCESS_CODE || address->data == NULL || address->data[0] == '\0') {
+        int32_t ret = address == NULL ? ERR_GENERAL_FAIL : address->error_code;
+        printf("MigrationArStorageDerivedReceive=%d,accountIndex=%d,status=address_error\r\n", ret, accountIndex);
+        if (address != NULL) {
+            free_simple_response_c_char(address);
+        }
+        return;
+    }
+    printf("MigrationArStorageDerivedReceive=0,accountIndex=%d,status=address\r\n", accountIndex);
+    printf("MigrationArStorageDerivedReceiveAddress=%s\r\n", address->data);
+    free_simple_response_c_char(address);
+}
+
 static SimpleResponse_c_char *MigrationGenerateArPublicKeyFromStoredRsa(void)
 {
     Rsa_primes_t *primes = FlashReadRsaPrimes();
@@ -1092,7 +1112,8 @@ static void MigrationPrintArStorageDebug(uint8_t accountIndex)
     }
 
     printf("MigrationArStoragePublicKey=0\r\n");
-    MigrationPrintArReceiveFromPublicKey(accountIndex, publicKey->data);
+    printf("MigrationArStorageDerivedNote=storage_only_not_ui_public_info\r\n");
+    MigrationPrintArStorageDerivedReceive(accountIndex, publicKey->data);
     free_simple_response_c_char(publicKey);
     printf("MigrationArStorageDone=1\r\n");
 }
