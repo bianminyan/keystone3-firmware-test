@@ -253,3 +253,7 @@ fixtures 使用公开 abandon 测试助记词，仅用于测试；CI 不依赖�
 最近一次代码验证（2026-09-20，rebase origin/master 后）：90 项 app_solana 测试、4 项 SOL FFI 测试通过；C 语法及差异检查通过。翻译与字体重新生成无额外差异。未完成本轮真机或模拟器视觉验证，不据此声称 UI 已全面验证。
 
 2026-09-24 内容优先调整后：`cargo test -p rust_c --no-default-features --features simulator-multi-coins --lib` 86 项通过（含上述 SOL 用例）；`cargo fmt -p rust_c -- --check` 干净；WEB3 模拟器重建、链接与签名通过。仍未做真机或模拟器视觉验证。
+
+### 原始指令概览布局
+
+未解析交易的账户列表每页展示最多 4 个账户，页内可滚动；ALT 账户保留 Table、Index 和说明入口。Data 使用 512 字节分页组件展示。限制单张指令卡片高度，避免大量账户和长 Data 超出 LVGL 坐标范围后与后续字段或卡片重叠。
