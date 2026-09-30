@@ -1527,15 +1527,34 @@ static lv_obj_t *GuiSolAccountsButton(lv_obj_t *parent, const char *text)
     return button;
 }
 
+static lv_obj_t *GuiSolInstructionSection(lv_obj_t *parent, const char *title)
+{
+    lv_obj_t *section = GuiCreateContainerWithParent(parent, SOL_COMPONENT_CONTENT_WIDTH, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_color(section, lv_color_hex(0x000000), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(section, LV_OPA_30, LV_PART_MAIN);
+    lv_obj_set_style_radius(section, 12, LV_PART_MAIN);
+    lv_obj_set_style_border_width(section, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(section, WHITE_COLOR, LV_PART_MAIN);
+    lv_obj_set_style_border_opa(section, LV_OPA_20, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(section, 12, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(section, 12, LV_PART_MAIN);
+    lv_obj_set_flex_flow(section, LV_FLEX_FLOW_COLUMN);
+    lv_obj_t *label = GuiCreateIllustrateLabel(section, title);
+    lv_obj_set_style_text_opa(label, LV_OPA_64, LV_PART_MAIN);
+    return section;
+}
+
 static lv_obj_t *GuiShowSolAccounts(lv_obj_t *parent, PtrT_VecFFI_PtrString accounts)
 {
-    lv_obj_t *pager = GuiCreateContainerWithParent(parent, SOL_COMPONENT_CONTENT_WIDTH, 384);
+    lv_obj_update_layout(parent);
+    lv_coord_t width = lv_obj_get_content_width(parent);
+    lv_obj_t *pager = GuiCreateContainerWithParent(parent, width, 384);
     lv_obj_set_style_bg_opa(pager, LV_OPA_TRANSP, LV_PART_MAIN);
     SolAccountsPager *state = lv_mem_alloc(sizeof(*state));
     ASSERT(state != NULL);
     memset_s(state, sizeof(*state), 0, sizeof(*state));
     state->accounts = accounts;
-    state->content = GuiCreateContainerWithParent(pager, SOL_COMPONENT_CONTENT_WIDTH, 320);
+    state->content = GuiCreateContainerWithParent(pager, width, 320);
     lv_obj_set_style_bg_opa(state->content, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_flex_flow(state->content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(state->content, 8, LV_PART_MAIN);
@@ -1615,48 +1634,35 @@ static void GuiShowSolTxInstructionsOverview(lv_obj_t *parent, PtrT_DisplaySolan
         lv_obj_align(orderLabel, LV_ALIGN_TOP_LEFT, 24, 16);
 
         PtrT_VecFFI_PtrString accounts = overview_instructions->data[i].accounts;
-        // accounts label
-        lv_obj_t *accounts_label = NULL;
+        lv_obj_t *lastSection = orderLabel;
         if (accounts->size != 0) {
-            accounts_label = lv_label_create(container);
-            lv_label_set_text(accounts_label, "accounts");
-            lv_obj_set_style_text_color(accounts_label, WHITE_COLOR, LV_PART_MAIN);
-            lv_obj_set_style_text_opa(accounts_label, 144, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_align(accounts_label, LV_ALIGN_TOP_LEFT, 24, 44);
+            lv_obj_t *accountsSection = GuiSolInstructionSection(container, "accounts");
+            lv_obj_align_to(accountsSection, orderLabel, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 12);
+            GuiShowSolAccounts(accountsSection, accounts);
+            lv_obj_update_layout(container);
+            lastSection = accountsSection;
         }
-
-        lv_obj_t *accounts_cont = NULL;
-        if (accounts->size != 0) {
-            accounts_cont = GuiShowSolAccounts(container, accounts);
-            lv_obj_align_to(accounts_cont, accounts_label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 8);
-        }
-        lv_obj_update_layout(container);
-        lv_obj_t *dataTitle = GuiCreateIllustrateLabel(container, _("solana_advanced_data"));
-        lv_obj_set_style_text_opa(dataTitle, LV_OPA_64, LV_PART_MAIN);
-        lv_obj_align_to(
-            dataTitle,
-            accounts_cont == NULL ? orderLabel : accounts_cont,
-            LV_ALIGN_OUT_BOTTOM_LEFT,
-            0,
-            10);
-
+        lv_obj_t *dataSection = GuiSolInstructionSection(container, _("solana_advanced_data"));
+        lv_obj_align_to(dataSection, lastSection, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 12);
+        lv_obj_update_layout(dataSection);
+        lv_coord_t dataWidth = lv_obj_get_content_width(dataSection);
         const char *instructionData = overview_instructions->data[i].data;
         lv_obj_t *data_label;
         if (instructionData == NULL || strlen(instructionData) <= 512) {
-            data_label = GuiCreateIllustrateLabel(container, instructionData == NULL ? "" : instructionData);
-            lv_obj_set_width(data_label, SOL_COMPONENT_CONTENT_WIDTH);
+            data_label = GuiCreateIllustrateLabel(dataSection, instructionData == NULL ? "" : instructionData);
+            lv_obj_set_width(data_label, dataWidth);
             lv_label_set_long_mode(data_label, LV_LABEL_LONG_WRAP);
             lv_obj_set_height(data_label, LV_SIZE_CONTENT);
         } else {
-            data_label = GuiCreateContainerWithParent(container, SOL_COMPONENT_CONTENT_WIDTH, 220);
+            data_label = GuiCreateContainerWithParent(dataSection, dataWidth, 220);
             lv_obj_set_style_bg_opa(data_label, LV_OPA_TRANSP, LV_PART_MAIN);
             GuiShowPagedMessageText(data_label, instructionData, true, NULL, NULL);
         }
-        lv_obj_align_to(data_label, dataTitle, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 8);
+        lv_obj_update_layout(container);
 
         lv_obj_t *programTitle = GuiCreateIllustrateLabel(container, _("solana_program_address"));
         lv_obj_set_style_text_opa(programTitle, LV_OPA_64, LV_PART_MAIN);
-        lv_obj_align_to(programTitle, data_label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 10);
+        lv_obj_align_to(programTitle, dataSection, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 12);
 
         lv_obj_t *programAddress_label = GuiCreateIllustrateLabel(
             container, overview_instructions->data[i].program_address);
