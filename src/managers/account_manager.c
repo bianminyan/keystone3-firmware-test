@@ -146,29 +146,6 @@ int32_t CreateNewAccount(uint8_t accountIndex, const uint8_t *entropy, uint8_t e
     return ret;
 }
 
-#ifndef BUILD_PRODUCTION
-int32_t MigrationCreateNewAccountWithoutDestroy(uint8_t accountIndex, const uint8_t *entropy, uint8_t entropyLen, const char *password)
-{
-    ASSERT(accountIndex <= 2);
-    CLEAR_OBJECT(g_currentAccountInfo);
-    g_currentAccountIndex = accountIndex;
-    SetWalletName(SecretCacheGetWalletName());
-    SetWalletIconIndex(SecretCacheGetWalletIconIndex());
-
-    int32_t ret = SaveNewBip39Entropy(accountIndex, entropy, entropyLen, password);
-    CHECK_ERRCODE_RETURN_INT(ret);
-
-    ret = SaveCurrentAccountInfo();
-    CHECK_ERRCODE_RETURN_INT(ret);
-    ret = AccountPublicInfoSwitch(g_currentAccountIndex, password, true);
-#ifdef CYPHERPUNK_VERSION
-    CalculateZcashUFVK(accountIndex, password);
-#endif
-    CHECK_ERRCODE_RETURN_INT(ret);
-    return ret;
-}
-#endif
-
 int32_t CreateNewSlip39Account(uint8_t accountIndex, const uint8_t *ems, const uint8_t *entropy, uint8_t entropyLen, const char *password, uint16_t id, bool eb, uint8_t ie)
 {
     ASSERT(accountIndex <= 2);

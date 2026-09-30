@@ -913,15 +913,6 @@ void KeyStoreTest(int argc, char *argv[])
         PrintArray("entropy", entropy, entropyLen);
         ret = CreateNewAccount(index, entropy, entropyLen, argv[3]);
         printf("CreateNewAccount=%d\r\n", ret);
-    } else if (strcmp(argv[0], "migration_new_entropy_no_destroy") == 0) {
-        VALUE_CHECK(argc, 4);
-        sscanf(argv[1], "%d", &index);
-        sscanf(argv[2], "%d", &tempI32);
-        entropyLen = tempI32;
-        GenerateEntropy(entropy, entropyLen, argv[3]);
-        PrintArray("entropy", entropy, entropyLen);
-        ret = MigrationCreateNewAccountWithoutDestroy(index, entropy, entropyLen, argv[3]);
-        printf("MigrationCreateNewAccountWithoutDestroy=%d\r\n", ret);
     } else if (strcmp(argv[0], "new_slip39_entropy") == 0) {
         VALUE_CHECK(argc, 4);
         sscanf(argv[1], "%d", &index);
