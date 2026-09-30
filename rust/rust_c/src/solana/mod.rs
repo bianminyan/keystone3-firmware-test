@@ -73,6 +73,52 @@ mod fixture_tests {
     }
 
     #[test]
+    fn custom_paths_pass_check_review_and_signing_but_wrong_signer_is_rejected() {
+        let seed = hex::decode("5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4").unwrap();
+        let mut mfp = [0x73, 0xc5, 0xda, 0x0a];
+        for path in ["m/44'/501'/50'", "m/44'/501'/1000'/1'", "m/44'/501'/0'/0'/7'", "m/44'/60'/0'", "m/0'"] {
+            let signer = app_solana::get_public_key(&seed, &path.to_string()).unwrap();
+            // Legacy System transfer: signer, destination, System program.
+            let mut raw = alloc::vec![1, 0, 1, 3];
+            raw.extend(signer);
+            raw.extend([9; 32]);
+            raw.extend([0; 32]);
+            raw.extend([7; 32]);
+            raw.extend([1, 2, 2, 0, 1, 12]);
+            raw.extend(2u32.to_le_bytes());
+            raw.extend(1u64.to_le_bytes());
+            let mut request = SolSignRequest::new(
+                None, raw,
+                ur_registry::crypto_key_path::CryptoKeyPath::from_path(
+                    path.to_string(), Some(mfp),
+                ).unwrap(),
+                None, None, SignType::Transaction,
+            );
+            unsafe {
+                use crate::common::free::Free;
+                let ptr = &mut request as *mut _ as PtrUR;
+                let check = alloc::boxed::Box::from_raw(solana_check(ptr, mfp.as_mut_ptr(), 4));
+                assert_eq!(*(&*check as *const TransactionCheckResult as *const u32), 0, "{path}");
+                check.free();
+                assert_eq!(parse_tx_results(&mut request), 2, "{path}");
+                assert!(build_sign_result(ptr, &seed).is_ok(), "{path}");
+                let transaction = request.get_sign_data();
+                request.set_sign_type(SignType::Message);
+                request.set_sign_data(b"custom path message".to_vec());
+                assert!(build_sign_result(ptr, &seed).is_ok(), "message {path}");
+                request.set_sign_type(SignType::Transaction);
+                request.set_sign_data(transaction);
+                request.set_derivation_path(
+                    ur_registry::crypto_key_path::CryptoKeyPath::from_path(
+                        "m/44'/501'/99'/2'".to_string(), Some(mfp),
+                    ).unwrap(),
+                );
+                assert!(build_sign_result(ptr, &seed).is_err());
+            }
+        }
+    }
+
+    #[test]
     fn squads_no_argument_trailing_bytes_rejected_at_final_signing() {
         let seed = hex::decode("5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4").unwrap();
         let path = "m/44'/501'/0'";

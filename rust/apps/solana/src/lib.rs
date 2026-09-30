@@ -169,31 +169,17 @@ pub fn validate_derivation_path(path: &str) -> errors::Result<String> {
         .unwrap_or("")
         .split('/')
         .collect::<Vec<_>>();
-    if !(2..=4).contains(&components.len()) {
-        return Err(errors::SolanaError::InvalidData(
-            "unsupported Solana derivation path".to_string(),
-        ));
-    }
     let parse_hardened = |component: &str| {
         component
             .strip_suffix('\'')
+            .filter(|digits| !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()))
             .and_then(|digits| digits.parse::<u32>().ok())
+            .filter(|index| *index < 0x8000_0000)
     };
-    if parse_hardened(components[0]) != Some(44) || parse_hardened(components[1]) != Some(501) {
+    // Custom paths use the same hardened SLIP-10 rules as final key derivation.
+    if components.iter().any(|component| parse_hardened(component).is_none()) {
         return Err(errors::SolanaError::InvalidData(
-            "unsupported Solana derivation path".to_string(),
-        ));
-    }
-    if components.len() >= 3
-        && !matches!(parse_hardened(components[2]), Some(account) if account <= 49)
-    {
-        return Err(errors::SolanaError::InvalidData(
-            "unsupported Solana account path".to_string(),
-        ));
-    }
-    if components.len() == 4 && parse_hardened(components[3]) != Some(0) {
-        return Err(errors::SolanaError::InvalidData(
-            "unsupported Solana change path".to_string(),
+            "invalid hardened Solana derivation path".to_string(),
         ));
     }
     Ok(normalized)
@@ -220,17 +206,25 @@ mod tests {
             "m/44'/501'/49'",
             "m/44'/501'/0'/0'",
             "m/44'/501'/49'/0'",
+            "m/44'/501'/50'",
+            "m/44'/501'/1000'/1'",
+            "m/44'/501'/0'/0'/0'",
+            "m/44'/501'/2147483647'",
+            "m/44'/60'/0'",
+            "m/501'/0'",
+            "m/0'",
         ] {
             assert!(validate_derivation_path(path).is_ok(), "{path}");
         }
         for path in [
             "",
+            "m/",
             "m/44'/501",
             "m/44/501'",
-            "m/44'/60'/0'",
-            "m/44'/501'/50'",
-            "m/44'/501'/0'/1'",
-            "m/44'/501'/0'/0'/0'",
+            "m/44'/501'/50",
+            "m/44'/501'/2147483648'",
+            "m/44'/501'/+1'",
+            "m/44'/501'//0'",
         ] {
             assert!(validate_derivation_path(path).is_err(), "{path}");
         }

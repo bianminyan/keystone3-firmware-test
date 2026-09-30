@@ -84,13 +84,11 @@ void *GuiGetSolData(void)
     do {
         char *path = sol_get_path(data);
         ChainType pubkeyIndex = CheckSolPathSupport(path);
-        if (pubkeyIndex == XPUB_TYPE_NUM) {
-            free_ptr_string(path);
-            break;
-        }
-        char *pubKey = GetCurrentAccountPublicKey(pubkeyIndex);
+        // Custom paths have no cached public key. Review the full transaction;
+        // final signing derives the requested key and validates required signers.
         PtrT_TransactionParseResult_DisplaySolanaTx parseResult =
-            solana_parse_tx_with_pubkey(data, pubKey);
+            pubkeyIndex == XPUB_TYPE_NUM ? solana_parse_tx(data) :
+            solana_parse_tx_with_pubkey(data, GetCurrentAccountPublicKey(pubkeyIndex));
         free_ptr_string(path);
         if (parseResult->error_code != 0) {
             CHECK_CHAIN_PRINT(parseResult);
@@ -131,11 +129,8 @@ void *GuiGetSolMessageData(void)
     do {
         char *path = sol_get_path(data);
         ChainType pubkeyIndex = CheckSolPathSupport(path);
-        if (pubkeyIndex == XPUB_TYPE_NUM) {
-            free_ptr_string(path);
-            break;
-        }
-        char *pubKey = GetCurrentAccountPublicKey(pubkeyIndex);
+        char *pubKey = pubkeyIndex == XPUB_TYPE_NUM ? "" :
+                       GetCurrentAccountPublicKey(pubkeyIndex);
         PtrT_TransactionParseResult_DisplaySolanaMessage parseResult = solana_parse_message(data, pubKey);
         free_ptr_string(path);
         if (parseResult->error_code != 0) {
@@ -219,16 +214,42 @@ void GetSolMessageRaw(void *indata, void *param, uint32_t maxLen)
     snprintf_s((char *)indata, maxLen, "%.*s", (int)(maxLen - 1), message->raw_message);
 }
 
+static lv_obj_t *GuiShowSolSigningPath(lv_obj_t *parent)
+{
+    void *data = g_isMulti ? (g_urMultiResult == NULL ? NULL : g_urMultiResult->data) :
+                 (g_urResult == NULL ? NULL : g_urResult->data);
+    char *path = data == NULL ? NULL : sol_get_path(data);
+    lv_obj_t *container = lv_obj_create(parent);
+    lv_obj_remove_style_all(container);
+    lv_obj_update_layout(parent);
+    lv_obj_set_size(container, lv_obj_get_width(parent), 80);
+    lv_obj_set_scroll_dir(container, LV_DIR_VER);
+    lv_obj_add_flag(container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t *label = GuiCreateIllustrateLabel(container, "");
+    lv_obj_set_width(label, lv_obj_get_width(parent));
+    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_height(label, LV_SIZE_CONTENT);
+    if (path != NULL) {
+        lv_label_set_text_fmt(label, "%s\nM/%s", _("Path"), path);
+        free_ptr_string(path);
+    } else {
+        lv_label_set_text_fmt(label, "%s\n-", _("Path"));
+    }
+    return container;
+}
+
 void GuiShowSolMessagePaged(lv_obj_t *parent, void *param, bool raw)
 {
     DisplaySolanaMessage *message = (DisplaySolanaMessage *)param;
     const char *text = raw ? message->raw_message : message->utf8_message;
     lv_obj_update_layout(parent);
+    lv_obj_t *path = GuiShowSolSigningPath(parent);
     lv_obj_t *lengthLabel = GuiCreateIllustrateLabel(parent, "");
+    lv_obj_set_y(lengthLabel, lv_obj_get_height(path) + 8);
     lv_label_set_text_fmt(lengthLabel, _("solana_message_length"), (unsigned)message->message_length);
     lv_obj_set_width(lengthLabel, lv_obj_get_width(parent));
     lv_obj_update_layout(lengthLabel);
-    lv_coord_t offset = lv_obj_get_height(lengthLabel) + 12;
+    lv_coord_t offset = lv_obj_get_y(lengthLabel) + lv_obj_get_height(lengthLabel) + 12;
     lv_obj_t *pager = lv_obj_create(parent);
     lv_obj_remove_style_all(pager);
     lv_obj_set_pos(pager, 0, offset);
@@ -1710,12 +1731,17 @@ void GuiShowSolTxDetail(lv_obj_t *parent, void *totalData)
     if (0 == strcmp(overviewData->display_type, "squads_multisig_create")) {
         GuiShowSolTxMultiSigCreateDetail(parent, overviewData);
         lv_obj_update_layout(parent);
-        GuiShowSolTxRawDetailCard(
-            parent, txData->detail, GuiGetSolTxBottomView(parent));
+        lv_obj_t *last = GuiGetSolTxBottomView(parent);
+        lv_obj_t *path = GuiShowSolSigningPath(parent);
+        if (last != NULL) {
+            lv_obj_align_to(path, last, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 16);
+        }
+        GuiShowSolTxRawDetailCard(parent, txData->detail, path);
         lv_obj_update_layout(parent);
         return;
     }
-    GuiShowSolTxRawDetailCard(parent, txData->detail, NULL);
+    lv_obj_t *path = GuiShowSolSigningPath(parent);
+    GuiShowSolTxRawDetailCard(parent, txData->detail, path);
 }
 
 #define SOL_ADVANCED_ITEMS_PER_PAGE 4

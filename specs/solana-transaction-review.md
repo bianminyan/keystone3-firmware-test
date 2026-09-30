@@ -64,13 +64,9 @@
 
 ### 路径、钱包归属与签名人
 
-接受路径形态为：
+接受任意合法 hardened 路径（不固定 purpose 或 coin type 前缀），不限制账户索引为前 50 个，也不限制 change 为 0 或子路径层数。允许省略开头的 `m/` 后规范化。所有分量必须为 0～2147483647 的 hardened 索引；非 hardened、空分量及溢出索引均拒绝。
 
-- `m/44'/501'`
-- `m/44'/501'/account'`，account 为 0～49
-- `m/44'/501'/account'/0'`
-
-允许省略开头的 `m/` 后规范化；所有路径分量必须 hardened。额外层级、错误 coin type、超范围 account、非零 change 均拒绝。
+预存公钥表仅用于常见路径的公钥缓存。自定义路径使用完整交易解析进入审阅，最终签名仍从实际 seed 按请求路径派生公钥并校验 required signer；自定义路径的消息不展示未经派生确认的 From 地址。交易 Details 和消息审阅页面展示完整请求路径，长路径可滚动查看。
 
 `solana_check` 要求设备 master fingerprint 指针非空且长度为 4，并与请求路径携带的 source fingerprint 匹配；缺失或不匹配拒绝。fingerprint 是请求归属检查，不能替代最终签名时的 required signer 校验。
 
