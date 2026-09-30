@@ -1,5 +1,4 @@
 pub mod structs;
-pub(crate) mod ur_limits;
 
 use crate::common::errors::{KeystoneError, RustCError};
 use crate::common::keystone;

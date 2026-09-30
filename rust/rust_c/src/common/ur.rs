@@ -88,35 +88,23 @@ unsafe extern "C" {
 
 struct KeystoneURDecoder {
     decoder: ur::Decoder,
-    #[cfg(feature = "tron")]
-    tron_budget: Option<crate::tron::ur_limits::FragmentBudget>,
+    budget: super::ur_budget::FragmentBudget,
 }
 
 impl KeystoneURDecoder {
     fn from_first_part(part: &str) -> Result<Self, URError> {
         let mut decoder = Self {
             decoder: ur::Decoder::default(),
-            #[cfg(feature = "tron")]
-            tron_budget: crate::tron::ur_limits::is_tron(part).then(Default::default),
+            budget: Default::default(),
         };
         decoder.receive(part)?;
         Ok(decoder)
     }
 
     fn receive(&mut self, part: &str) -> Result<(), URError> {
-        #[cfg(feature = "tron")]
-        {
-            let result = match self.tron_budget.as_mut() {
-                Some(budget) => budget.receive(part),
-                None if crate::tron::ur_limits::is_tron(part) => Err(URError::UrDecodeError(
-                    "TRON fragment cannot change the active UR type".into(),
-                )),
-                None => Ok(()),
-            };
-            if let Err(error) = result {
-                self.decoder = ur::Decoder::default();
-                return Err(error);
-            }
+        if let Err(reason) = self.budget.receive(part) {
+            self.decoder = ur::Decoder::default();
+            return Err(URError::UrDecodeError(reason.to_string()));
         }
         self.decoder
             .receive(part)
@@ -145,9 +133,10 @@ fn validate_reassembled_cbor(cbor: &[u8]) -> Result<(), URError> {
         let mut status = sandbox_parser::ValidationStatus::InvalidInput as u32;
         let available = unsafe { MpuSandboxValidateCbor(cbor.as_ptr(), cbor.len(), &mut status) };
         if !available {
-            return Err(URError::CborDecodeError(
-                "sandbox CBOR validation unavailable".to_string(),
-            ));
+            return Err(URError::CborDecodeError(format!(
+                "sandbox CBOR validation unavailable ({} bytes)",
+                cbor.len()
+            )));
         }
         status
     };
@@ -1012,7 +1001,9 @@ fn sandbox_cbor_error(status: sandbox_parser::ValidationStatus) -> URError {
 
 fn validate_single_part_cbor(value: &str) -> Result<(), URError> {
     #[cfg(feature = "tron")]
-    crate::tron::ur_limits::validate_text_len(value)?;
+    if super::ur_budget::is_tron(value) {
+        super::ur_budget::validate_text_len(value).map_err(URError::UrDecodeError)?;
+    }
     // Defense in depth after the production ingress has validated the complete
     // UR in the MPU sandbox. Do not re-enter the single-slot sandbox here: the
     // USB EAPDU result remains owned until its business handler returns.
@@ -1021,11 +1012,6 @@ fn validate_single_part_cbor(value: &str) -> Result<(), URError> {
     if kind != ur::ur::Kind::SinglePart {
         return Ok(());
     }
-    #[cfg(feature = "tron")]
-    if crate::tron::ur_limits::is_tron(value) {
-        crate::tron::ur_limits::validate_single_len(cbor.len())?;
-    }
-
     let status = sandbox_parser::validate_cbor(&cbor);
     if status != sandbox_parser::ValidationStatus::Ok {
         return Err(sandbox_cbor_error(status));
@@ -1328,7 +1314,6 @@ pub unsafe extern "C" fn receive(ur: PtrString, decoder: PtrDecoder) -> *mut URP
 #[cfg(all(test, feature = "tron"))]
 mod tron_limit_tests {
     use super::*;
-    use crate::tron::ur_limits::MAX_UR_BYTES;
     use alloc::vec;
 
     fn fragment(parts: u32, message_len: u32, data: &[u8]) -> String {
@@ -1353,15 +1338,34 @@ mod tron_limit_tests {
     }
 
     #[test]
+    fn tron_limits_enforce_frame_text_length() {
+        for (payload_len, accepted) in [(750, true), (751, false)] {
+            let mut encoder = minicbor::Encoder::new(Vec::new());
+            encoder.bytes(&vec![0; payload_len]).unwrap();
+            let single = ur::encode(&encoder.into_writer(), "tron-sign-request");
+            assert_eq!(single.len(), if accepted { 1535 } else { 1537 });
+            assert_eq!(validate_single_part_cbor(&single).is_ok(), accepted);
+            assert_eq!(
+                super::super::ur_budget::validate_text_len(&single.to_uppercase()).is_ok(),
+                accepted
+            );
+        }
+        // Valid fountain dimensions must not bypass the frame text limit.
+        let oversized_part = fragment(2, 2000, &[0; 1000]);
+        assert!(validate_single_part_cbor(&oversized_part).is_err());
+        assert!(KeystoneURDecoder::from_first_part(&oversized_part).is_err());
+    }
+
+    #[test]
     fn tron_limits_reject_oversized_single_and_fountain_metadata() {
-        assert!(crate::tron::ur_limits::validate_single_len(MAX_UR_BYTES).is_ok());
-        let too_big = ur::encode(&vec![0; MAX_UR_BYTES + 1], "tron-sign-request");
+        let max_cbor_bytes = app_tron::MAX_SIGN_DATA_LEN + 1024;
+        let too_big = ur::encode(&vec![0; max_cbor_bytes + 1], "tron-sign-request");
         assert!(validate_single_part_cbor(&too_big)
             .unwrap_err()
             .to_string()
-            .contains("TRON UR"));
+            .contains("1536-byte limit"));
         for bad in [
-            fragment(100, MAX_UR_BYTES as u32 + 1, &[0; 200]),
+            fragment(100, max_cbor_bytes as u32 + 1, &[0; 200]),
             fragment(129, 129, &[0]),
             fragment(u32::MAX, 1, &[0]),
             fragment(0, 1, &[0]),
@@ -1401,7 +1405,8 @@ mod tron_limit_tests {
         assert_eq!(decoder.message().unwrap(), cbor);
         let decoded = TronSignRequest::try_from(decoder.message().unwrap()).unwrap();
         assert_eq!(decoded.get_sign_data().len(), app_tron::MAX_SIGN_DATA_LEN);
-        assert!(validate_single_part_cbor(&ur::encode(&cbor, "tron-sign-request")).is_ok());
+        // The full request fits the reassembly limit, but not a single UR frame.
+        assert!(validate_single_part_cbor(&ur::encode(&cbor, "tron-sign-request")).is_err());
     }
 
     #[test]
@@ -1410,9 +1415,12 @@ mod tron_limit_tests {
         let mut encoder = ur::Encoder::new(&cbor, 200, "tron-sign-request").unwrap();
         let part = encoder.next_part().unwrap();
         let mut decoder = KeystoneURDecoder::from_first_part(&part).unwrap();
+        for _ in 0..2000 {
+            decoder.receive(&part).unwrap();
+        }
         let mut rejected = false;
         for _ in 0..2000 {
-            if decoder.receive(&part).is_err() {
+            if decoder.receive(&encoder.next_part().unwrap()).is_err() {
                 rejected = true;
                 break;
             }

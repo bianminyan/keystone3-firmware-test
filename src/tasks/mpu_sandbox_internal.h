@@ -16,9 +16,19 @@
 #define MPU_SANDBOX_UR_CHUNK_HEADER_SIZE 4U
 #define MPU_SANDBOX_UR_CHUNK_DATA_SIZE \
     (MPU_SANDBOX_INPUT_SIZE - MPU_SANDBOX_UR_CHUNK_HEADER_SIZE)
-/* Leave room for UR assembly and IPC state in the existing 16 KiB MPU region. */
+/* Transport ceiling must cover the largest UR budget in each firmware variant.
+ * CBOR is streamed and never stored at this size in SRAM. */
+#ifdef CYPHERPUNK_VERSION
+#define MPU_SANDBOX_CBOR_INPUT_MAX_SIZE        (32U * 1024U)
+#elif defined(WEB3_VERSION)
+/* TRON: 16 KiB sign_data + 1 KiB registry metadata (common/ur_budget.rs). */
+#define MPU_SANDBOX_CBOR_INPUT_MAX_SIZE        (17U * 1024U)
+#else
 #define MPU_SANDBOX_CBOR_INPUT_MAX_SIZE        (14U * 1024U)
-#define MPU_SANDBOX_EIP712_JSON_INPUT_MAX_SIZE MPU_SANDBOX_CBOR_INPUT_MAX_SIZE
+#endif
+/* JSON still needs a full buffer; keep it within the existing 16 KiB region. */
+#define MPU_SANDBOX_EIP712_JSON_INPUT_MAX_SIZE (14U * 1024U)
+#define MPU_SANDBOX_CBOR_STATE_SIZE 512U
 
 typedef struct {
     volatile MpuSandboxRequest_t request;
@@ -43,11 +53,17 @@ typedef struct {
 } MpuSandboxUrChunkResult_t;
 
 typedef struct {
-    uint8_t data[MPU_SANDBOX_CBOR_INPUT_MAX_SIZE];
+    uint8_t data[MPU_SANDBOX_EIP712_JSON_INPUT_MAX_SIZE];
     uint16_t length;
     uint16_t total_length;
     bool active;
 } MpuSandboxPayloadValidationState_t;
+
+typedef struct {
+    uint8_t parser[MPU_SANDBOX_CBOR_STATE_SIZE] __attribute__((aligned(8)));
+    uint16_t length;
+    uint16_t total_length;
+} MpuSandboxCborState_t;
 
 typedef enum {
     MPU_SANDBOX_PAYLOAD_NONE = 0,
@@ -59,10 +75,12 @@ typedef enum {
 #ifndef BTC_ONLY
 typedef union {
     EapduFramingState_t eapdu;
+    MpuSandboxCborState_t cbor;
     MpuSandboxPayloadValidationState_t validation;
 } MpuSandboxPayloadState_t;
 #else
 typedef union {
+    MpuSandboxCborState_t cbor;
     MpuSandboxPayloadValidationState_t validation;
 } MpuSandboxPayloadState_t;
 #endif
