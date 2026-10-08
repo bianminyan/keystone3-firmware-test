@@ -1960,3 +1960,30 @@ fn public_key_text_boundaries() {
     let point = Party::new().spend_point().compress().to_bytes();
     assert_eq!(PublicKey::from_str(&hex::encode(point)).unwrap().as_bytes(), point);
 }
+
+#[test]
+fn receive_address_key_validation() {
+    use crate::address::generate_address;
+    use crate::key::{PrivateKey, PublicKey};
+    use curve25519_dalek::constants::EIGHT_TORSION;
+    let wallet = Party::new();
+    let spend = PrivateKey::new(wallet.spend).get_public_key();
+    let view = PrivateKey::new(wallet.view);
+    let invalid_encoding = (0u8..=255).map(|byte| [byte; 32])
+        .find(|bytes| curve25519_dalek::edwards::CompressedEdwardsY(*bytes).decompress().is_none()).unwrap();
+    let mut noncanonical = [255; 32];
+    noncanonical[0] = 238;
+    noncanonical[31] = 127;
+    for bytes in [invalid_encoding, noncanonical, EIGHT_TORSION[0].compress().to_bytes(),
+        EIGHT_TORSION[1].compress().to_bytes(),
+        (wallet.spend_point() + EIGHT_TORSION[1]).compress().to_bytes()] {
+        let key = PublicKey::from_bytes(&bytes).unwrap();
+        for subaddress in [false, true] {
+            assert!(generate_address(&key, &view, 0, 1, subaddress).is_err());
+        }
+    }
+    for subaddress in [false, true] {
+        assert!(generate_address(&spend, &view, 0, 1, subaddress).is_ok());
+        assert!(generate_address(&spend, &PrivateKey::default(), 0, 1, subaddress).is_err());
+    }
+}

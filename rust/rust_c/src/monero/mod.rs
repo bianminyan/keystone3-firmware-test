@@ -40,14 +40,17 @@ pub unsafe extern "C" fn monero_get_address(
     if pub_spend_key.is_null() {
         return SimpleResponse::from(RustCError::InvalidXPub).simple_c_ptr();
     }
-    let spend_key = recover_c_char(pub_spend_key);
+    let spend_key = cstr_core::CStr::from_ptr(pub_spend_key).to_bytes();
     let pvk_bytes = match parse_view_key(private_view_key) {
         Ok(key) => key,
         Err(e) => return SimpleResponse::from(e).simple_c_ptr(),
     };
-    let pvk = PrivateKey::try_from_slice(&*pvk_bytes).unwrap();
-    let public_spend = match PublicKey::from_str(spend_key.as_str()) {
+    let pvk = match PrivateKey::try_from_slice(&*pvk_bytes) {
         Ok(key) => key,
+        Err(_) => return SimpleResponse::from(RustCError::InvalidData("invalid view key".into())).simple_c_ptr(),
+    };
+    let public_spend = match hex::decode(spend_key).ok().and_then(|bytes| PublicKey::from_bytes(&bytes).ok()) {
+        Some(key) => key,
         _ => {
             return SimpleResponse::from(RustCError::InvalidData("invalid data".to_string()))
                 .simple_c_ptr()
@@ -502,6 +505,29 @@ pub unsafe extern "C" fn get_extended_monero_pubkeys_by_seed(
 #[cfg(test)]
 mod request_boundary_tests {
     use super::*;
+
+    #[test]
+    fn receive_address_ffi_key_boundaries() {
+        unsafe {
+            let view = cstr_core::CString::new(alloc::format!("01{}", "00".repeat(31))).unwrap();
+            for bytes in [alloc::vec![b'f'; 64], alloc::vec![b'0'; 64],
+                alloc::format!("01{}", "00".repeat(31)).into_bytes(), alloc::vec![0xff; 64]] {
+                let spend = cstr_core::CString::new(bytes).unwrap();
+                for subaddress in [false, true] {
+                    let result = monero_get_address(spend.as_ptr() as PtrString, view.as_ptr() as PtrString, 0, 1, subaddress);
+                    assert!(!result.is_null());
+                    assert!((*result).data.is_null());
+                    crate::common::free::free_simple_response_c_char(result);
+                }
+            }
+            let spend = cstr_core::CString::new(alloc::format!("58{}", "66".repeat(31))).unwrap();
+            for subaddress in [false, true] {
+                let result = monero_get_address(spend.as_ptr() as PtrString, view.as_ptr() as PtrString, 0, 1, subaddress);
+                assert!(!(*result).data.is_null());
+                crate::common::free::free_simple_response_c_char(result);
+            }
+        }
+    }
 
     #[test]
     fn view_key_text_boundaries() {

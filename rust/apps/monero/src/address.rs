@@ -213,6 +213,8 @@ pub fn generate_address(
     minor: u32,
     is_subaddress: bool,
 ) -> Result<String> {
+    let point = public_spend_key.validate_for_address()?;
+    PrivateKey::try_from_slice(&private_view_key.to_bytes())?;
     if !is_subaddress {
         return Ok(Address::new(
             Network::Mainnet,
@@ -223,7 +225,6 @@ pub fn generate_address(
         .to_string());
     }
 
-    let point = public_spend_key.point.decompress().unwrap();
     let m = Scalar::from_bytes_mod_order(calc_subaddress_m(
         &private_view_key.to_bytes(),
         major,
@@ -232,8 +233,9 @@ pub fn generate_address(
     let pub_spend_key = PublicKey {
         point: (point + EdwardsPoint::mul_base(&m)).compress(),
     };
+    let sub_spend_point = pub_spend_key.validate_for_address()?;
     let pub_view_point = PublicKey {
-        point: (pub_spend_key.point.decompress().unwrap() * private_view_key.scalar).compress(),
+        point: (sub_spend_point * private_view_key.scalar).compress(),
     };
 
     pub_keys_to_address(Network::Mainnet, true, &pub_spend_key, &pub_view_point)
