@@ -177,7 +177,10 @@ pub fn validate_derivation_path(path: &str) -> errors::Result<String> {
             .filter(|index| *index < 0x8000_0000)
     };
     // Custom paths use the same hardened SLIP-10 rules as final key derivation.
-    if components.iter().any(|component| parse_hardened(component).is_none()) {
+    if components
+        .iter()
+        .any(|component| parse_hardened(component).is_none())
+    {
         return Err(errors::SolanaError::InvalidData(
             "invalid hardened Solana derivation path".to_string(),
         ));
