@@ -59,6 +59,7 @@ bool GetBootSecureCheckFlag(void);
 
 void SetRecoveryModeSwitch(bool isSet);
 bool GetRecoveryModeSwitch(void);
+int SetMigrationInstallMode(void);
 void ResetBootParam(void);
 int SaveBootParam(void);
 #endif
