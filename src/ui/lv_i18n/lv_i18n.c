@@ -2464,7 +2464,7 @@ const static lv_i18n_phrase_t es_singulars[] = {
     {"disable_passphrase", "Deshabilitar frase de contraseña"},
     {"enable_blind_signing_hintbox_check", "No mostrar esto de nuevo"},
     {"enable_blind_signing_hintbox_context", "Los datos hash ocultan detalles de la transacción, lo cual puede ser peligroso. Por favor, revise cuidadosamente los detalles del hash antes de firmar."},
-    {"enable_blind_signing_hintbox_title", "通知"},
+    {"enable_blind_signing_hintbox_title", "Aviso"},
     {"enable_passphrase", "Habilitar frase de contraseña"},
     {"enter_passcode", "Ingresar código de acceso"},
     {"enter_system", "Entrar al sistema"},
