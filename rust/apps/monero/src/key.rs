@@ -72,9 +72,7 @@ impl PublicKey {
     }
 
     pub fn from_str(s: &str) -> Result<PublicKey> {
-        let bytes = hex::decode(s)
-            .map_err(|e| format!("decode error: {e:?}"))
-            .unwrap();
+        let bytes = hex::decode(s).map_err(|_| MoneroError::PublicKeyFromBytesError)?;
         PublicKey::from_bytes(&bytes)
     }
 }

@@ -879,7 +879,7 @@ impl UnsignedTx {
                 let integrated = integrated_destination(dest);
                 let (address, payment_id_hex) = match integrated {
                     Some((ref spend, ref view, ref payment_id)) => (
-                        integrated_address_string(spend, view, payment_id).unwrap_or_default(),
+                        integrated_address_string(spend, view, payment_id)?,
                         hex::encode(payment_id),
                     ),
                     None => (

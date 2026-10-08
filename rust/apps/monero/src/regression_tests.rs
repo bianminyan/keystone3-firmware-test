@@ -922,9 +922,8 @@ fn each_transaction_keeps_its_own_payment_id() {
         extra
     };
 
-    let tx_with = |payee: &Party, m: &Scalar, payment_id: [u8; 8], change: TxDestinationEntry| {
-        let mut dest = payee.subaddress_dest(m, 2);
-        dest = payee.standard_dest(2);
+    let tx_with = |payee: &Party, payment_id: [u8; 8], change: TxDestinationEntry| {
+        let mut dest = payee.standard_dest(2);
         dest.original = integrated_address_string(
             &PublicKey::new(payee.spend_point().compress()),
             &PublicKey::new(payee.view_point().compress()),
@@ -939,9 +938,8 @@ fn each_transaction_keeps_its_own_payment_id() {
         data
     };
 
-    let m = random_scalar();
-    let first = tx_with(&payee_a, &m, payment_id_a, wallet.standard_dest(1));
-    let second = tx_with(&payee_b, &m, payment_id_b, wallet.standard_dest(1));
+    let first = tx_with(&payee_a, payment_id_a, wallet.standard_dest(1));
+    let second = tx_with(&payee_b, payment_id_b, wallet.standard_dest(1));
 
     assert!(validate_payment_id_binding(core::slice::from_ref(&first)).is_ok());
     assert!(validate_payment_id_binding(core::slice::from_ref(&second)).is_ok());
@@ -1951,4 +1949,14 @@ fn ring_member_identity_after_sorting() {
     let restored = &source.outputs[source.real_output as usize];
     assert_eq!(restored.index, selected.index);
     assert_eq!(restored.key.mask, selected.key.mask);
+}
+
+#[test]
+fn public_key_text_boundaries() {
+    use crate::key::PublicKey;
+    for text in ["not-hex", "0", "", "ff", &"ff".repeat(33)] {
+        assert!(PublicKey::from_str(text).is_err());
+    }
+    let point = Party::new().spend_point().compress().to_bytes();
+    assert_eq!(PublicKey::from_str(&hex::encode(point)).unwrap().as_bytes(), point);
 }

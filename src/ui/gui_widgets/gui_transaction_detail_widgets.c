@@ -216,6 +216,13 @@ void GuiTransactionParseFailed()
 
 void GuiTransactionDetailRefresh()
 {
+#ifdef FEATURE_MONERO
+    if (g_viewType == XmrTxUnsigned || g_viewType == XmrOutput) {
+        // A lock ends the confirmation session; resume from a fresh request.
+        GuiCloseToTargetView(&g_homeView);
+        return;
+    }
+#endif
     // PassWordPinHintRefresh(g_keyboardWidget);
     GUI_DEL_OBJ(g_fingerSingContainer)
 }

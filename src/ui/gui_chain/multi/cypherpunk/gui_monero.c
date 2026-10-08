@@ -9,7 +9,6 @@ static URParseResult *g_urResult = NULL;
 static URParseMultiResult *g_urMultiResult = NULL;
 static void *g_parseResult = NULL;
 static XmrRequestType g_requestType = OutputRequest;
-static uint8_t g_decryptKey[32] = {0};
 
 #define CHECK_FREE_PARSE_RESULT(result)                                                                         \
   if (result != NULL)                                                                                           \
@@ -27,7 +26,7 @@ static uint8_t g_decryptKey[32] = {0};
   }
 
 static void ShowHintBox(lv_event_t *e);
-static void SetUpMoneroDecryptKey(void);
+static void SetUpMoneroDecryptKey(uint8_t key[32]);
 static lv_obj_t *CreateNetworkContainer(lv_obj_t *container);
 
 static void CloseAllHintBox(void)
@@ -59,8 +58,9 @@ static lv_obj_t *CreateNetworkContainer(lv_obj_t *container)
     return networkContainer;
 }
 
-static void SetUpMoneroDecryptKey(void)
+static void SetUpMoneroDecryptKey(uint8_t key[32])
 {
+    memset_s(key, 32, 0, 32);
     char *pvk = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_PVK_0);
     SimpleResponse_u8 *decryptKeyData = monero_generate_decrypt_key(pvk);
     if (decryptKeyData == NULL) {
@@ -68,7 +68,7 @@ static void SetUpMoneroDecryptKey(void)
         return;
     }
     if (decryptKeyData->error_code == SUCCESS_CODE && decryptKeyData->data != NULL) {
-        memcpy(g_decryptKey, decryptKeyData->data, 32);
+        memcpy(key, decryptKeyData->data, 32);
     }
     monero_free_decrypt_key_response(decryptKeyData);
 }
@@ -77,19 +77,25 @@ PtrT_TransactionCheckResult GuiGetMoneroOutputCheckResult(void)
 {
     void *data = g_isMulti ? g_urMultiResult->data : g_urResult->data;
     g_requestType = OutputRequest;
-    SetUpMoneroDecryptKey();
+    uint8_t decryptKey[32];
+    SetUpMoneroDecryptKey(decryptKey);
     char *pvk = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_PVK_0);
-    return monero_output_request_check(data, g_decryptKey, pvk);
+    PtrT_TransactionCheckResult result = monero_output_request_check(data, decryptKey, pvk);
+    memset_s(decryptKey, sizeof(decryptKey), 0, sizeof(decryptKey));
+    return result;
 }
 
 PtrT_TransactionCheckResult GuiGetMoneroUnsignedTxCheckResult(void)
 {
     void *data = g_isMulti ? g_urMultiResult->data : g_urResult->data;
     g_requestType = UnsignedTxRequest;
-    SetUpMoneroDecryptKey();
+    uint8_t decryptKey[32];
+    SetUpMoneroDecryptKey(decryptKey);
     char *pvk = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_PVK_0);
     char *pubSpendKey = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_0);
-    return monero_unsigned_request_check(data, g_decryptKey, pvk, pubSpendKey);
+    PtrT_TransactionCheckResult result = monero_unsigned_request_check(data, decryptKey, pvk, pubSpendKey);
+    memset_s(decryptKey, sizeof(decryptKey), 0, sizeof(decryptKey));
+    return result;
 }
 
 void GuiSetMoneroUrData(URParseResult *urResult, URParseMultiResult *urMultiResult, bool multi)
@@ -103,9 +109,12 @@ void *GuiGetMoneroOutputData(void)
 {
     CHECK_FREE_PARSE_RESULT(g_parseResult);
     void *data = g_isMulti ? g_urMultiResult->data : g_urResult->data;
+    uint8_t decryptKey[32];
+    SetUpMoneroDecryptKey(decryptKey);
     do {
         char *pvk = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_PVK_0);
-        PtrT_TransactionParseResult_DisplayMoneroOutput parseResult = monero_parse_output(data, g_decryptKey, pvk);
+        PtrT_TransactionParseResult_DisplayMoneroOutput parseResult = monero_parse_output(data, decryptKey, pvk);
+        memset_s(decryptKey, sizeof(decryptKey), 0, sizeof(decryptKey));
         if (parseResult == NULL) {
             break;
         }
@@ -123,12 +132,15 @@ void *GuiGetMoneroUnsignedTxData(void)
 {
     CHECK_FREE_PARSE_RESULT(g_parseResult);
     void *data = g_isMulti ? g_urMultiResult->data : g_urResult->data;
+    uint8_t decryptKey[32];
+    SetUpMoneroDecryptKey(decryptKey);
     do {
         char *pvk = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_PVK_0);
         // The account public spend key lets the parser prove that a "change"
         // output pays this wallet instead of trusting the host's claim.
         char *pubSpendKey = GetCurrentAccountPublicKey(XPUB_TYPE_MONERO_0);
-        PtrT_TransactionParseResult_DisplayMoneroUnsignedTx parseResult = monero_parse_unsigned_tx(data, g_decryptKey, pvk, pubSpendKey);
+        PtrT_TransactionParseResult_DisplayMoneroUnsignedTx parseResult = monero_parse_unsigned_tx(data, decryptKey, pvk, pubSpendKey);
+        memset_s(decryptKey, sizeof(decryptKey), 0, sizeof(decryptKey));
         if (parseResult == NULL) {
             break;
         }
@@ -188,7 +200,6 @@ UREncodeResult *GuiGetMoneroSignedTransactionQrCodeData(void)
 
 void GuiClearMoneroSensitiveState(void)
 {
-    memset_s(g_decryptKey, sizeof(g_decryptKey), 0, sizeof(g_decryptKey));
     monero_clear_transaction_state();
 }
 
@@ -274,7 +285,7 @@ void GuiShowXmrTransactionOverview(lv_obj_t *parent, void *totalData)
     lv_obj_t * amountContainer = GuiCreateContainerWithParent(parent, 408, 144);
     GuiSetTransactionContainerStyle(amountContainer);
 
-    lv_obj_t *label = GuiCreateIllustrateLabel(amountContainer, "Amount");
+    lv_obj_t *label = GuiCreateIllustrateLabel(amountContainer, "Total Output");
     lv_obj_align(label, LV_ALIGN_DEFAULT, 24, 16);
     lv_obj_set_style_text_opa(label, 144, LV_PART_MAIN);
 

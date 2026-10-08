@@ -80,7 +80,8 @@ unsafe fn parse_view_key(ptr: PtrString) -> Result<Zeroizing<[u8; PRVKEY_LEH]>, 
         return Err(RustCError::InvalidMasterFingerprint);
     }
     let mut key = Zeroizing::new([0; PRVKEY_LEH]);
-    hex::decode_to_slice(recover_c_char(ptr), &mut *key)
+    let text = cstr_core::CStr::from_ptr(ptr).to_bytes();
+    hex::decode_to_slice(text, &mut *key)
         .map_err(|_| RustCError::InvalidMasterFingerprint)?;
     PrivateKey::try_from_slice(&*key).map_err(|_| RustCError::InvalidMasterFingerprint)?;
     Ok(key)
@@ -92,6 +93,9 @@ pub unsafe extern "C" fn monero_output_request_check(
     decrypt_key: PtrBytes,
     pvk: PtrString,
 ) -> PtrT<TransactionCheckResult> {
+    if ptr.is_null() {
+        return TransactionCheckResult::from(RustCError::InvalidData("missing request data".into())).c_ptr();
+    }
     let request = extract_ptr_with_type!(ptr, XmrOutput);
     let decrypt_key = match safe_parse_key(decrypt_key) {
         Ok(decrypt_key) => decrypt_key,
@@ -123,6 +127,9 @@ pub unsafe extern "C" fn monero_unsigned_request_check(
     pub_spend_key: PtrString,
 ) -> PtrT<TransactionCheckResult> {
     clear_approved_unsigned_tx();
+    if ptr.is_null() {
+        return TransactionCheckResult::from(RustCError::InvalidData("missing request data".into())).c_ptr();
+    }
     let request = extract_ptr_with_type!(ptr, XmrTxUnsigned);
     let decrypt_key = match safe_parse_key(decrypt_key) {
         Ok(key) => key,
@@ -187,6 +194,9 @@ pub unsafe extern "C" fn monero_parse_output(
     decrypt_key: PtrBytes,
     pvk: PtrString,
 ) -> PtrT<TransactionParseResult<DisplayMoneroOutput>> {
+    if ptr.is_null() {
+        return TransactionParseResult::from(RustCError::InvalidData("missing request data".into())).c_ptr();
+    }
     let request = extract_ptr_with_type!(ptr, XmrOutput);
     let decrypt_key = match safe_parse_key(decrypt_key) {
         Ok(decrypt_key) => decrypt_key,
@@ -304,6 +314,9 @@ pub unsafe extern "C" fn monero_parse_unsigned_tx(
         return TransactionParseResult::from(RustCError::InvalidData("missing wallet keys".into()))
             .c_ptr();
     }
+    if ptr.is_null() {
+        return TransactionParseResult::from(RustCError::InvalidData("missing request data".into())).c_ptr();
+    }
     let request = extract_ptr_with_type!(ptr, XmrTxUnsigned);
     let decrypt_key = match safe_parse_key(decrypt_key) {
         Ok(decrypt_key) => decrypt_key,
@@ -356,6 +369,9 @@ pub unsafe extern "C" fn monero_generate_keyimage(
     seed_len: u32,
     major: u32,
 ) -> PtrT<UREncodeResult> {
+    if ptr.is_null() || seed.is_null() || seed_len == 0 {
+        return UREncodeResult::from(RustCError::InvalidData("missing request data".into())).c_ptr();
+    }
     let request = extract_ptr_with_type!(ptr, XmrOutput);
     let seed = extract_array!(seed, u8, seed_len as usize);
     let keypair = match app_monero::key::generate_keypair(seed, major) {
@@ -387,6 +403,10 @@ pub unsafe extern "C" fn monero_generate_signature(
     seed_len: u32,
     major: u32,
 ) -> PtrT<UREncodeResult> {
+    if ptr.is_null() || seed.is_null() || seed_len == 0 {
+        clear_approved_unsigned_tx();
+        return UREncodeResult::from(RustCError::InvalidData("missing request data".into())).c_ptr();
+    }
     let request = extract_ptr_with_type!(ptr, XmrTxUnsigned);
     let seed = extract_array!(seed, u8, seed_len as usize);
     let payload = request.get_payload();
@@ -484,6 +504,19 @@ mod request_boundary_tests {
     use super::*;
 
     #[test]
+    fn view_key_text_boundaries() {
+        unsafe {
+            let invalid = cstr_core::CString::new(alloc::vec![0xff; 64]).unwrap();
+            assert!(parse_view_key(invalid.as_ptr() as PtrString).is_err());
+            let zero = cstr_core::CString::new("00".repeat(32)).unwrap();
+            assert!(parse_view_key(zero.as_ptr() as PtrString).is_err());
+            let valid = cstr_core::CString::new(alloc::format!("01{}", "00".repeat(31))).unwrap();
+            let key = parse_view_key(valid.as_ptr() as PtrString).unwrap();
+            assert_eq!(key[0], 1);
+        }
+    }
+
+    #[test]
     fn missing_keys_clear_parse_state() {
         unsafe {
             let generation = clear_approved_unsigned_tx();
@@ -508,6 +541,25 @@ mod request_boundary_tests {
             assert!(!approved_unsigned_tx_matches(b"request"));
             (*result).free();
             drop(Box::from_raw(result));
+            for result in [
+                monero_output_request_check(core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut()),
+                monero_unsigned_request_check(core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut()),
+            ] {
+                assert!(!result.is_null());
+                (*result).free();
+                drop(Box::from_raw(result));
+            }
+            let result = monero_parse_output(core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut());
+            (*result).free();
+            drop(Box::from_raw(result));
+            for result in [
+                monero_generate_keyimage(core::ptr::null_mut(), core::ptr::null_mut(), 0, 0),
+                monero_generate_signature(core::ptr::null_mut(), core::ptr::null_mut(), 0, 0),
+            ] {
+                assert!(!result.is_null());
+                (*result).free();
+                drop(Box::from_raw(result));
+            }
             let result = monero_generate_decrypt_key(core::ptr::null_mut());
             assert!(!result.is_null());
             monero_free_decrypt_key_response(result.cast());

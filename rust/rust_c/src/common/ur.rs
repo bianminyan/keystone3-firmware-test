@@ -1035,9 +1035,7 @@ fn _decode_ur<T: RegistryItem + TryFrom<Vec<u8>, Error = URError> + InferViewTyp
                 Err(error) => URParseResult::from(error),
             };
         }
-        Ok((ur::ur::Kind::SinglePart, cbor)) => {
-            let _ = cbor;
-        }
+        Ok((ur::ur::Kind::SinglePart, _)) => {}
         Err(error) => {
             return URParseResult::from(URError::UrDecodeError(error.to_string()));
         }
