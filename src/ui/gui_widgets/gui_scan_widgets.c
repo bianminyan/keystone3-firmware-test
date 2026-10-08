@@ -121,6 +121,13 @@ void GuiScanResult(bool result, void *param)
         UrViewType_t urViewType = *(UrViewType_t *)param;
         g_qrcodeViewType = urViewType.viewType;
 #ifdef CYPHERPUNK_VERSION
+        // Decoded results can remain queued after the scanner is closed or
+        // covered. Do not let a late address result navigate away from the
+        // current page or create a page over the lock screen.
+        if (g_qrcodeViewType == ZcashAddressCheck &&
+                (g_pageWidget == NULL || !GuiCheckIfTopView(&g_scanView) || GuiLockScreenIsTop())) {
+            return;
+        }
         // A filtered entry (e.g. Zcash address verification) only accepts the QR
         // types it asked for; anything else must not start another flow.
         if (g_viewTypeFilter[0] != 0xFF &&
@@ -131,9 +138,7 @@ void GuiScanResult(bool result, void *param)
         if (g_qrcodeViewType == ZcashAddressCheck) {
             // Replace the scanner so Back returns to the entry that launched it.
             // The result view copies the address into LVGL during synchronous init.
-            if (GuiCheckIfTopView(&g_scanView)) {
-                GuiCloseCurrentWorkingView();
-            }
+            GuiCloseCurrentWorkingView();
             const ZcashAddressScanResult_t *scanResult = param;
             GuiFrameOpenViewWithParam(&g_zcashVerifyResultView, (void *)scanResult->address,
                                       sizeof(scanResult->address));
