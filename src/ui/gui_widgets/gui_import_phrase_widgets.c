@@ -63,7 +63,7 @@ static void ZcashSeedWarningContinueHandler(lv_event_t *e)
 
 static void ShowZcashSeedWarning(void)
 {
-    if (g_inputWordsCnt == 12 && !g_zcashSeedWarningAccepted && g_zcashSeedWarning == NULL) {
+    if ((g_inputWordsCnt == 12 || g_inputWordsCnt == 18)  && !g_zcashSeedWarningAccepted && g_zcashSeedWarning == NULL) {
         g_zcashSeedWarning = GuiCreateZcashSeedWarning(ZcashSeedWarningBackHandler,
                              ZcashSeedWarningContinueHandler);
     }
