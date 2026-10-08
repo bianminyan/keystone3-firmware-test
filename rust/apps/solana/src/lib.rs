@@ -158,7 +158,22 @@ pub fn parse_for_signer(data: &Vec<u8>, signer: &[u8; 32]) -> errors::Result<Par
     ParsedSolanaTx::build_for_signer(data, signer)
 }
 
+const MAX_DERIVATION_PATH_DEPTH: usize = 5;
+// "m/" plus five 10-digit indices, hardening marks and separators.
+const MAX_DERIVATION_PATH_LEN: usize = 2 + MAX_DERIVATION_PATH_DEPTH * 12 - 1;
+
 pub fn validate_derivation_path(path: &str) -> errors::Result<String> {
+    let max_input_len = if path.starts_with("m/") {
+        MAX_DERIVATION_PATH_LEN
+    } else {
+        MAX_DERIVATION_PATH_LEN - 2
+    };
+    // Bound input before allocating the normalized path or its components.
+    if path.len() > max_input_len {
+        return Err(errors::SolanaError::InvalidData(
+            "Solana derivation path exceeds maximum length".to_string(),
+        ));
+    }
     let normalized = if path.starts_with("m/") {
         path.to_string()
     } else {
@@ -169,6 +184,11 @@ pub fn validate_derivation_path(path: &str) -> errors::Result<String> {
         .unwrap_or("")
         .split('/')
         .collect::<Vec<_>>();
+    if components.len() > MAX_DERIVATION_PATH_DEPTH {
+        return Err(errors::SolanaError::InvalidData(
+            "Solana derivation path exceeds maximum depth of 5".to_string(),
+        ));
+    }
     let parse_hardened = |component: &str| {
         component
             .strip_suffix('\'')
@@ -231,6 +251,18 @@ mod tests {
         ] {
             assert!(validate_derivation_path(path).is_err(), "{path}");
         }
+    }
+
+    #[test]
+    fn bounds_derivation_path_depth_and_length() {
+        let deepest = "2147483647'/2147483647'/2147483647'/2147483647'/2147483647'";
+        assert_eq!(deepest.len() + 2, MAX_DERIVATION_PATH_LEN);
+        assert!(validate_derivation_path(deepest).is_ok());
+        assert!(validate_derivation_path(&format!("m/{deepest}")).is_ok());
+        assert!(validate_derivation_path("m/0'/0'/0'/0'/0'/0'").is_err());
+        assert!(validate_derivation_path("0'/0'/0'/0'/0'/0'").is_err());
+        assert!(validate_derivation_path(&format!("m/{}'", "0".repeat(1000))).is_err());
+        assert!(validate_derivation_path(&format!("{}'", "0".repeat(1000))).is_err());
     }
 
     #[test]
