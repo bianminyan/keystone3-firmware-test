@@ -50,6 +50,8 @@ void GetTrxCallValue(void *indata, void *param, uint32_t maxLen);
 void GetTrxCallTokenValue(void *indata, void *param, uint32_t maxLen);
 void GetTrxTokenId(void *indata, void *param, uint32_t maxLen);
 void GetTrxCallData(void *indata, void *param, uint32_t maxLen);
+// Borrowed from the parse result; valid until FreeTrxMemory().
+const char *GuiGetTrxCallDataText(void *param);
 void GetTrxContractWarning(void *indata, void *param, uint32_t maxLen);
 bool GetTrxAttachedTokenExist(void *indata, void *param);
 bool GetTrxContractWarningExist(void *indata, void *param);

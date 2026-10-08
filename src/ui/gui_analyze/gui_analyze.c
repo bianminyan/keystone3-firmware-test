@@ -7,6 +7,9 @@
 #include "gui_chain_components.h"
 #include "gui_chain.h"
 #include "gui_model.h"
+#ifdef FEATURE_TRON
+#include "gui_trx.h"
+#endif
 
 #ifndef COMPILE_SIMULATOR
 #include "safe_mem_lib.h"
@@ -547,10 +550,26 @@ static lv_obj_t *GuiWidgetPagedText(lv_obj_t *parent, cJSON *json)
     lv_obj_set_style_pad_all(obj, 0, LV_PART_MAIN);
     lv_obj_set_style_border_width(obj, 0, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, LV_PART_MAIN);
-    char *text = GetLabelText(parent, json);
+    char *ownedText = NULL;
+    const char *text = NULL;
+#ifdef FEATURE_TRON
+    cJSON *textFunc = cJSON_GetObjectItem(json, "text_func");
+    if (textFunc != NULL && textFunc->valuestring != NULL &&
+            strcmp(textFunc->valuestring, "GetTrxCallData") == 0) {
+        // The detail page destroys its widgets before freeing the Rust parse
+        // result. Borrow calldata directly, avoiding a full-size strcpy_s.
+        text = GuiGetTrxCallDataText(g_totalData);
+    } else
+#endif
+    {
+        ownedText = GetLabelText(parent, json);
+        text = ownedText;
+    }
     GuiShowPagedMessageText(obj, text, true, NULL, NULL);
-    /* The pager borrows its source until the container is destroyed. */
-    lv_obj_add_event_cb(obj, GuiPagedTextDelete, LV_EVENT_DELETE, text);
+    // Only the generic text path owns an extra buffer. Rust owns calldata.
+    if (ownedText != NULL) {
+        lv_obj_add_event_cb(obj, GuiPagedTextDelete, LV_EVENT_DELETE, ownedText);
+    }
     return obj;
 }
 

@@ -310,6 +310,14 @@ DEFINE_TRX_DETAIL_GETTER(GetTrxCallValue, call_value)
 DEFINE_TRX_DETAIL_GETTER(GetTrxCallTokenValue, call_token_value)
 DEFINE_TRX_DETAIL_GETTER(GetTrxTokenId, token_id)
 DEFINE_TRX_DETAIL_GETTER(GetTrxCallData, call_data)
+
+const char *GuiGetTrxCallDataText(void *param)
+{
+    const DisplayTron *trx = (const DisplayTron *)param;
+    const char *text = trx != NULL && trx->detail != NULL ? trx->detail->call_data : NULL;
+    return text == NULL ? "" : text;
+}
+
 DEFINE_TRX_DETAIL_GETTER(GetTrxContractWarning, contract_warning)
 
 bool GetTrxAttachedTokenExist(void *indata, void *param)
