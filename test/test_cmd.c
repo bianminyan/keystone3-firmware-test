@@ -57,6 +57,7 @@
 #include "cjson/cJSON.h"
 #include "flash_address.h"
 #include "gui_model.h"
+#include "gui_views.h"
 #include "gui_ar.h"
 #include "gui_general_home_widgets.h"
 #include "rsa.h"
@@ -944,12 +945,12 @@ static int32_t MigrationReadStoredArPublicKey(uint8_t accountIndex, char *public
         return ERR_GENERAL_FAIL;
     }
     publicKey[0] = '\0';
-    addr = SPI_FLASH_ADDR_USER1_MUTABLE_DATA + accountIndex * SPI_FLASH_ADDR_EACH_SIZE;
+    addr = SPI_FLASH_ADDR_USER1_DATA + accountIndex * SPI_FLASH_ADDR_EACH_SIZE;
     ret = Gd25FlashReadBuffer(addr, (uint8_t *)&size, sizeof(size));
     if (ret != sizeof(size)) {
         return ret;
     }
-    if (size == 0 || size == 0xFFFFFFFF || size > SPI_FLASH_SIZE_USER1_MUTABLE_DATA - 4) {
+    if (size == 0 || size == 0xFFFFFFFF || size > SPI_FLASH_SIZE_USER1_DATA - 4) {
         return ERR_GENERAL_FAIL;
     }
 
@@ -1541,6 +1542,17 @@ static void MigrationTestFunc(int argc, char *argv[])
 #else
         printf("MigrationArReceive=-1,status=unsupported\r\n");
         printf("MigrationArReceiveDone=1\r\n");
+#endif
+    } else if (strcmp(argv[0], "ui_login") == 0) {
+#ifdef WEB3_VERSION
+        VALUE_CHECK(argc, 2);
+        uint16_t signal = SIG_LOCK_VIEW_VERIFY_PIN;
+        SetMigrationTestSkipBootUpdate(true);
+        SecretCacheSetPassword(argv[1]);
+        GuiModelVerifyAccountPassWord(&signal);
+        printf("MigrationUiLoginStarted=1\r\n");
+#else
+        printf("MigrationUiLoginStarted=0,status=unsupported\r\n");
 #endif
     } else if (strcmp(argv[0], "ar_receive_probe_safe") == 0) {
 #ifdef WEB3_VERSION

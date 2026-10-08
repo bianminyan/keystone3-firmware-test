@@ -34,6 +34,6 @@ bool GetBootSoftwareVersion(uint32_t *major, uint32_t *minor, uint32_t *build);
 bool IsBootVersionMatch(void);
 void GetBootVersionNumber(char *version);
 bool NeedUpdateBoot(void);
+void SetMigrationTestSkipBootUpdate(bool skip);
 
 #endif
-

@@ -20,6 +20,12 @@ const char g_softwareVersionString[] = SOFTWARE_VERSION_STR;
 const char g_softwareVersionString[] __attribute__((section(".fixSection"))) = SOFTWARE_VERSION_STR;
 #endif
 static bool GetBootSoftwareVersionFormData(uint32_t *major, uint32_t *minor, uint32_t *build, const uint8_t *data, uint32_t dataLen);
+static bool g_migrationTestSkipBootUpdate = false;
+
+void SetMigrationTestSkipBootUpdate(bool skip)
+{
+    g_migrationTestSkipBootUpdate = skip;
+}
 
 void GetSoftWareVersion(char *version)
 {
@@ -87,6 +93,9 @@ void GetBootVersionNumber(char *version)
 #ifndef COMPILE_SIMULATOR
 bool NeedUpdateBoot(void)
 {
+    if (g_migrationTestSkipBootUpdate) {
+        return false;
+    }
     uint32_t major, minor, build;
     if (GetBootSoftwareVersion(&major, &minor, &build) == false) {
         return true;
