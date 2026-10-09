@@ -36,11 +36,11 @@ def summarize(folder, code, preview, failure):
         failure = failure or 'Cannot read the review input or report JSON.'
         report = {}
 
-    blocked = bool(gate.get('status') == 'failure' and report.get('status') == 'complete')
-    if gate and gate.get('status') != 'success':
+    if gate and gate.get('status') not in ('success', 'failure'):
         code = code or 1
-        failure = failure or gate.get('reason') or 'The merge gate has not passed.'
-    state = 'blocked' if blocked else ('failed' if code else ('skipped' if skipped else ('preview' if preview else 'complete')))
+        failure = failure or gate.get('reason') or 'The merge gate did not finish.'
+    blocked = bool(not code and gate.get('status') == 'failure' and report.get('status') == 'complete')
+    state = 'failed' if code else ('skipped' if skipped else ('preview' if preview else 'complete'))
     status = {'status': state, 'exit_code': code, 'error': failure, 'gate': gate.get('status')}
     if skipped:
         status['reason'] = trigger.get('reason') or 'The comment is not a review command.'
@@ -72,9 +72,9 @@ def summarize(folder, code, preview, failure):
         lines += [f'Merge gate: `{gate.get("context")}` = `{gate.get("status")}`. Minimum severity: {gate.get("minimum_severity", "unknown")}.', '',
                   gate.get('reason', 'The gate has not finished.'), '']
     if blocked:
-        lines += ['Review completed, but unresolved findings block merging.', '']
+        lines += ['Review completed successfully. Unresolved findings block merging.', '']
     elif code:
-        lines += ['Review is not complete. This is not a pass with no findings. ' + failure, '']
+        lines += ['Review run failed. ' + failure, '']
     lines += ['See the build artifacts for the full report, inputs, and logs.', '']
     if not gate:
         lines += ['No merge gate was published by this run.', '']

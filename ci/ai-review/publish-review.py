@@ -266,15 +266,16 @@ def render_review_body(active, general, inline_count, run_url, review_marker, me
         lines += ['; '.join(cache) + '. Cache counts are not added again to the total.']
     if fix:
         by_id = {item['id']: item for item in fix['ledger']}
-        lines += ['', '### 旧问题复核', '',
+        open_checks = [note for note in fix['checks'] if note['verdict'] not in review_state.CLOSED]
+        lines += ['', '### 未解决的旧问题', '',
                   f'上次审查：`{fix.get("previous_head") or "无"}`；本次：`{state["head"]}`。',
                   f'后续代码审查范围：`{fix.get("range", "full")}`。', '']
-        for note in fix['checks']:
+        for note in open_checks:
             item = by_id[note['id']]
             ref = f'[{scrub(item["id"])}]({scrub(item["comment_url"])})' if item.get('comment_url') else scrub(item['id'])
             lines += [f'#### {ref} · 原位置 `{location(item)}`', '', fix_text(note), '']
-        if not fix['checks']:
-            lines += ['没有需要复核的旧问题。', '']
+        if not open_checks:
+            lines += ['没有未解决的旧问题。', '']
     if general:
         lines += ['', 'These findings could not be attached safely to the current diff:', '']
         for finding in general:
@@ -293,13 +294,6 @@ def render_review_body(active, general, inline_count, run_url, review_marker, me
         # The marker stores findings only, never credentials or model reasoning.
         lines += ['', review_state.encode_state(json.loads(scrub(json.dumps(state, ensure_ascii=False))))]
     return '\n'.join(lines)
-
-
-def validate_payload(payload):
-    if len(payload['body'].encode('utf-8')) > 65000:
-        raise PublishError('The review body and history are too large for GitHub. No findings were dropped.')
-    if any(len(comment['body'].encode('utf-8')) > 65000 for comment in payload['comments']):
-        raise PublishError('An inline finding is too large for GitHub.')
 
 
 def prepare(repository_root, run_folder):
@@ -352,7 +346,6 @@ def prepare(repository_root, run_folder):
         active, general, len(inline), scrub(os.environ.get('BUILDKITE_BUILD_URL')), review_marker, metadata, fix, state,
     )
     payload = {'commit_id': head, 'event': 'COMMENT', 'body': body, 'comments': inline}
-    validate_payload(payload)
     return snapshot, active, general, review_marker, payload, metadata
 
 
@@ -372,8 +365,6 @@ def thread_replies(snapshot, report, metadata, run_url):
         if run_url:
             body += f'\n\n[Open the Buildkite run]({run_url})'
         body += '\n\n' + tag
-        if len(body.encode('utf-8')) > 65000:
-            raise PublishError('A fix verification reply is too large for GitHub.')
         replies.append({'comment_id': item['comment_id'], 'body': body, 'marker': tag})
     return replies
 
@@ -516,7 +507,6 @@ def main():
                 'body': fallback_body,
                 'comments': [],
             }
-            validate_payload(fallback_payload)
             ensure_current(token, pull_path, snapshot['head_sha'])
             response = api_request(token, 'POST', pull_path + '/reviews', fallback_payload)
             result['fallback'] = 'GitHub rejected an inline location, so new findings were posted in the review body.'

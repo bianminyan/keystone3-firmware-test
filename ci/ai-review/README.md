@@ -48,9 +48,11 @@ REVIEW_MODE=chained
 1. 从 GitHub 读取同一发布账号、同一 PR 的历史 AI reviews。新版 review 的隐藏 marker 保存稳定 finding ID、原评论位置和状态；旧格式从行内评论和 review 正文恢复。不把“这次没找到”当成修复，也不丢弃更早的未解决问题。
 2. 用原生 OCR 逐条验证旧问题，输出 `fixed`、`open`、`unresolved`、`dismissed` 或 `out_of_scope` 及代码证据。未修改、已移动或删除的文件同样进入验证。无法得到完整有效结论时保留旧问题，报告为 partial，不向 GitHub 发布完成结果。
 3. 上次 head 是当前 head 的祖先且 PR merge-base 相同时，继续对上次 head 到当前 head 的新增修改执行 bug → blocker。否则退回完整 PR 范围；没有历史记录时也执行完整 PR 审查。老格式没有保存 base，因此第一次复核采用完整范围。增量发现若与修复结论冲突，保留为待确认。
-4. 在原 finding 线程回复复核结果，新 finding 创建新行内评论。原本只在 review 正文里的问题仍在新摘要中说明。若历史 marker 已保存 finding，但原评论被删除，保留该问题和复核结论，改在新摘要中发布；评论仍存在但不属于发布账号或不是根评论时，拒绝回复。先更新可用线程，成功后再发布带有新状态的汇总；失败重试不会重复回复。同一 build 的重新执行会复用已发布的 review。
+4. Reply to each existing finding thread with its verification result, and create inline comments for new findings. The review body lists only old findings that are open or unresolved. Fixed, dismissed, and out-of-scope findings stay in the full report and hidden history. If an original thread was deleted, keep its history and list the finding in the summary only while it remains open or unresolved. Reject replies to existing threads owned by another publisher or to non-root comments. Update available threads before publishing the new summary. Retries reuse this build's published review and do not repeat replies.
 
 报告仍是中文，包含前后提交、每个旧问题的状态、证据、新发现、模型及总 token（复核 + 新增修改审查）。主报告在 `review/report.md`，机器结果在 `review/report.json`；`review/fix/` 保存复核结果，`review/incremental/` 保存后续代码审查。被当前规则排除的翻译/字体问题记为 out_of_scope，不会被误标为已修复。
+
+Hidden review state uses the v2 marker with zlib compression and base64 encoding. All finding IDs, content, states, and thread links are kept. The reader also accepts existing v1 markers without compression. Publish the reader and writer changes together through `REVIEW_CI_BRANCH`; no review image rebuild is needed. The publisher does not set a local size limit for review bodies, inline comments, or fix replies. GitHub API errors are reported without dropping findings.
 
 发布时仍检查 PR 当前 head，仍使用 `COMMENT`；不会自动 resolve 原线程或 approve PR。合并门禁使用下面的独立 commit status。GitHub 凭据仍在 agent 侧使用，不传给模型容器，不需要 Buildkite API token。当前历史读取要求与之前发布 review 相同的 GitHub PAT 账号；换账号前需迁移历史。历史或正文超过 GitHub 容量时会明确报错，不会截断 findings。
 
@@ -226,7 +228,7 @@ bash ci/ai-review/review-pr.sh
 
 每次运行使用 `tmp/ai-review/<独立ID>/`，保存 PR 输入、镜像身份、容器日志、发布状态、英文 CI 摘要和工具产物。工具默认保留汇总及两轮报告、日志、配置和输入快照；成功后清理临时预检和计时文件，失败时保留已有中间文件。Buildkite 的 `artifact_paths` 在命令结束后收集产物，再进入 agent 的 `pre-exit` 清理。如果 Spot 实例被直接终止，本地尚未上传的产物可能丢失。取消时脚本停止它创建的容器。
 
-运行失败与零 findings 分开记录。门禁开启时，未解决的 high 及以上问题、显式 blocker 或未知严重度问题会让 CI 返回失败；关闭门禁时，finding 不影响 runner 退出码。报告正文不包含时间、plan 或 token 分析。
+Buildkite reports whether the review job completed. A completed review and publication return exit code 0, even when findings block merging. In that case, status.json records status=complete and gate=failure; the separate GitHub merge gate still blocks the PR. Model, script, publication, and gate update errors return a nonzero exit code. Reports do not include timing, plan, or token analysis.
 
 ## 当前边界
 

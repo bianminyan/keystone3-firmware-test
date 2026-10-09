@@ -205,7 +205,7 @@ def finish(api, token, folder, exit_code):
     if any(record.get(key) != snapshot.get(key) for key in ('repository', 'number', 'head_sha', 'base_sha', 'base_ref')):
         raise ValueError('The pending gate does not match this PR snapshot.')
     if record.get('status') != 'pending':
-        return 0 if record.get('status') == 'success' else 1
+        return 0 if not exit_code and record.get('status') in ('success', 'failure') else 1
     try:
         check_current(api, token, snapshot)
         if exit_code:
@@ -248,7 +248,8 @@ def finish(api, token, folder, exit_code):
     record['status_id'] = result['id']
     write_object(folder / 'gate.json', record)
     print(f'Merge gate: {record["status"]}. {record["reason"]}')
-    return 0 if record['status'] == 'success' else 1
+    # A completed decision can block merging without failing the review job.
+    return 0 if record['status'] in ('success', 'failure') else 1
 
 
 def main():

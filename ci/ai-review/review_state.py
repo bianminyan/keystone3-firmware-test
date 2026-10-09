@@ -9,10 +9,11 @@ import json
 import os
 from pathlib import Path
 import re
+import zlib
 
 
 SCHEMA = 'keystone.review-state/v1'
-STATE = re.compile(r'<!-- keystone-ai-review-state:v1 ([A-Za-z0-9+/=]+) -->')
+STATE = re.compile(r'<!-- keystone-ai-review-state:(v1|v2) ([A-Za-z0-9+/=]+) -->')
 FINDING = re.compile(r'<!-- keystone-ai-review-finding:([A-Za-z0-9-]+) -->')
 CLOSED = {'fixed', 'dismissed', 'out_of_scope'}
 FIELDS = ('id', 'origin_head', 'path', 'start_line', 'end_line', 'classification',
@@ -38,7 +39,8 @@ def finding_id(repository, number, head, finding):
 
 def encode_state(state):
     raw = json.dumps(state, ensure_ascii=False, separators=(',', ':')).encode()
-    return '<!-- keystone-ai-review-state:v1 ' + base64.b64encode(raw).decode() + ' -->'
+    encoded = base64.b64encode(zlib.compress(raw)).decode()
+    return '<!-- keystone-ai-review-state:v2 ' + encoded + ' -->'
 
 
 def decode_state(body, repository, number, head):
@@ -46,7 +48,13 @@ def decode_state(body, repository, number, head):
     if not matches:
         return None
     match = matches[-1]
-    value = json.loads(base64.b64decode(match[1], validate=True))
+    raw = base64.b64decode(match[2], validate=True)
+    if match[1] == 'v2':
+        try:
+            raw = zlib.decompress(raw)
+        except zlib.error as error:
+            raise ValueError('The compressed review history is invalid.') from error
+    value = json.loads(raw)
     if (not isinstance(value, dict) or value.get('schema_version') != SCHEMA or value.get('repository') != repository
             or value.get('number') != number or value.get('head') != head
             or not isinstance(value.get('findings'), list)):

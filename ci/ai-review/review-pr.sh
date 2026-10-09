@@ -66,7 +66,7 @@ finish() {
   if [[ "$review_gate" == true && "$review_preview" == false && -f "$review_folder/gate.json" ]]; then
     if ! python3 "$review_script_dir/review_gate.py" finish "$review_folder" --exit-code "$review_code"; then
       review_code=1
-      review_error=${review_error:-'The merge gate did not pass. See gate.json and the build log.'}
+      review_error=${review_error:-'Could not finish the merge gate. See gate.json and the build log.'}
     fi
   fi
   python3 "$review_script_dir/review-summary.py" "$review_folder" \
