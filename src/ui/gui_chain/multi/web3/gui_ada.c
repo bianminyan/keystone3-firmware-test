@@ -1871,12 +1871,6 @@ UREncodeResult *GuiGetAdaSignQrCodeData(void)
     SetLockScreen(enable);
     return encodeResult;
 }
-static void SetContainerDefaultStyle(lv_obj_t *container)
-{
-    lv_obj_set_style_radius(container, 24, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(container, WHITE_COLOR, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(container, 30, LV_PART_MAIN | LV_STATE_DEFAULT);
-}
 
 UREncodeResult *GuiGetAdaSignTxHashQrCodeData(void)
 {
@@ -1913,7 +1907,7 @@ UREncodeResult *GuiGetAdaSignTxHashQrCodeData(void)
 lv_obj_t *GuiCreateAdaAutoHeightContainer(lv_obj_t *parent, uint16_t width, uint16_t padding_x)
 {
     lv_obj_t * container = GuiCreateContainerWithParent(parent, 408, LV_SIZE_CONTENT);
-    SetContainerDefaultStyle(container);
+    GuiSetTransactionContainerStyle(container);
     lv_obj_set_style_pad_all(container, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_top(container, padding_x, LV_PART_MAIN);
     lv_obj_set_style_pad_bottom(container, padding_x, LV_PART_MAIN);
@@ -1923,7 +1917,7 @@ lv_obj_t *GuiCreateAdaAutoHeightContainer(lv_obj_t *parent, uint16_t width, uint
 lv_obj_t* GuiCreateAdaNoticeCard(lv_obj_t* parent)
 {
     lv_obj_t* card = GuiCreateAdaAutoHeightContainer(parent, 408, 24);
-    SetContainerDefaultStyle(card);
+    GuiSetTransactionContainerStyle(card);
     lv_obj_set_style_bg_color(card, YELLOW_COLOR, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(card, LV_OPA_20, LV_PART_MAIN);
     lv_obj_set_style_radius(card, 24, LV_PART_MAIN);
@@ -1945,31 +1939,15 @@ lv_obj_t* GuiCreateAdaNoticeCard(lv_obj_t* parent)
 
     return card;
 }
-static void SetTitleLabelStyle(lv_obj_t *label)
-{
-    lv_obj_set_style_text_font(label, g_defIllustrateFont, LV_PART_MAIN);
-    lv_obj_set_style_text_color(label, WHITE_COLOR, LV_PART_MAIN);
-    lv_obj_set_style_text_opa(label, 144, LV_PART_MAIN | LV_STATE_DEFAULT);
-}
 
-static void SetFlexContainerStyle(lv_obj_t *container, lv_flex_flow_t flow, lv_coord_t padding_y)
-{
-    lv_obj_set_style_radius(container, 24, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(container, WHITE_COLOR, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(container, 30, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_flex_flow(container, flow);
-    lv_obj_set_style_pad_top(container, padding_y, LV_PART_MAIN);
-    lv_obj_set_style_pad_bottom(container, padding_y, LV_PART_MAIN);
-    lv_obj_set_style_pad_left(container, 24, LV_PART_MAIN);
-}
 
 lv_obj_t *GuiAdaCreateLabelCard(lv_obj_t *parent, const char *title, const char *content)
 {
     lv_obj_t *card = GuiCreateContainerWithParent(parent, 408, LV_SIZE_CONTENT);
-    SetFlexContainerStyle(card, LV_FLEX_FLOW_ROW, 16);
+    GuiSetTransactionFlexStyle(card, LV_FLEX_FLOW_ROW, 16);
     lv_obj_t *title_label = GuiCreateTextLabel(card, title);
     lv_obj_align_to(title_label, card, LV_ALIGN_OUT_TOP_LEFT, 24, 16);
-    SetTitleLabelStyle(title_label);
+    GuiSetTransactionTitleStyle(title_label);
     lv_obj_t *content_label = GuiCreateIllustrateLabel(card, content);
     lv_obj_align_to(content_label, title_label, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 16);
     return card;
@@ -1993,7 +1971,7 @@ void GuiShowAdaSignTxHashOverview(lv_obj_t *parent, void *totalData)
     // tx hash container
     lv_obj_t *tx_hash_card = GuiCreateContainerWithParent(parent, 408, LV_SIZE_CONTENT);
     lv_obj_align(tx_hash_card, LV_ALIGN_DEFAULT, 0, containerYOffset);
-    SetFlexContainerStyle(tx_hash_card, LV_FLEX_FLOW_COLUMN, 16);
+    GuiSetTransactionFlexStyle(tx_hash_card, LV_FLEX_FLOW_COLUMN, 16);
     lv_obj_t *tx_hash_label = GuiCreateTextLabel(tx_hash_card, "Hash");
     lv_obj_set_style_text_opa(tx_hash_label, 144, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_align_to(tx_hash_label, tx_hash_card, LV_ALIGN_OUT_BOTTOM_LEFT, 24, 16);
@@ -2023,7 +2001,7 @@ void GuiShowAdaSignTxHashDetails(lv_obj_t *parent, void *totalData)
     // From Conatiner
     lv_obj_t *from_container = GuiCreateContainerWithParent(parent, 408, LV_SIZE_CONTENT);
     lv_obj_align(from_container, LV_ALIGN_DEFAULT, 0, containerYOffset);
-    SetFlexContainerStyle(from_container, LV_FLEX_FLOW_COLUMN, 16);
+    GuiSetTransactionFlexStyle(from_container, LV_FLEX_FLOW_COLUMN, 16);
     lv_obj_t *from_label = GuiCreateTextLabel(from_container, "From");
     lv_obj_set_style_text_opa(from_label, 144, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_align_to(from_label, from_container, LV_ALIGN_OUT_BOTTOM_LEFT, 24, 16);
@@ -2068,7 +2046,7 @@ void GuiShowAdaSignTxHashDetails(lv_obj_t *parent, void *totalData)
     // tx hash container
     lv_obj_t *tx_hash_card = GuiCreateContainerWithParent(parent, 408, LV_SIZE_CONTENT);
     lv_obj_align(tx_hash_card, LV_ALIGN_DEFAULT, 0, containerYOffset);
-    SetFlexContainerStyle(tx_hash_card, LV_FLEX_FLOW_COLUMN, 16);
+    GuiSetTransactionFlexStyle(tx_hash_card, LV_FLEX_FLOW_COLUMN, 16);
     lv_obj_t *tx_hash_label = GuiCreateTextLabel(tx_hash_card, "Hash");
     lv_obj_set_style_text_opa(tx_hash_label, 144, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_align_to(tx_hash_label, tx_hash_card, LV_ALIGN_OUT_BOTTOM_LEFT, 24, 1);

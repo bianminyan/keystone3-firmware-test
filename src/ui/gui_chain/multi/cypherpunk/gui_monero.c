@@ -1,4 +1,5 @@
 #include "gui_monero.h"
+#include "gui_chain_components.h"
 #include "account_manager.h"
 #include "account_public_info.h"
 #include "screen_manager.h"
@@ -26,7 +27,6 @@ static uint8_t g_decryptKey[32] = {0};
   }
 
 static void ShowHintBox(lv_event_t *e);
-static void SetContainerDefaultStyle(lv_obj_t *container);
 static void SetUpMoneroDecryptKey(void);
 static lv_obj_t *CreateNetworkContainer(lv_obj_t *container);
 
@@ -44,17 +44,11 @@ static void ShowHintBox(lv_event_t *e)
 }
 
 
-static void SetContainerDefaultStyle(lv_obj_t *container)
-{
-    lv_obj_set_style_radius(container, 24, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(container, WHITE_COLOR, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(container, 30, LV_PART_MAIN | LV_STATE_DEFAULT);
-}
 
 static lv_obj_t *CreateNetworkContainer(lv_obj_t *container)
 {
     lv_obj_t *networkContainer = GuiCreateContainerWithParent(container, 408, 62);
-    SetContainerDefaultStyle(networkContainer);
+    GuiSetTransactionContainerStyle(networkContainer);
     lv_obj_t *label = GuiCreateIllustrateLabel(networkContainer, "Network");
     lv_obj_align(label, LV_ALIGN_DEFAULT, 24, 16);
     lv_obj_set_style_text_opa(label, 144, LV_PART_MAIN);
@@ -130,7 +124,7 @@ UREncodeResult *GuiGetMoneroKeyimagesQrCodeData(void)
 {
     bool enable = IsPreviousLockScreenEnable();
     SetLockScreen(false);
-    UREncodeResult *encodeResult;
+    UREncodeResult *encodeResult = NULL;
     void *data = g_isMulti ? g_urMultiResult->data : g_urResult->data;
     uint8_t seed[64];
     do {
@@ -150,7 +144,7 @@ UREncodeResult *GuiGetMoneroSignedTransactionQrCodeData(void)
 {
     bool enable = IsPreviousLockScreenEnable();
     SetLockScreen(false);
-    UREncodeResult *encodeResult;
+    UREncodeResult *encodeResult = NULL;
     void *data = g_isMulti ? g_urMultiResult->data : g_urResult->data;
     uint8_t seed[64];
     do {
@@ -205,7 +199,7 @@ void GuiShowXmrOutputsDetails(lv_obj_t *parent, void *totalData)
     lv_obj_set_style_pad_bottom(parent, 24, LV_PART_MAIN);
 
     lv_obj_t * infoContainer = GuiCreateContainerWithParent(parent, 408, LV_SIZE_CONTENT);
-    SetContainerDefaultStyle(infoContainer);
+    GuiSetTransactionContainerStyle(infoContainer);
     lv_obj_set_style_pad_bottom(infoContainer, 16, LV_PART_MAIN);
     lv_obj_t *label = GuiCreateIllustrateLabel(infoContainer, "Number of TXOs");
     lv_obj_align(label, LV_ALIGN_DEFAULT, 24, 16);
@@ -246,7 +240,7 @@ void GuiShowXmrTransactionOverview(lv_obj_t *parent, void *totalData)
     lv_obj_set_height(parent, 602);
 
     lv_obj_t * amountContainer = GuiCreateContainerWithParent(parent, 408, 144);
-    SetContainerDefaultStyle(amountContainer);
+    GuiSetTransactionContainerStyle(amountContainer);
 
     lv_obj_t *label = GuiCreateIllustrateLabel(amountContainer, "Amount");
     lv_obj_align(label, LV_ALIGN_DEFAULT, 24, 16);
@@ -269,7 +263,7 @@ void GuiShowXmrTransactionOverview(lv_obj_t *parent, void *totalData)
     uint32_t outputsSize = data->outputs->size;
     uint32_t containerHeight = 18 * 2 + 30 + 16 + outputsSize * 120;
     lv_obj_t * detilsContainer = GuiCreateContainerWithParent(parent, 408, containerHeight);
-    SetContainerDefaultStyle(detilsContainer);
+    GuiSetTransactionContainerStyle(detilsContainer);
     lv_obj_align(detilsContainer, LV_ALIGN_DEFAULT, 0, 238);
 
     label = GuiCreateIllustrateLabel(detilsContainer, "To");
@@ -315,7 +309,7 @@ void GuiShowXmrTransactionDetails(lv_obj_t *parent, void *totalData)
     lv_obj_set_height(parent, 602);
 
     lv_obj_t * amountContainer = GuiCreateContainerWithParent(parent, 408, 138);
-    SetContainerDefaultStyle(amountContainer);
+    GuiSetTransactionContainerStyle(amountContainer);
     lv_obj_align(amountContainer, LV_ALIGN_DEFAULT, 0, 78);
 
     lv_obj_t *label = GuiCreateIllustrateLabel(amountContainer, "Input Value");
@@ -345,7 +339,7 @@ void GuiShowXmrTransactionDetails(lv_obj_t *parent, void *totalData)
     uint32_t inputsSize = data->inputs->size;
     uint32_t inputContainerHeight = 16 * 2 + 30 + inputsSize * 120;
     lv_obj_t * inputsContainer = GuiCreateContainerWithParent(parent, 408, inputContainerHeight);
-    SetContainerDefaultStyle(inputsContainer);
+    GuiSetTransactionContainerStyle(inputsContainer);
     lv_obj_align(inputsContainer, LV_ALIGN_DEFAULT, 0, 232);
 
     label = GuiCreateIllustrateLabel(inputsContainer, "Inputs");
@@ -371,7 +365,7 @@ void GuiShowXmrTransactionDetails(lv_obj_t *parent, void *totalData)
     uint32_t outputsSize = data->outputs->size;
     uint32_t outputContainerHeight = 16 * 2 + 30 + outputsSize * 150;
     lv_obj_t * outputsContainer = GuiCreateContainerWithParent(parent, 408, outputContainerHeight);
-    SetContainerDefaultStyle(outputsContainer);
+    GuiSetTransactionContainerStyle(outputsContainer);
     lv_obj_align(outputsContainer, LV_ALIGN_DEFAULT, 0, 232 + 16 + inputContainerHeight);
 
     label = GuiCreateIllustrateLabel(outputsContainer, "Outputs");

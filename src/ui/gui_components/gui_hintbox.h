@@ -39,6 +39,7 @@ void *GuiCreateGeneralHintBox(const void *src, const char *titleText,
 lv_obj_t *GuiCreateZcashSeedWarning(lv_event_cb_t backHandler, lv_event_cb_t continueHandler);
 #endif
 void *GuiCreateBackupConfirmationHintBox(BackupConfirmationHintBox_t *hintBox);
+lv_obj_t *GuiCreateSdCardErrorHintBox(bool cardMissing, lv_event_cb_t closeCallback);
 void *GuiGetHintBoxLeftBtn(lv_obj_t *parent);
 void *GuiGetHintBoxRightBtn(lv_obj_t *parent);
 void CloseHintBoxHandler(lv_event_t *e);

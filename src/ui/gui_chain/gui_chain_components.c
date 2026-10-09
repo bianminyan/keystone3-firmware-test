@@ -3,6 +3,29 @@
 #include <string.h>
 #include "user_memory.h"
 
+void GuiSetTransactionContainerStyle(lv_obj_t *container)
+{
+    lv_obj_set_style_radius(container, 24, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(container, WHITE_COLOR, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(container, 30, LV_PART_MAIN | LV_STATE_DEFAULT);
+}
+
+void GuiSetTransactionFlexStyle(lv_obj_t *container, lv_flex_flow_t flow, lv_coord_t padding_y)
+{
+    GuiSetTransactionContainerStyle(container);
+    lv_obj_set_flex_flow(container, flow);
+    lv_obj_set_style_pad_top(container, padding_y, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(container, padding_y, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(container, 24, LV_PART_MAIN);
+}
+
+void GuiSetTransactionTitleStyle(lv_obj_t *label)
+{
+    lv_obj_set_style_text_font(label, g_defIllustrateFont, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, WHITE_COLOR, LV_PART_MAIN);
+    lv_obj_set_style_text_opa(label, 144, LV_PART_MAIN | LV_STATE_DEFAULT);
+}
+
 #define GUI_PAGED_MESSAGE_BYTES 512
 #define GUI_PAGED_MESSAGE_BREAK_SEARCH_BYTES 128
 
