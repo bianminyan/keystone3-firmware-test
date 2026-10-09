@@ -2083,7 +2083,10 @@ fn preflight_input_validation() {
                     .to_bytes();
             }
             assert!(candidate.validate_for_wallet(&spend, &view).is_ok());
-            let keys = crate::key::KeyPair::new(PrivateKey::new(wallet.view), PrivateKey::new(wallet.spend));
+            let keys = crate::key::KeyPair::new(
+                PrivateKey::new(wallet.view),
+                PrivateKey::new(wallet.spend),
+            );
             assert!(candidate.txes[0].inputs(&keys).is_ok());
         }
     }

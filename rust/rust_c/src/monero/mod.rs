@@ -47,9 +47,15 @@ pub unsafe extern "C" fn monero_get_address(
     };
     let pvk = match PrivateKey::try_from_slice(&*pvk_bytes) {
         Ok(key) => key,
-        Err(_) => return SimpleResponse::from(RustCError::InvalidData("invalid view key".into())).simple_c_ptr(),
+        Err(_) => {
+            return SimpleResponse::from(RustCError::InvalidData("invalid view key".into()))
+                .simple_c_ptr()
+        }
     };
-    let public_spend = match hex::decode(spend_key).ok().and_then(|bytes| PublicKey::from_bytes(&bytes).ok()) {
+    let public_spend = match hex::decode(spend_key)
+        .ok()
+        .and_then(|bytes| PublicKey::from_bytes(&bytes).ok())
+    {
         Some(key) => key,
         _ => {
             return SimpleResponse::from(RustCError::InvalidData("invalid data".to_string()))
@@ -84,8 +90,7 @@ unsafe fn parse_view_key(ptr: PtrString) -> Result<Zeroizing<[u8; PRVKEY_LEH]>, 
     }
     let mut key = Zeroizing::new([0; PRVKEY_LEH]);
     let text = cstr_core::CStr::from_ptr(ptr).to_bytes();
-    hex::decode_to_slice(text, &mut *key)
-        .map_err(|_| RustCError::InvalidMasterFingerprint)?;
+    hex::decode_to_slice(text, &mut *key).map_err(|_| RustCError::InvalidMasterFingerprint)?;
     PrivateKey::try_from_slice(&*key).map_err(|_| RustCError::InvalidMasterFingerprint)?;
     Ok(key)
 }
@@ -97,7 +102,10 @@ pub unsafe extern "C" fn monero_output_request_check(
     pvk: PtrString,
 ) -> PtrT<TransactionCheckResult> {
     if ptr.is_null() {
-        return TransactionCheckResult::from(RustCError::InvalidData("missing request data".into())).c_ptr();
+        return TransactionCheckResult::from(RustCError::InvalidData(
+            "missing request data".into(),
+        ))
+        .c_ptr();
     }
     let request = extract_ptr_with_type!(ptr, XmrOutput);
     let decrypt_key = match safe_parse_key(decrypt_key) {
@@ -131,7 +139,10 @@ pub unsafe extern "C" fn monero_unsigned_request_check(
 ) -> PtrT<TransactionCheckResult> {
     clear_approved_unsigned_tx();
     if ptr.is_null() {
-        return TransactionCheckResult::from(RustCError::InvalidData("missing request data".into())).c_ptr();
+        return TransactionCheckResult::from(RustCError::InvalidData(
+            "missing request data".into(),
+        ))
+        .c_ptr();
     }
     let request = extract_ptr_with_type!(ptr, XmrTxUnsigned);
     let decrypt_key = match safe_parse_key(decrypt_key) {
@@ -198,7 +209,10 @@ pub unsafe extern "C" fn monero_parse_output(
     pvk: PtrString,
 ) -> PtrT<TransactionParseResult<DisplayMoneroOutput>> {
     if ptr.is_null() {
-        return TransactionParseResult::from(RustCError::InvalidData("missing request data".into())).c_ptr();
+        return TransactionParseResult::from(RustCError::InvalidData(
+            "missing request data".into(),
+        ))
+        .c_ptr();
     }
     let request = extract_ptr_with_type!(ptr, XmrOutput);
     let decrypt_key = match safe_parse_key(decrypt_key) {
@@ -215,8 +229,9 @@ pub unsafe extern "C" fn monero_parse_output(
             DisplayMoneroOutput::from(display),
         )))
         .c_ptr(),
-        Err(error) => TransactionParseResult::from(RustCError::InvalidData(error.to_string()))
-            .c_ptr(),
+        Err(error) => {
+            TransactionParseResult::from(RustCError::InvalidData(error.to_string())).c_ptr()
+        }
     }
 }
 
@@ -318,7 +333,10 @@ pub unsafe extern "C" fn monero_parse_unsigned_tx(
             .c_ptr();
     }
     if ptr.is_null() {
-        return TransactionParseResult::from(RustCError::InvalidData("missing request data".into())).c_ptr();
+        return TransactionParseResult::from(RustCError::InvalidData(
+            "missing request data".into(),
+        ))
+        .c_ptr();
     }
     let request = extract_ptr_with_type!(ptr, XmrTxUnsigned);
     let decrypt_key = match safe_parse_key(decrypt_key) {
@@ -359,8 +377,7 @@ pub unsafe extern "C" fn monero_parse_unsigned_tx(
         }
         Err(error) => {
             clear_approved_unsigned_tx();
-            TransactionParseResult::from(RustCError::InvalidData(error.to_string()))
-                .c_ptr()
+            TransactionParseResult::from(RustCError::InvalidData(error.to_string())).c_ptr()
         }
     }
 }
@@ -373,7 +390,8 @@ pub unsafe extern "C" fn monero_generate_keyimage(
     major: u32,
 ) -> PtrT<UREncodeResult> {
     if ptr.is_null() || seed.is_null() || seed_len == 0 {
-        return UREncodeResult::from(RustCError::InvalidData("missing request data".into())).c_ptr();
+        return UREncodeResult::from(RustCError::InvalidData("missing request data".into()))
+            .c_ptr();
     }
     let request = extract_ptr_with_type!(ptr, XmrOutput);
     let seed = extract_array!(seed, u8, seed_len as usize);
@@ -408,7 +426,8 @@ pub unsafe extern "C" fn monero_generate_signature(
 ) -> PtrT<UREncodeResult> {
     if ptr.is_null() || seed.is_null() || seed_len == 0 {
         clear_approved_unsigned_tx();
-        return UREncodeResult::from(RustCError::InvalidData("missing request data".into())).c_ptr();
+        return UREncodeResult::from(RustCError::InvalidData("missing request data".into()))
+            .c_ptr();
     }
     let request = extract_ptr_with_type!(ptr, XmrTxUnsigned);
     let seed = extract_array!(seed, u8, seed_len as usize);
@@ -510,11 +529,21 @@ mod request_boundary_tests {
     fn receive_address_ffi_key_boundaries() {
         unsafe {
             let view = cstr_core::CString::new(alloc::format!("01{}", "00".repeat(31))).unwrap();
-            for bytes in [alloc::vec![b'f'; 64], alloc::vec![b'0'; 64],
-                alloc::format!("01{}", "00".repeat(31)).into_bytes(), alloc::vec![0xff; 64]] {
+            for bytes in [
+                alloc::vec![b'f'; 64],
+                alloc::vec![b'0'; 64],
+                alloc::format!("01{}", "00".repeat(31)).into_bytes(),
+                alloc::vec![0xff; 64],
+            ] {
                 let spend = cstr_core::CString::new(bytes).unwrap();
                 for subaddress in [false, true] {
-                    let result = monero_get_address(spend.as_ptr() as PtrString, view.as_ptr() as PtrString, 0, 1, subaddress);
+                    let result = monero_get_address(
+                        spend.as_ptr() as PtrString,
+                        view.as_ptr() as PtrString,
+                        0,
+                        1,
+                        subaddress,
+                    );
                     assert!(!result.is_null());
                     assert!((*result).data.is_null());
                     crate::common::free::free_simple_response_c_char(result);
@@ -522,7 +551,13 @@ mod request_boundary_tests {
             }
             let spend = cstr_core::CString::new(alloc::format!("58{}", "66".repeat(31))).unwrap();
             for subaddress in [false, true] {
-                let result = monero_get_address(spend.as_ptr() as PtrString, view.as_ptr() as PtrString, 0, 1, subaddress);
+                let result = monero_get_address(
+                    spend.as_ptr() as PtrString,
+                    view.as_ptr() as PtrString,
+                    0,
+                    1,
+                    subaddress,
+                );
                 assert!(!(*result).data.is_null());
                 crate::common::free::free_simple_response_c_char(result);
             }
@@ -568,14 +603,27 @@ mod request_boundary_tests {
             (*result).free();
             drop(Box::from_raw(result));
             for result in [
-                monero_output_request_check(core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut()),
-                monero_unsigned_request_check(core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut()),
+                monero_output_request_check(
+                    core::ptr::null_mut(),
+                    core::ptr::null_mut(),
+                    core::ptr::null_mut(),
+                ),
+                monero_unsigned_request_check(
+                    core::ptr::null_mut(),
+                    core::ptr::null_mut(),
+                    core::ptr::null_mut(),
+                    core::ptr::null_mut(),
+                ),
             ] {
                 assert!(!result.is_null());
                 (*result).free();
                 drop(Box::from_raw(result));
             }
-            let result = monero_parse_output(core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut());
+            let result = monero_parse_output(
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+                core::ptr::null_mut(),
+            );
             (*result).free();
             drop(Box::from_raw(result));
             for result in [

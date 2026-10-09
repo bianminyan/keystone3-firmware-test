@@ -74,7 +74,10 @@ impl PublicKey {
     /// Validate a public key used to derive a receive address.
     pub fn validate_for_address(&self) -> Result<EdwardsPoint> {
         use curve25519_dalek::traits::IsIdentity;
-        let point = self.point.decompress().ok_or(MoneroError::PublicKeyFromBytesError)?;
+        let point = self
+            .point
+            .decompress()
+            .ok_or(MoneroError::PublicKeyFromBytesError)?;
         if point.compress() != self.point || point.is_identity() || !point.is_torsion_free() {
             return Err(MoneroError::PublicKeyFromBytesError);
         }
