@@ -6,7 +6,10 @@
 
 - `review-pr.sh`：参数检查、curl 获取 PR、Git 准备、Docker 启停、日志和 Buildkite annotation 上传。
 - `pr-context.py`：解析 PR JSON、冻结输入信息、生成 background。
+- `review-trigger.py`：读取触发构建的 PR 评论，核对命令及所属 PR，再启动修复复核。
 - `publish-review.py`：校验 review 结果与当前 PR head，以一个 advisory GitHub review 回写 findings。
+- `review_state.py`：读取同一发布账号的历史 review，恢复旧 findings 和原评论线程。
+- `review_gate.py`：在 PR 当前 head 上发布独立合并状态，检查两轮审查和历史问题是否全部处理完成。
 - `review-summary.py`：检查结果是否完成，生成 `status.json` 和英文 CI 摘要。模型生成的审查报告仍为中文。
 - `model-config.py`：从解密后的 `KEY=value` 文本中提取 GitHub token，或生成 OCR 配置，不执行文件中的内容。
 
@@ -20,17 +23,71 @@ Agent 需要 Bash、Git、curl、Python 3 和 Docker CLI；Node/OCR 只在 revie
 | `REVIEW_PROVIDER` | OCR 中的 provider 名称 |
 | `REVIEW_MODEL` | 本次模型 ID；使用密文 key 文件时自动写入 OCR provider 的 `model` 和 `models` |
 | `REVIEW_EFFORT` | OCR 审查 effort：low / medium / high，不是模型推理强度 |
-| `GH_TOKEN` 或 `GITHUB_TOKEN` | 可选：覆盖密文文件中的 GitHub token；需要 Pull requests read/write 权限 |
+| `GH_TOKEN` 或 `GITHUB_TOKEN` | 可选：覆盖密文文件中的 GitHub token；需要 Pull requests read/write，启用门禁还需 Commit statuses read/write |
 
 模型 key 和 GitHub token 默认一起读取仓库中的 `ci/ai-review/secrets.env.encrypted`，格式和加密方法见下一节。无需在 Buildkite 页面单独设置 token。已有环境变量 `GH_TOKEN` / `GITHUB_TOKEN` 优先于密文中的 GitHub token；也可以通过 `OCR_CONFIG_JSON` 或 `OCR_CONFIG_FILE` 提供完整 OCR 配置来覆盖模型 key，二者不能同时设置。两类凭据分别覆盖：只提供 OCR 配置时，仍可从密文读取 GitHub token。预检不需要模型凭据，但读取实时 PR 仍需要 GitHub token。
 
 可选配置：`REVIEW_PR` 覆盖 Buildkite PR 编号；`REVIEW_BASE`、`REVIEW_HEAD` 指定历史提交；`REVIEW_PREVIEW=true` 只做预检；`REVIEW_PUBLISH=false` 禁止回写 GitHub，完整审查默认回写；`REVIEW_DEBUG=true` 保留全部中间文件并导出时间、token 和计划诊断，默认关闭；`REVIEW_PASS`、`REVIEW_MODE`、`REVIEW_CONCURRENCY`、`REVIEW_TIMEOUT`、`OCR_LLM_TIMEOUT` 对应 runner 参数。未给出模型推理字段时沿用 provider 默认。
+
+## 修复后的复核
+
+先更新并发布 `keystone-ai-review` 的镜像，再将本目录的修改放到 `REVIEW_CI_BRANCH` 指向的分支。沿用现有手动构建入口，增加以下环境变量：
+
+```dotenv
+REVIEW_PR=114
+REVIEW_FIX=true
+REVIEW_EFFORT=medium
+REVIEW_PASS=both
+REVIEW_MODE=chained
+```
+
+替换 PR 编号即可，无需填写 base/head。Provider 和 model 沿用现有配置；只看报告时同时设置 `REVIEW_GATE=false`、`REVIEW_PUBLISH=false`，`REVIEW_PREVIEW=true` 只检查输入和文件选择。两种方式仍需 GitHub token 读取 PR 和历史 review，但预检不需要模型 key。也可以按下文配置 PR 评论命令来触发。
+
+流程为：
+
+1. 从 GitHub 读取同一发布账号、同一 PR 的历史 AI reviews。新版 review 的隐藏 marker 保存稳定 finding ID、原评论位置和状态；旧格式从行内评论和 review 正文恢复。不把“这次没找到”当成修复，也不丢弃更早的未解决问题。
+2. 用原生 OCR 逐条验证旧问题，输出 `fixed`、`open`、`unresolved`、`dismissed` 或 `out_of_scope` 及代码证据。未修改、已移动或删除的文件同样进入验证。无法得到完整有效结论时保留旧问题，报告为 partial，不向 GitHub 发布完成结果。
+3. 上次 head 是当前 head 的祖先且 PR merge-base 相同时，继续对上次 head 到当前 head 的新增修改执行 bug → blocker。否则退回完整 PR 范围；没有历史记录时也执行完整 PR 审查。老格式没有保存 base，因此第一次复核采用完整范围。增量发现若与修复结论冲突，保留为待确认。
+4. 在原 finding 线程回复复核结果，新 finding 创建新行内评论。原本只在 review 正文里的问题仍在新摘要中说明。若历史 marker 已保存 finding，但原评论被删除，保留该问题和复核结论，改在新摘要中发布；评论仍存在但不属于发布账号或不是根评论时，拒绝回复。先更新可用线程，成功后再发布带有新状态的汇总；失败重试不会重复回复。同一 build 的重新执行会复用已发布的 review。
+
+报告仍是中文，包含前后提交、每个旧问题的状态、证据、新发现、模型及总 token（复核 + 新增修改审查）。主报告在 `review/report.md`，机器结果在 `review/report.json`；`review/fix/` 保存复核结果，`review/incremental/` 保存后续代码审查。被当前规则排除的翻译/字体问题记为 out_of_scope，不会被误标为已修复。
+
+发布时仍检查 PR 当前 head，仍使用 `COMMENT`；不会自动 resolve 原线程或 approve PR。合并门禁使用下面的独立 commit status。GitHub 凭据仍在 agent 侧使用，不传给模型容器，不需要 Buildkite API token。当前历史读取要求与之前发布 review 相同的 GitHub PAT 账号；换账号前需迁移历史。历史或正文超过 GitHub 容量时会明确报错，不会截断 findings。
 
 镜像默认使用 `623147552995.dkr.ecr.eu-west-1.amazonaws.com/code-review-agent-image:latest`，每次运行先执行 `docker pull`。可用 `REVIEW_IMAGE` 覆盖镜像地址，`REVIEW_PULL_IMAGE=false` 可用于本地已准备好的镜像；实际镜像 ID 和 digest 会保存在 `image.json`。
 
 拉取和运行默认指定 `linux/amd64`，匹配当前 AWS agent。可用 `REVIEW_PLATFORM` 覆盖目标平台。ECR 镜像必须实际包含该架构；只加运行参数不会把 ARM 镜像转换为 amd64。遇到 `Exec format error` 时，在工具仓库运行修正后的 `bash auto/release`，重新构建并发布 amd64 的 `latest` 后再重试。
 
 Review step 使用 `ecr#v2.3.0` 插件在执行脚本前登录 `eu-west-1` 的 ECR，沿用现有固件构建的插件版本。AWS 凭据和镜像拉取权限由 agent 环境提供。脚本通过 agent 内已有的 `shush` 调用 KMS 解密密文文件。`OCR_CONFIG_FILE` 也在 agent 侧读取，再仅向 Docker 传入配置环境变量，因此不用把 agent 私有文件路径挂到宿主机 Docker。
+
+## Blocker 和 high 及以上问题的合并门禁
+
+Buildkite YAML 默认设置 `REVIEW_GATE=true`。它自动启用历史复核，要求 `REVIEW_PASS=both` 和 `REVIEW_PUBLISH=true`，只使用实时 PR 的 base/head。门禁阈值固定为 finding 的 `high`，不包含普通 medium 问题，与控制审查力度的 `REVIEW_EFFORT` 不同。
+
+- 当前和历史仍有效的 blocker 无论 severity 是 low、medium、high 还是 critical，都必须阻止合并，不受 high 阈值限制。普通 bug 中 high、critical 问题也阻止合并；未知严重度同样阻止。普通 low、medium 问题只作提醒。
+- 历史问题必须逐条验证，不能因本轮漏报、降低严重度、GitHub 线程被手动 resolve 而放行。`open`、`unresolved` 保留；`fixed` 需要代码证据。经复核证明确属误报的 `dismissed`、当前明确排除的 `out_of_scope` 不再阻止，但不会标为已修复。
+- 只修改 i18n/spec 等被规则明确排除的文件时，可按无待审文件完成；文件过大或无法解释的跳过仍不能通过。
+- 两轮必须完整覆盖 PR。旧报告没有覆盖记录，或之前只跑过一轮时，重新做完整 PR 审查；有完整记录时才允许复核旧问题并增量审查。
+- 模型失败、结果不完整、发布失败，或运行期间 PR head/base 改变，都不能通过。预检不发布门禁状态。
+- 多个打开的 PR 共用同一个 head SHA 时，固定 commit status 无法区分各 PR。门禁在开始和结束时检查该情况，写入 error；开始时发现冲突会直接停止，不调用模型。为各 PR 使用独立的 head 提交，或关闭不再需要的 PR 后重新复核。检查覆盖全部打开的 PR，包括其他来源分支指向同一提交的情况。
+
+状态名称固定为 `keystone-ai-review/merge-gate`，写到实际 PR head，手动构建的 `BUILDKITE_COMMIT` 即使是 master 也不影响它。PR webhook 构建先确认事件提交与当前 PR head 一致，再写 pending；重试过期构建不会改写新 head 的状态。完成且无未解决的 high 及以上问题、显式 blocker 或未知严重度问题时 success；有问题时 failure；运行失败时 error。读取历史和检查状态归属后，写最终状态前再次核对实时 head/base，避免使用已经失效的审查范围。结果记录在 `gate.json`，Buildkite 摘要区分“审查完成但被问题阻止”和“审查失败”。同一 PR 的 review jobs 串行执行，避免历史状态互相覆盖；不同 PR 可以并行。
+
+The gate checks the saved head SHA, base SHA, and target branch strictly. A base update needs a new review even if the diff is unchanged. If the base changes before pending is posted, the job writes error on the same head and saves gate.json before it stops. A change during the start checks must not overwrite a newer gate status. A closed PR or a different head stops the old job without changing the new head's status.
+
+These checks run while a review job is active. They do not watch a finished PR. After changing the target branch, start a new review with `@bot-keyst review fix` or a manual build; this change does not add an automatic base-change trigger.
+
+**必须完成 GitHub 仓库配置才会真正阻止合并：**
+
+1. 为现有 GitHub PAT 增加目标仓库的 **Commit statuses: Read and write**，保留 **Pull requests: Read and write**。若换了 token，按下面的 KMS 流程重新加密并提交。
+2. 发布更新后的 review 镜像，把 CI 修改合入 `REVIEW_CI_BRANCH`。手动运行一个 PR，确认 GitHub 出现 `keystone-ai-review/merge-gate`。
+3. 在 GitHub **Settings → Rules → Rulesets**（或 Branch protection）给 `master` 及其他允许合并 PR 的目标分支配置规则，启用 **Require a pull request before merging** 和 **Require status checks to pass**，添加 `keystone-ai-review/merge-gate`。要求分支保持最新；若规则要覆盖所有人，也需禁用管理员/角色绕过。
+
+不要用 Buildkite 的通用 pipeline 状态替代这个 check。它可能属于手动构建的 master，或只代表事件过滤后跳过的 job。权限与 required check 说明见 [GitHub commit statuses](https://docs.github.com/en/rest/commits/statuses) 和 [protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)。本代码不会远程修改仓库规则。
+
+触发方式保持 opened / ready 自动、后续 push 不跑。新提交没有该 head 的成功门禁，因此修复 push 后需在 PR 新发一条 `@bot-keyst review fix` 评论，或手动再运行 `REVIEW_PR=<编号>`；复核通过后才可合并。重试时保持同一个发布账号。
+
+历史案例、单轮模型比较或只看报告时设置 `REVIEW_GATE=false`，不会发布门禁成功状态。直接在本地调用 shell 默认不启用门禁，只有 YAML 默认启用。
 
 ## Unclustered agent 的凭据配置
 
@@ -44,7 +101,7 @@ OPENROUTER_API_KEY=xxxx
 GITHUB_TOKEN=xxxx
 ```
 
-GitHub token 需要目标仓库的 Pull requests read/write 权限，用于读取 PR 和发布 review。已有环境变量可覆盖它，优先级为 `GH_TOKEN`、`GITHUB_TOKEN`、密文文件中的 `GITHUB_TOKEN`。
+GitHub token 需要目标仓库的 Pull requests read/write 权限，用于读取 PR 和发布 review；启用门禁还需 Commit statuses read/write 权限，用于发布和读取 PR head 的状态。已有环境变量可覆盖它，优先级为 `GH_TOKEN`、`GITHUB_TOKEN`、密文文件中的 `GITHUB_TOKEN`。
 
 首次配置可从 `secrets.env.example` 复制。`secrets.env` 已加入本目录的 `.gitignore`，Git 中只提交加密后的 `secrets.env.encrypted`。轮换 key 时重新加密并提交新的密文文件。
 
@@ -103,26 +160,43 @@ PR webhook 会 checkout PR 的提交，pipeline 的默认分支不会替代 PR c
 2. 在 Buildkite pipeline 的 **Settings → Steps** 中，将 bootstrap 的 command 替换为 [`../.buildkite/ai-review-bootstrap.sh`](../.buildkite/ai-review-bootstrap.sh) 的完整内容。不能只填写 `bash ci/.buildkite/ai-review-bootstrap.sh`：PR 分支可能连这个文件也没有。保留 `queue=keystone-staging:build`。
 3. 删除旧的 `REVIEW_CI_REVISION`。自动构建不要设置固定的 `REVIEW_PR`、`REVIEW_BASE`、`REVIEW_HEAD` 或 `REVIEW_PR_JSON`；PR 编号来自 webhook。手动构建仍可单独设置 `REVIEW_PR`。
 4. 在 **Settings → GitHub** 中启用 **Build when pull request is opened or updated** 和 **Build when pull request becomes ready for review**。关闭 **Build branches**、**Build tags**、**Build when pull request is reopened**、**Allow builds from third-party forked repositories** 和 **Skip when pull request has existing build for commit and branch**。保留 **Skip when pull request is closed or merged**。
-5. 在同一页面启用 **Filter builds using a conditional**，填写下面的条件。Buildkite 将 opened 和 updated 放在同一个开关中，必须配合事件过滤才能保留新建 PR、排除后续 push。
-6. 新建 PR，或将 draft PR 转为 ready。确认自动完成 review。随后向 PR 推送新提交，确认不再自动审查。
+5. 在同一页面的 **Additional Webhooks → Issue comments** 中开启 PR 评论构建，command word 只填 `@bot-keyst`，match mode 选 `contains`。该字段只保留第一个词，不能填整句；`exact` 要求整条评论等于 command word，因此无法匹配后面带 `review fix` 的评论。若需要在行内 finding 线程中回复命令，同时开启 **Pull request review comments** 并设置相同的 command word 和 match mode。这些入口使用 **Code** trigger mode。
+6. 确认 GitHub 仓库发给 Buildkite 的 webhook 订阅 **Issue comments** 和 **Pull requests**；启用行内评论入口时还需 **Pull request review comments**。Buildkite 需要收到 PR 事件以获知分支和提交；已有 PR 若从未发送过该事件，可在配置好后 push 一次更新缓存，push 本身仍不运行审查。
+7. 在 Buildkite GitHub 设置页面启用 **Filter builds using a conditional**，填写下面的完整条件，替换旧的仅允许 PR 事件的条件。Buildkite 将 opened 和 updated 放在同一个开关中，必须配合事件过滤才能保留新建 PR、排除后续 push。
+8. 新建 PR，或将 draft PR 转为 ready，确认自动完成 review。随后向 PR 推送新提交，确认不再自动审查；再发表一条 `@bot-keyst review fix` 评论，确认进入复核并更新原 findings 和门禁。
 
 ```text
-build.source_event == "pull_request" &&
 (
-  build.source_action == "opened" ||
-  build.source_action == "ready_for_review"
+  build.source_event == "pull_request" &&
+  (build.source_action == "opened" || build.source_action == "ready_for_review")
+) ||
+(
+  (build.source_event == "issue_comment" || build.source_event == "pull_request_review_comment") &&
+  build.source_action == "created"
 )
 ```
 
-自动审查仅响应 PR 新建（包括 draft）和转为 ready；push、synchronize、reopened 和评论事件不自动审查。后续需要复审时，在 Buildkite 选择 **New Build**，branch 设为 `master`、commit 设为 `HEAD`，并为这次 build 设置 `REVIEW_PR=108`（替换成目标 PR 编号）。手动构建使用当前 PR 的 base/head，继续沿用 `medium`、`both`、`chained`。
+PR 新建（包括 draft）和转为 ready 自动审查；push、synchronize、reopened 不运行审查。修复后在 PR 新评论中提及 `@bot-keyst`，并包含 `review` 和 `fix` 两个英文单词，例如：
 
-这些事件由 Buildkite 已有的 GitHub webhook 处理，无需添加 GitHub Actions workflow，也无需在 GitHub 中新增 Buildkite API token。页面条件在创建 webhook build 前过滤事件；YAML 也限制 review step 的事件。`review-pr.sh` 在读取凭据和启动模型之前再检查事件，让仍使用旧 YAML 的 PR 也能跳过 push。只更新代码而未保存页面条件时，push 仍可能产生一个跳过审查的 build，但不会调用模型。手动构建不受 webhook 事件过滤影响。
+```text
+@bot-keyst review fix
+```
+
+Buildkite 先按 `contains` 匹配 `@bot-keyst`，并检查评论作者权限：仓库 owner、member、collaborator，或关联到有该 pipeline 构建权限的 Buildkite 用户。脚本使用 `BUILDKITE_GITHUB_COMMENT_ID` 重新读取评论，核对所属 PR 和 PR 的 open 状态；正文只要同时包含独立单词 `review` 和 `fix` 就接受，忽略大小写，不要求相邻或固定顺序，允许额外文字、多空格、换行和标点。缺少任一单词时记录为 `skipped`，不启动 review 容器、不发布审查或改写门禁；不会标为审查通过。编辑或删除评论不触发复核；重试需新发一条评论。
+
+评论入口强制启用修复复核，即使设置了 `REVIEW_FIX=false` 或关闭了门禁，也会加载历史 findings。使用该 PR 当前 base/head，沿用现有模型、`medium`、`both`、`chained` 默认配置；没有历史结果时执行完整 PR 审查。运行记录保存到 `inputs/trigger.json`。评论读取沿用现有 GitHub token 的 Pull requests 权限，无需新增 token。
+
+同一提交可通过新评论再运行，因此 **Skip when pull request has existing build for commit and branch** 必须保持关闭。同一 PR 的复核串行执行。若排队期间 PR head 改变，脚本会提示重新触发；旧结果不会为新提交放行。
+
+手动入口仍可使用：在 Buildkite 选择 **New Build**，branch 设为 `master`、commit 设为 `HEAD`，为这次 build 设置 `REVIEW_PR=108`（替换成目标 PR 编号）和 `REVIEW_FIX=true`。
+
+这些事件由 Buildkite 已有的 GitHub webhook 处理，无需添加 GitHub Actions workflow，也无需在 GitHub 中新增 Buildkite API token。页面条件和原生评论命令匹配在创建 webhook build 前过滤事件；YAML 也限制 review step 的事件。`review-pr.sh` 在读取凭据和启动模型之前再检查事件，让仍使用旧 YAML 的 PR 也能跳过 push。只更新代码而未保存页面条件时，push 仍可能产生一个跳过审查的 build，而评论命令仍会被旧条件过滤。手动构建不受 webhook 事件过滤影响。
 
 同一 head 转为 ready 或手动新建 build 时可以再次审查并发布。只有同一个 build 对同一 PR/head 的重复发布会被跳过。
 
-仅修改仓库文件不会更新 Buildkite 页面中保存的 bootstrap command 或 GitHub 开关；需要在页面保存一次。之后每次运行自动获取 `REVIEW_CI_BRANCH` 的最新 CI 文件。触发机制见 [Buildkite GitHub 文档](https://buildkite.com/docs/pipelines/source-control/github)。
+仅修改仓库文件不会更新 Buildkite 页面中保存的 bootstrap command 或 GitHub 开关；需要在页面保存一次。之后每次运行自动获取 `REVIEW_CI_BRANCH` 的最新 CI 文件。新增评论触发仅改动固件仓库的 CI 文件，已部署修复复核镜像时无需再次重建镜像。触发机制见 [Buildkite GitHub 文档](https://buildkite.com/docs/pipelines/source-control/github#running-builds-on-additional-github-events)。
 
-YAML 为自动触发提供以下默认配置：`openai-responses`、`gpt-5.6-sol`、`medium`、`both`、`chained`，并开启回写。第二轮 blocker 审查接收第一轮 bug findings；如果加入 findings 后 background 超限，就省略 findings。通过 Buildkite 手动创建 build 时，可以传入同名变量覆盖这些值；pipeline upload 会把最终值写入 review step。
+YAML 为自动触发提供以下默认配置：`openai-responses`、`gpt-6.1-sol`、`medium`、`both`、`chained`，并开启回写和门禁。第二轮 blocker 审查接收第一轮 bug findings；如果加入 findings 后 background 超限，就省略 findings。通过 Buildkite 手动创建 build 时，可以传入同名变量覆盖这些值；pipeline upload 会把最终值写入 review step。
 
 完整审查成功后，脚本使用 `COMMENT` 类型提交一个 GitHub review，不会 approve 或 request changes。能确认属于当前 diff 的位置会成为行内评论，其余 findings 会放在 review body。正文包含实际 provider、model 和本次所有审查轮次的输入、输出、总 token 数；缓存用量单独展示，不重复加到总数。模型信息读取 `review/run.json`，token 数直接读取汇总 `review/report.json` 的 `tokens`，缺失时显示 `not recorded`，不用当前环境变量猜测，也不把缺失记成 0。行内评论被 GitHub 拒绝而退回正文发布时，仍保留这些信息。
 
@@ -130,7 +204,7 @@ YAML 为自动触发提供以下默认配置：`openai-responses`、`gpt-5.6-sol
 
 发布结果及模型/token 信息写入 `publish.json`。Buildkite annotation 同时显示发布状态、review 链接和跳过原因。
 
-当前仍是 shadow 阶段：Buildkite check 和 GitHub review 都不设为 required，也不决定是否允许合并。
+是否强制阻止合并由 GitHub 的 required check 配置决定。仅发布 failure 而未启用仓库规则，不会禁用合并按钮。
 
 ## 本地容器预检
 
@@ -152,8 +226,8 @@ bash ci/ai-review/review-pr.sh
 
 每次运行使用 `tmp/ai-review/<独立ID>/`，保存 PR 输入、镜像身份、容器日志、发布状态、英文 CI 摘要和工具产物。工具默认保留汇总及两轮报告、日志、配置和输入快照；成功后清理临时预检和计时文件，失败时保留已有中间文件。Buildkite 的 `artifact_paths` 在命令结束后收集产物，再进入 agent 的 `pre-exit` 清理。如果 Spot 实例被直接终止，本地尚未上传的产物可能丢失。取消时脚本停止它创建的容器。
 
-运行失败与零 findings 分开记录；找到 blocker 本身不使 shadow 任务失败。报告正文不包含时间、plan 或 token 分析。
+运行失败与零 findings 分开记录。门禁开启时，未解决的 high 及以上问题、显式 blocker 或未知严重度问题会让 CI 返回失败；关闭门禁时，finding 不影响 runner 退出码。报告正文不包含时间、plan 或 token 分析。
 
 ## 当前边界
 
-2026-09-30：Build #42 已跑通两轮审查、KMS 凭据解密和 GitHub review 回写；Build #52 已确认自动构建使用 PR #108 的 base/head，并从 master 加载 CI 脚本。本次将自动审查限制为 opened / ready_for_review，事件过滤合入 master 并保存页面设置后需验证一次。当前结果仍只用于 shadow 对比，不接管合并门禁。
+2026-10-08：代码支持历史问题复核、PR 评论命令和独立合并状态；门禁需部署新镜像/CI，并配置 GitHub required check 后生效。评论触发需保存 Buildkite 和 GitHub webhook 配置；opened / ready_for_review 自动审查保留，push 不运行审查。门禁覆盖同一发布账号的 OCR 历史 findings，不自动导入其他机器人或人工评论。

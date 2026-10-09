@@ -15,14 +15,20 @@ def load_json(path):
 
 
 def summarize(folder, code, preview, failure):
-    snapshot, report, publish = {}, {}, {}
+    snapshot, report, publish, gate = {}, {}, {}, {}
+    skipped = False
+    active, blockers = [], 0
     try:
         snapshot = load_json(folder / 'inputs' / 'pr.json')
         report = load_json(folder / 'review' / 'report.json')
         publish = load_json(folder / 'publish.json')
+        gate = load_json(folder / 'gate.json')
+        trigger = load_json(folder / 'inputs' / 'trigger.json')
+        skipped = (code == 0 and trigger.get('status') == 'skipped'
+                   and not report and not publish and not gate)
         active = [item for item in report.get('findings', []) if item.get('active')]
         blockers = sum(item.get('classification') == 'blocker' for item in active)
-        if not preview and report.get('status') != 'complete':
+        if not preview and not skipped and report.get('status') != 'complete':
             code = code or 1
             failure = failure or 'The review report is missing or the review is not complete.'
     except (OSError, ValueError, TypeError, AttributeError):
@@ -30,16 +36,30 @@ def summarize(folder, code, preview, failure):
         failure = failure or 'Cannot read the review input or report JSON.'
         report = {}
 
-    state = 'failed' if code else ('preview' if preview else 'complete')
-    status = {'status': state, 'exit_code': code, 'error': failure}
+    blocked = bool(gate.get('status') == 'failure' and report.get('status') == 'complete')
+    if gate and gate.get('status') != 'success':
+        code = code or 1
+        failure = failure or gate.get('reason') or 'The merge gate has not passed.'
+    state = 'blocked' if blocked else ('failed' if code else ('skipped' if skipped else ('preview' if preview else 'complete')))
+    status = {'status': state, 'exit_code': code, 'error': failure, 'gate': gate.get('status')}
+    if skipped:
+        status['reason'] = trigger.get('reason') or 'The comment is not a review command.'
     (folder / 'status.json').write_text(json.dumps(status, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-    lines = ['# AI review shadow', '', f'Status: `{state}`. Exit code: {code}.', '']
+    lines = ['# AI review', '', f'Status: `{state}`. Exit code: {code}.', '']
     if snapshot:
         lines += [f'PR: {snapshot["repository"]}#{snapshot["number"]}. Review commit: `{snapshot["head_sha"]}`.', '']
-    if preview and code == 0:
+    if skipped:
+        lines += [status['reason'], '', 'No review was run. No model was called.', '']
+    elif preview and code == 0:
         lines += ['Preview only: inputs and rules were checked. No model was called.', '']
     elif report:
         lines += [f'Active findings: {len(active)}. Blockers: {blockers}.', '']
+        if report.get('fix_review'):
+            fix = report['fix_review']
+            counts = fix.get('counts', {})
+            lines += [f'Fix review: {fix.get("range", "full")}. '
+                      + ', '.join(f'{name}: {counts.get(name, 0)}' for name in
+                                  ('fixed', 'open', 'unresolved', 'dismissed', 'out_of_scope')) + '.', '']
     if publish:
         publish_status = publish.get('status', 'unknown')
         publish_line = f'GitHub review: `{publish_status}`.'
@@ -48,9 +68,16 @@ def summarize(folder, code, preview, failure):
         if publish.get('reason'):
             publish_line += ' ' + str(publish['reason'])
         lines += [publish_line, '']
-    if code:
+    if gate:
+        lines += [f'Merge gate: `{gate.get("context")}` = `{gate.get("status")}`. Minimum severity: {gate.get("minimum_severity", "unknown")}.', '',
+                  gate.get('reason', 'The gate has not finished.'), '']
+    if blocked:
+        lines += ['Review completed, but unresolved findings block merging.', '']
+    elif code:
         lines += ['Review is not complete. This is not a pass with no findings. ' + failure, '']
-    lines += ['See the build artifacts for the full report, inputs, and logs. This job is for comparison only and does not block merges.', '']
+    lines += ['See the build artifacts for the full report, inputs, and logs.', '']
+    if not gate:
+        lines += ['No merge gate was published by this run.', '']
     (folder / 'annotation.md').write_text('\n'.join(lines), encoding='utf-8')
     return code
 

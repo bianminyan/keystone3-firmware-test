@@ -5,15 +5,30 @@ set -Eeuo pipefail
 
 # PR branches may still use an older YAML without the event filter.
 # Skip before reading secrets or starting a model request.
+review_comment_trigger=false
 if [[ "${BUILDKITE_SOURCE:-}" == webhook ]]; then
   case "${BUILDKITE_GITHUB_EVENT:-}:${BUILDKITE_GITHUB_ACTION:-}" in
     pull_request:opened|pull_request:ready_for_review) ;;
+    issue_comment:created|pull_request_review_comment:created) review_comment_trigger=true ;;
     *)
       printf 'Skip automatic review: GitHub event=%s action=%s.\n' \
         "${BUILDKITE_GITHUB_EVENT:-unknown}" "${BUILDKITE_GITHUB_ACTION:-none}"
       exit 0
       ;;
   esac
+fi
+
+if [[ "$review_comment_trigger" == true ]]; then
+  if [[ ! "${BUILDKITE_PULL_REQUEST:-}" =~ ^[1-9][0-9]*$ ||
+        ! "${BUILDKITE_GITHUB_COMMENT_ID:-}" =~ ^[1-9][0-9]*$ ]]; then
+    echo 'A PR comment trigger needs a PR number and comment ID from Buildkite.' >&2
+    exit 2
+  fi
+  if [[ "${REVIEW_PR:-$BUILDKITE_PULL_REQUEST}" != "$BUILDKITE_PULL_REQUEST" ||
+        -n "${REVIEW_BASE:-}${REVIEW_HEAD:-}${REVIEW_PR_JSON:-}" ]]; then
+    echo 'A PR comment trigger uses the live PR. Remove PR number, revision, or JSON overrides.' >&2
+    exit 2
+  fi
 fi
 
 REVIEW_IMAGE=${REVIEW_IMAGE:-623147552995.dkr.ecr.eu-west-1.amazonaws.com/code-review-agent-image:latest}
@@ -37,6 +52,7 @@ review_phase='check config'
 review_preview=false
 case "${REVIEW_PREVIEW:-false}" in [Tt][Rr][Uu][Ee]) review_preview=true ;; esac
 review_publish=true
+review_gate=false
 
 finish() {
   local review_code=$?
@@ -46,6 +62,12 @@ finish() {
   if [[ -n "$review_pid" ]]; then
     docker stop --time 10 "$review_name" >/dev/null 2>&1
     wait "$review_pid"
+  fi
+  if [[ "$review_gate" == true && "$review_preview" == false && -f "$review_folder/gate.json" ]]; then
+    if ! python3 "$review_script_dir/review_gate.py" finish "$review_folder" --exit-code "$review_code"; then
+      review_code=1
+      review_error=${review_error:-'The merge gate did not pass. See gate.json and the build log.'}
+    fi
   fi
   python3 "$review_script_dir/review-summary.py" "$review_folder" \
     "$review_code" "$review_preview" "$review_error"
@@ -88,6 +110,23 @@ case "${REVIEW_PUBLISH:-true}" in
   [Ff][Aa][Ll][Ss][Ee]) review_publish=false ;;
   *) fail 'REVIEW_PUBLISH must be true or false.' ;;
 esac
+review_fix=false
+case "${REVIEW_FIX:-false}" in
+  [Tt][Rr][Uu][Ee]) review_fix=true ;;
+  [Ff][Aa][Ll][Ss][Ee]) ;;
+  *) fail 'REVIEW_FIX must be true or false.' ;;
+esac
+if [[ "$review_comment_trigger" == true ]]; then review_fix=true; fi
+case "${REVIEW_GATE:-false}" in
+  [Tt][Rr][Uu][Ee]) review_gate=true; review_fix=true ;;
+  [Ff][Aa][Ll][Ss][Ee]) ;;
+  *) fail 'REVIEW_GATE must be true or false.' ;;
+esac
+if [[ "$review_gate" == true && "$review_preview" == false ]]; then
+  [[ "$review_publish" == true ]] || fail 'The merge gate needs REVIEW_PUBLISH=true. Use REVIEW_GATE=false for a report-only run.'
+  [[ "${REVIEW_PASS:-both}" == both ]] || fail 'The merge gate needs both bug and blocker reviews.'
+  [[ -z "${REVIEW_BASE:-}" && -z "${REVIEW_HEAD:-}" ]] || fail 'The merge gate uses the live PR base and head. Remove REVIEW_BASE and REVIEW_HEAD.'
+fi
 
 for review_variable in REVIEW_REPOSITORY REVIEW_PROVIDER REVIEW_MODEL REVIEW_EFFORT; do
   [[ -n "${!review_variable:-}" ]] || fail "Missing setting: $review_variable"
@@ -101,7 +140,7 @@ review_pr=${REVIEW_PR:-${BUILDKITE_PULL_REQUEST:-}}
 review_phase='load review secrets'
 review_need_github_token=false
 if [[ -z "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]] && \
-    { [[ -z "${REVIEW_PR_JSON:-}" ]] || [[ "$review_preview" == false && "$review_publish" == true ]]; }; then
+    { [[ -z "${REVIEW_PR_JSON:-}" ]] || [[ "$review_fix" == true ]] || [[ "$review_preview" == false && "$review_publish" == true ]]; }; then
   review_need_github_token=true
 fi
 review_need_model_config=false
@@ -162,6 +201,17 @@ python3 "$review_script_dir/pr-context.py" resolve "$review_inputs" "$REVIEW_REP
   > "$review_inputs/revisions.txt"
 read -r review_base review_head review_metadata_head < "$review_inputs/revisions.txt"
 
+if [[ "$review_comment_trigger" == true ]]; then
+  review_phase='check review command'
+  review_trigger_code=0
+  python3 "$review_script_dir/review-trigger.py" "$review_inputs" || review_trigger_code=$?
+  case "$review_trigger_code" in
+    0) ;;
+    3) exit 0 ;; # The comment is missing review or fix.
+    *) fail 'Cannot check the PR comment. See the build log.' ;;
+  esac
+fi
+
 review_phase='load Git commits'
 for review_commit in "$review_base" "$review_head"; do
   if ! git -C "$review_repo" cat-file -e "$review_commit^{commit}" 2>/dev/null; then
@@ -194,7 +244,25 @@ case "${BUILDKITE_PULL_REQUEST:-false}" in
     ;;
 esac
 python3 "$review_script_dir/pr-context.py" background "$review_inputs" "$review_merge_base"
+if [[ "$review_gate" == true && "$review_preview" == false ]]; then
+  review_phase='start merge gate'
+  python3 "$review_script_dir/review_gate.py" begin "$review_folder"
+fi
 printf 'Review %s#%s: %s\nOutput folder: %s\n' "$REVIEW_REPOSITORY" "$review_pr" "$review_head" "$review_folder"
+
+if [[ "$review_fix" == true ]]; then
+  review_phase='load previous review'
+  review_history_args=("$review_inputs/pr.json" "$review_inputs/previous-review.json")
+  if [[ "$review_gate" == true ]]; then review_history_args+=(--require-both); fi
+  python3 "$review_script_dir/review_state.py" "${review_history_args[@]}"
+  review_previous_head=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("head") or "")' \
+    "$review_inputs/previous-review.json")
+  if [[ -n "$review_previous_head" ]] && ! git -C "$review_repo" cat-file -e "$review_previous_head^{commit}" 2>/dev/null; then
+    if ! git -C "$review_repo" fetch --no-tags origin "$review_previous_head"; then
+      echo 'The previous head is not available. The tool will review the full PR.'
+    fi
+  fi
+fi
 
 review_phase='load Docker image'
 printf 'Review image: %s\n' "$REVIEW_IMAGE"
@@ -219,6 +287,7 @@ else
 fi
 if [[ -n "${OCR_LLM_TIMEOUT:-}" ]]; then review_command+=(--env OCR_LLM_TIMEOUT); fi
 review_command+=("$REVIEW_IMAGE" --mode "${REVIEW_MODE:-chained}" --pass "${REVIEW_PASS:-both}")
+if [[ "$review_fix" == true ]]; then review_command+=(--previous-review /output/inputs/previous-review.json); fi
 if [[ "$review_preview" == true ]]; then review_command+=(--preview); fi
 case "${REVIEW_DEBUG:-false}" in [Tt][Rr][Uu][Ee]) review_command+=(--debug) ;; esac
 if [[ -n "${REVIEW_CONCURRENCY:-}" ]]; then review_command+=(--concurrency "$REVIEW_CONCURRENCY"); fi

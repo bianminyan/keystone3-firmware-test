@@ -29,6 +29,7 @@ def resolve(inputs, repository, number):
         'repository': repository, 'number': int(number), 'url': data['html_url'],
         'title': data['title'], 'description': data.get('body') or '',
         'base_sha': base, 'head_sha': head, 'metadata_head_sha': api_head,
+        'base_ref': data['base']['ref'],
         'captured_at': dt.datetime.now(dt.timezone.utc).isoformat(),
     }
     write_json(inputs / 'pr.json', snapshot)
