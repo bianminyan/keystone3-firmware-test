@@ -91,13 +91,13 @@ impl From<&Vec<u8>> for KeyImages {
 }
 
 fn calc_output_key_offset(
-    keypair: &KeyPair,
+    private_view: &PrivateKey,
     tx_pubkey: &[u8; 32],
     internal_output_index: u64,
     major: u32,
     minor: u32,
 ) -> Option<Scalar> {
-    let recv_derivation = (keypair.view.scalar
+    let recv_derivation = (private_view.scalar
         * PublicKey::from_bytes(tx_pubkey).ok()?.point.decompress()?)
     .mul_by_cofactor();
 
@@ -109,7 +109,11 @@ fn calc_output_key_offset(
         hash_to_scalar(&[&recv_derivation.compress().0, scalar.as_slice()].concat());
 
     if major != 0 || minor != 0 {
-        key_offset += Scalar::from_bytes_mod_order(keypair.get_m(major, minor));
+        key_offset += Scalar::from_bytes_mod_order(crate::key::calc_subaddress_m(
+            &private_view.to_bytes(),
+            major,
+            minor,
+        ));
     }
 
     Some(key_offset)
@@ -132,6 +136,44 @@ fn candidate_tx_keys(
     keys
 }
 
+pub(crate) fn validate_input_owner(
+    public_spend: &PublicKey,
+    private_view: &PrivateKey,
+    tx_pubkey: &[u8; 32],
+    output_pubkey: &[u8; 32],
+    additional_tx_keys: &[PublicKey],
+    output_index: u64,
+    major: u32,
+    minors: &[u32],
+) -> Result<()> {
+    let spend = public_spend
+        .point
+        .decompress()
+        .ok_or(MoneroError::FormatError)?;
+    let target = PublicKey::from_bytes(output_pubkey)?
+        .point
+        .decompress()
+        .ok_or(MoneroError::FormatError)?;
+    let defaults = [0];
+    let minors = if minors.is_empty() {
+        &defaults[..]
+    } else {
+        minors
+    };
+    for key in candidate_tx_keys(tx_pubkey, additional_tx_keys, output_index) {
+        for minor in minors {
+            if let Some(offset) =
+                calc_output_key_offset(private_view, &key, output_index, major, *minor)
+            {
+                if spend + EdwardsPoint::mul_base(&offset) == target {
+                    return Ok(());
+                }
+            }
+        }
+    }
+    Err(MoneroError::GenerateKeyImageError)
+}
+
 fn verified_key_image_offset(
     keypair: &KeyPair,
     tx_pubkey: &[u8; 32],
@@ -145,7 +187,7 @@ fn verified_key_image_offset(
 
     for key in candidate_tx_keys(tx_pubkey, additional_tx_keys, internal_output_index).iter() {
         if let Some(offset) =
-            calc_output_key_offset(keypair, key, internal_output_index, major, minor)
+            calc_output_key_offset(&keypair.view, key, internal_output_index, major, minor)
         {
             if EdwardsPoint::mul_base(&(keypair.spend.scalar + offset)) == target {
                 return Some(offset);
@@ -235,9 +277,13 @@ pub fn try_to_generate_image(
 
     for key_to_use in candidate_keys.iter() {
         for minor in minors.iter() {
-            if let Some(offset) =
-                calc_output_key_offset(keypair, key_to_use, internal_output_index, major, *minor)
-            {
+            if let Some(offset) = calc_output_key_offset(
+                &keypair.view,
+                key_to_use,
+                internal_output_index,
+                major,
+                *minor,
+            ) {
                 if let Some(image) =
                     generate_key_image_from_offset(&keypair.spend, &offset, &output_public_key)
                 {

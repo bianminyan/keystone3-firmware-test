@@ -852,6 +852,36 @@ impl UnsignedTx {
             {
                 return Err(MoneroError::ChangeAddressMismatch);
             }
+            for source in &tx.sources {
+                let real = source
+                    .outputs
+                    .get(
+                        usize::try_from(source.real_output)
+                            .map_err(|_| MoneroError::FormatError)?,
+                    )
+                    .ok_or(MoneroError::FormatError)?;
+                crate::key_images::validate_input_owner(
+                    public_spend,
+                    private_view,
+                    &source.real_out_tx_key,
+                    &real.key.dest,
+                    &source
+                        .real_out_additional_tx_keys
+                        .iter()
+                        .map(|key| PublicKey::from_bytes(key))
+                        .collect::<Result<Vec<_>>>()?,
+                    source.real_output_in_tx_index,
+                    tx.subaddr_account,
+                    &tx.subaddr_indices,
+                )?;
+                let commitment = Commitment {
+                    mask: Scalar::from_bytes_mod_order(source.mask),
+                    amount: source.amount,
+                };
+                if commitment.calculate().compress().to_bytes() != real.key.mask {
+                    return Err(MoneroError::FormatError);
+                }
+            }
         }
         Ok(())
     }

@@ -1426,10 +1426,7 @@ fn preflight_wallet_validation() {
     let keys = KeyPair::new(PrivateKey::new(wallet.view), PrivateKey::new(wallet.spend));
     let mut tx = tx_data(vec![recipient.standard_dest(2)], wallet.standard_dest(1));
     tx.sources[0].amount = 4;
-    let point = wallet.spend_point().compress().to_bytes();
-    tx.sources[0].real_out_tx_key = point;
-    tx.sources[0].outputs[0].key.dest = point;
-    tx.sources[0].outputs[0].key.mask = point;
+    prepare_wallet_input(&mut tx, &wallet);
     let mut set = UnsignedTx::default();
     set.txes.push(tx);
     assert!(set
@@ -1573,10 +1570,7 @@ fn change_address_index_boundaries() {
         tx.subaddr_account = major;
         tx.subaddr_indices = vec![minor];
         tx.sources[0].amount = 4;
-        let point = wallet.spend_point().compress().to_bytes();
-        tx.sources[0].real_out_tx_key = point;
-        tx.sources[0].outputs[0].key.dest = point;
-        tx.sources[0].outputs[0].key.mask = point;
+        prepare_wallet_input(&mut tx, &wallet);
         let mut set = UnsignedTx::default();
         set.txes.push(tx);
         let result = set.validate_for_wallet(&keys.get_public_spend(), &keys.view);
@@ -1668,10 +1662,7 @@ fn transaction_set_total_boundaries() {
     let keys = KeyPair::new(PrivateKey::new(wallet.view), PrivateKey::new(wallet.spend));
     let mut tx = tx_data(vec![wallet.standard_dest(1)], wallet.standard_dest(0));
     tx.sources[0].amount = u64::MAX;
-    let point = wallet.spend_point().compress().to_bytes();
-    tx.sources[0].real_out_tx_key = point;
-    tx.sources[0].outputs[0].key.dest = point;
-    tx.sources[0].outputs[0].key.mask = point;
+    prepare_wallet_input(&mut tx, &wallet);
     let mut set = UnsignedTx::default();
     set.txes = vec![tx.clone()];
     assert!(set
@@ -1693,10 +1684,7 @@ fn serialized_index_and_tag_boundaries() {
     let wallet = Party::new();
     let mut tx = tx_data(vec![wallet.standard_dest(1)], wallet.standard_dest(0));
     tx.subaddr_indices = vec![0];
-    let point = wallet.spend_point().compress().to_bytes();
-    tx.sources[0].real_out_tx_key = point;
-    tx.sources[0].outputs[0].key.dest = point;
-    tx.sources[0].outputs[0].key.mask = point;
+    prepare_wallet_input(&mut tx, &wallet);
     let mut bytes = vec![2, 1];
     bytes.extend(write_tx_construction_data(&tx));
     bytes.push(0);
@@ -1733,10 +1721,7 @@ fn integrated_payment_destination_identity() {
         tx.extra = vec![2, 9, 1];
         tx.extra.extend(payment_id);
         tx.sources[0].amount = 4;
-        let point = wallet.spend_point().compress().to_bytes();
-        tx.sources[0].real_out_tx_key = point;
-        tx.sources[0].outputs[0].key.dest = point;
-        tx.sources[0].outputs[0].key.mask = point;
+        prepare_wallet_input(&mut tx, &wallet);
         assert!(validate_payment_id_binding(core::slice::from_ref(&tx)).is_ok());
         tx.splitted_dsts[0].amount = 0;
         tx.splitted_dsts.insert(1, other.standard_dest(2));
@@ -1828,10 +1813,7 @@ fn preflight_supported_transaction_boundaries() {
     let recipient = Party::new();
     let mut tx = tx_data(vec![recipient.standard_dest(2)], wallet.standard_dest(1));
     tx.sources[0].amount = 4;
-    let point = wallet.spend_point().compress().to_bytes();
-    tx.sources[0].real_out_tx_key = point;
-    tx.sources[0].outputs[0].key.dest = point;
-    tx.sources[0].outputs[0].key.mask = point;
+    prepare_wallet_input(&mut tx, &wallet);
     set.txes.push(tx);
     assert!(set.validate_for_wallet(&spend, &view).is_ok());
     let valid = set.clone();
@@ -1864,10 +1846,7 @@ fn destination_type_consistency() {
     let keys = KeyPair::new(PrivateKey::new(wallet.view), PrivateKey::new(wallet.spend));
     let mut tx = tx_data(vec![sub.clone(), second], wallet.standard_dest(1));
     tx.sources[0].amount = 6;
-    let point = wallet.spend_point().compress().to_bytes();
-    tx.sources[0].real_out_tx_key = point;
-    tx.sources[0].outputs[0].key.dest = point;
-    tx.sources[0].outputs[0].key.mask = point;
+    prepare_wallet_input(&mut tx, &wallet);
     let mut set = UnsignedTx::default();
     set.txes.push(tx);
     assert!(set
@@ -1903,10 +1882,7 @@ fn short_nonce_destination_consistency() {
         wallet.standard_dest(1),
     );
     tx.sources[0].amount = 6;
-    let point = wallet.spend_point().compress().to_bytes();
-    tx.sources[0].real_out_tx_key = point;
-    tx.sources[0].outputs[0].key.dest = point;
-    tx.sources[0].outputs[0].key.mask = point;
+    prepare_wallet_input(&mut tx, &wallet);
     let mut set = UnsignedTx::default();
     set.txes.push(tx);
     assert!(set
@@ -1930,10 +1906,7 @@ fn ring_member_identity_after_sorting() {
     use crate::utils::io::write_tx_construction_data;
     let wallet = Party::new();
     let mut tx = tx_data(vec![wallet.standard_dest(1)], wallet.standard_dest(0));
-    let point = wallet.spend_point().compress().to_bytes();
-    tx.sources[0].real_out_tx_key = point;
-    tx.sources[0].outputs[0].key.dest = point;
-    tx.sources[0].outputs[0].key.mask = point;
+    prepare_wallet_input(&mut tx, &wallet);
     tx.sources[0].outputs[0].index = 20;
     let selected = tx.sources[0].outputs[0].clone();
     let mut other = selected.clone();
@@ -1958,7 +1931,10 @@ fn public_key_text_boundaries() {
         assert!(PublicKey::from_str(text).is_err());
     }
     let point = Party::new().spend_point().compress().to_bytes();
-    assert_eq!(PublicKey::from_str(&hex::encode(point)).unwrap().as_bytes(), point);
+    assert_eq!(
+        PublicKey::from_str(&hex::encode(point)).unwrap().as_bytes(),
+        point
+    );
 }
 
 #[test]
@@ -1969,14 +1945,26 @@ fn receive_address_key_validation() {
     let wallet = Party::new();
     let spend = PrivateKey::new(wallet.spend).get_public_key();
     let view = PrivateKey::new(wallet.view);
-    let invalid_encoding = (0u8..=255).map(|byte| [byte; 32])
-        .find(|bytes| curve25519_dalek::edwards::CompressedEdwardsY(*bytes).decompress().is_none()).unwrap();
+    let invalid_encoding = (0u8..=255)
+        .map(|byte| [byte; 32])
+        .find(|bytes| {
+            curve25519_dalek::edwards::CompressedEdwardsY(*bytes)
+                .decompress()
+                .is_none()
+        })
+        .unwrap();
     let mut noncanonical = [255; 32];
     noncanonical[0] = 238;
     noncanonical[31] = 127;
-    for bytes in [invalid_encoding, noncanonical, EIGHT_TORSION[0].compress().to_bytes(),
+    for bytes in [
+        invalid_encoding,
+        noncanonical,
+        EIGHT_TORSION[0].compress().to_bytes(),
         EIGHT_TORSION[1].compress().to_bytes(),
-        (wallet.spend_point() + EIGHT_TORSION[1]).compress().to_bytes()] {
+        (wallet.spend_point() + EIGHT_TORSION[1])
+            .compress()
+            .to_bytes(),
+    ] {
         let key = PublicKey::from_bytes(&bytes).unwrap();
         for subaddress in [false, true] {
             assert!(generate_address(&key, &view, 0, 1, subaddress).is_err());
@@ -1998,22 +1986,113 @@ fn request_display_count_boundaries() {
     let keys = KeyPair::new(PrivateKey::new(wallet.view), PrivateKey::new(wallet.spend));
     let mut tx = tx_data(vec![recipient.standard_dest(1)], wallet.standard_dest(1));
     tx.sources[0].amount = 32;
-    let point = wallet.spend_point().compress().to_bytes();
-    tx.sources[0].real_out_tx_key = point;
-    tx.sources[0].outputs[0].key.dest = point;
-    tx.sources[0].outputs[0].key.mask = point;
+    prepare_wallet_input(&mut tx, &wallet);
     let mut set = UnsignedTx::default();
     set.txes = vec![tx.clone(); 8];
-    assert!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view).is_ok());
+    assert!(set
+        .validate_for_wallet(&keys.get_public_spend(), &keys.view)
+        .is_ok());
     set.txes.push(tx.clone());
-    assert_eq!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view), Err(MoneroError::RequestTooComplex));
-    assert!(matches!(set.sign(&keys), Err(MoneroError::RequestTooComplex)));
+    assert_eq!(
+        set.validate_for_wallet(&keys.get_public_spend(), &keys.view),
+        Err(MoneroError::RequestTooComplex)
+    );
+    assert!(matches!(
+        set.sign(&keys),
+        Err(MoneroError::RequestTooComplex)
+    ));
     set.txes = vec![tx.clone()];
     set.txes[0].sources = vec![tx.sources[0].clone(); 16];
-    assert!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view).is_ok());
+    assert!(set
+        .validate_for_wallet(&keys.get_public_spend(), &keys.view)
+        .is_ok());
     set.txes[0].sources.push(tx.sources[0].clone());
-    assert_eq!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view), Err(MoneroError::RequestTooComplex));
+    assert_eq!(
+        set.validate_for_wallet(&keys.get_public_spend(), &keys.view),
+        Err(MoneroError::RequestTooComplex)
+    );
     set.txes = vec![tx.clone(); 4];
-    for t in &mut set.txes { t.splitted_dsts = vec![recipient.standard_dest(1); 16]; }
-    assert_eq!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view), Err(MoneroError::RequestTooComplex));
+    for t in &mut set.txes {
+        t.splitted_dsts = vec![recipient.standard_dest(1); 16];
+    }
+    assert_eq!(
+        set.validate_for_wallet(&keys.get_public_spend(), &keys.view),
+        Err(MoneroError::RequestTooComplex)
+    );
+}
+
+fn prepare_wallet_input(tx: &mut TxConstructionData, wallet: &Party) {
+    let r = Scalar::from(19u64);
+    let source = &mut tx.sources[0];
+    source.real_out_tx_key = EdwardsPoint::mul_base(&r).compress().to_bytes();
+    let derivation = (wallet.view * EdwardsPoint::mul_base(&r)).mul_by_cofactor();
+    let mut data = derivation.compress().to_bytes().to_vec();
+    data.extend(crate::utils::io::write_varinteger(
+        source.real_output_in_tx_index,
+    ));
+    let mut offset = crate::utils::hash::hash_to_scalar(&data);
+    let minor = tx.subaddr_indices.first().copied().unwrap_or(0);
+    if tx.subaddr_account != 0 || minor != 0 {
+        offset += Scalar::from_bytes_mod_order(crate::key::calc_subaddress_m(
+            &wallet.view.to_bytes(),
+            tx.subaddr_account,
+            minor,
+        ));
+    }
+    let real = &mut source.outputs[source.real_output as usize];
+    real.key.dest = (wallet.spend_point() + EdwardsPoint::mul_base(&offset))
+        .compress()
+        .to_bytes();
+    real.key.mask = monero_serai::primitives::Commitment {
+        mask: Scalar::from_bytes_mod_order(source.mask),
+        amount: source.amount,
+    }
+    .calculate()
+    .compress()
+    .to_bytes();
+}
+
+#[test]
+fn preflight_input_validation() {
+    use crate::key::PrivateKey;
+    use crate::transfer::UnsignedTx;
+    let wallet = Party::new();
+    let recipient = Party::new();
+    let mut tx = tx_data(vec![recipient.standard_dest(2)], wallet.standard_dest(1));
+    tx.sources[0].amount = 4;
+    prepare_wallet_input(&mut tx, &wallet);
+    let mut set = UnsignedTx::default();
+    set.txes.push(tx);
+    let spend = PrivateKey::new(wallet.spend).get_public_key();
+    let view = PrivateKey::new(wallet.view);
+    assert!(set.validate_for_wallet(&spend, &view).is_ok());
+    let valid = set.clone();
+    for (major, minor) in [(0, 0), (0, 2), (1, 0)] {
+        for additional in [false, true] {
+            let mut candidate = valid.clone();
+            let tx = &mut candidate.txes[0];
+            tx.subaddr_account = major;
+            tx.subaddr_indices = vec![minor];
+            tx.sources[0].real_output_in_tx_index = 2;
+            prepare_wallet_input(tx, &wallet);
+            if additional {
+                let key = tx.sources[0].real_out_tx_key;
+                tx.sources[0].real_out_additional_tx_keys = vec![key; 3];
+                tx.sources[0].real_out_tx_key = EdwardsPoint::mul_base(&Scalar::from(23u64))
+                    .compress()
+                    .to_bytes();
+            }
+            assert!(candidate.validate_for_wallet(&spend, &view).is_ok());
+            let keys = crate::key::KeyPair::new(PrivateKey::new(wallet.view), PrivateKey::new(wallet.spend));
+            assert!(candidate.txes[0].inputs(&keys).is_ok());
+        }
+    }
+    set.txes[0].sources[0].outputs[0].key.dest = recipient.spend_point().compress().to_bytes();
+    assert!(set.validate_for_wallet(&spend, &view).is_err());
+    set = valid.clone();
+    set.txes[0].sources[0].mask = Scalar::from(9u64).to_bytes();
+    assert!(set.validate_for_wallet(&spend, &view).is_err());
+    set = valid;
+    set.txes[0].sources[0].amount += 1;
+    assert!(set.validate_for_wallet(&spend, &view).is_err());
 }
