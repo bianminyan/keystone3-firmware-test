@@ -1987,3 +1987,33 @@ fn receive_address_key_validation() {
         assert!(generate_address(&spend, &PrivateKey::default(), 0, 1, subaddress).is_err());
     }
 }
+
+#[test]
+fn request_display_count_boundaries() {
+    use crate::errors::MoneroError;
+    use crate::key::{KeyPair, PrivateKey};
+    use crate::transfer::UnsignedTx;
+    let wallet = Party::new();
+    let recipient = Party::new();
+    let keys = KeyPair::new(PrivateKey::new(wallet.view), PrivateKey::new(wallet.spend));
+    let mut tx = tx_data(vec![recipient.standard_dest(1)], wallet.standard_dest(1));
+    tx.sources[0].amount = 32;
+    let point = wallet.spend_point().compress().to_bytes();
+    tx.sources[0].real_out_tx_key = point;
+    tx.sources[0].outputs[0].key.dest = point;
+    tx.sources[0].outputs[0].key.mask = point;
+    let mut set = UnsignedTx::default();
+    set.txes = vec![tx.clone(); 8];
+    assert!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view).is_ok());
+    set.txes.push(tx.clone());
+    assert_eq!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view), Err(MoneroError::RequestTooComplex));
+    assert!(matches!(set.sign(&keys), Err(MoneroError::RequestTooComplex)));
+    set.txes = vec![tx.clone()];
+    set.txes[0].sources = vec![tx.sources[0].clone(); 16];
+    assert!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view).is_ok());
+    set.txes[0].sources.push(tx.sources[0].clone());
+    assert_eq!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view), Err(MoneroError::RequestTooComplex));
+    set.txes = vec![tx.clone(); 4];
+    for t in &mut set.txes { t.splitted_dsts = vec![recipient.standard_dest(1); 16]; }
+    assert_eq!(set.validate_for_wallet(&keys.get_public_spend(), &keys.view), Err(MoneroError::RequestTooComplex));
+}

@@ -25,6 +25,10 @@ use monero_serai::transaction::{Input, Output, Timelock, Transaction, Transactio
 use rand_core::OsRng;
 use zeroize::Zeroizing;
 
+// Bounds apply to the whole request, since the confirmation page combines its transactions.
+const MAX_DISPLAY_INPUTS: usize = 16;
+const MAX_DISPLAY_OUTPUTS: usize = 16;
+
 /// One output as shown on the device.
 #[derive(Debug, Clone)]
 pub struct DisplayOutput {
@@ -790,8 +794,19 @@ impl UnsignedTx {
             return Err(MoneroError::FormatError);
         }
         let mut candidate_work = 0usize;
+        let mut input_count = 0usize;
+        let mut output_count = 0usize;
         let mut totals = (0u64, 0u64, 0u64);
         for tx in &self.txes {
+            input_count = input_count
+                .checked_add(tx.sources.len())
+                .ok_or(MoneroError::RequestTooComplex)?;
+            output_count = output_count
+                .checked_add(tx.splitted_dsts.len())
+                .ok_or(MoneroError::RequestTooComplex)?;
+            if input_count > MAX_DISPLAY_INPUTS || output_count > MAX_DISPLAY_OUTPUTS {
+                return Err(MoneroError::RequestTooComplex);
+            }
             if tx.sources.is_empty()
                 || tx.splitted_dsts.is_empty()
                 || tx.splitted_dsts.len() > 16

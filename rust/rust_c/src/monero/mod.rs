@@ -215,7 +215,7 @@ pub unsafe extern "C" fn monero_parse_output(
             DisplayMoneroOutput::from(display),
         )))
         .c_ptr(),
-        Err(_) => TransactionParseResult::from(RustCError::InvalidData("invalid data".to_string()))
+        Err(error) => TransactionParseResult::from(RustCError::InvalidData(error.to_string()))
             .c_ptr(),
     }
 }
@@ -357,9 +357,9 @@ pub unsafe extern "C" fn monero_parse_unsigned_tx(
             ))))
             .c_ptr()
         }
-        Err(_) => {
+        Err(error) => {
             clear_approved_unsigned_tx();
-            TransactionParseResult::from(RustCError::InvalidData("invalid data".to_string()))
+            TransactionParseResult::from(RustCError::InvalidData(error.to_string()))
                 .c_ptr()
         }
     }
