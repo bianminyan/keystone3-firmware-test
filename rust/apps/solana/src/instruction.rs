@@ -172,8 +172,10 @@ impl Instruction {
             ));
         }
         let mut detail = ProgramDetailComputeBudget::default();
+        // Match the validator's unchecked Borsh decoding: require complete
+        // fields but ignore trailing bytes. The original message is signed.
         let method = match data[0] {
-            0 if data.len() == 9 => {
+            0 if data.len() >= 9 => {
                 detail.compute_unit_limit =
                     u32::from_le_bytes(data[1..5].try_into().map_err(|_| {
                         SolanaError::InvalidData("invalid compute unit limit".to_string())
@@ -186,15 +188,15 @@ impl Instruction {
                     .to_string();
                 "RequestUnitsDeprecated"
             }
-            1 if data.len() == 5 => {
+            1 if data.len() >= 5 => {
                 detail.heap_frame_bytes = Self::read_compute_budget_u32(&data[1..5])?.to_string();
                 "RequestHeapFrame"
             }
-            2 if data.len() == 5 => {
+            2 if data.len() >= 5 => {
                 detail.compute_unit_limit = Self::read_compute_budget_u32(&data[1..5])?.to_string();
                 "SetComputeUnitLimit"
             }
-            3 if data.len() == 9 => {
+            3 if data.len() >= 9 => {
                 detail.compute_unit_price_micro_lamports =
                     u64::from_le_bytes(data[1..9].try_into().map_err(|_| {
                         SolanaError::InvalidData("invalid compute unit price".to_string())
@@ -202,7 +204,7 @@ impl Instruction {
                     .to_string();
                 "SetComputeUnitPrice"
             }
-            4 if data.len() == 5 => {
+            4 if data.len() >= 5 => {
                 detail.loaded_accounts_data_size_limit =
                     Self::read_compute_budget_u32(&data[1..5])?.to_string();
                 "SetLoadedAccountsDataSizeLimit"
@@ -308,7 +310,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_compute_budget_instructions_strictly() {
+    fn parses_compute_budget_instructions_with_trailing_bytes() {
         let cases = [
             (vec![0, 64, 13, 3, 0, 7, 0, 0, 0], "RequestUnitsDeprecated"),
             (vec![1, 0, 0, 4, 0], "RequestHeapFrame"),
@@ -320,11 +322,26 @@ mod tests {
             let parsed = Instruction::parse_compute_budget_instruction(&data, vec![]).unwrap();
             assert_eq!("ComputeBudget", parsed.common.program);
             assert_eq!(method, parsed.common.method);
+            let expected = serde_json::to_value(&parsed).unwrap();
+            let mut padded = data.clone();
+            padded.extend_from_slice(&[0, 0xff, 0x42, 0]);
+            let parsed = Instruction::parse_compute_budget_instruction(&padded, vec![]).unwrap();
+            assert_eq!(expected, serde_json::to_value(&parsed).unwrap());
+            for length in 0..data.len() {
+                assert!(
+                    Instruction::parse_compute_budget_instruction(&data[..length], vec![]).is_err()
+                );
+            }
         }
 
-        assert!(
-            Instruction::parse_compute_budget_instruction(&[2, 1, 0, 0, 0, 0], vec![]).is_err()
-        );
+        let parsed =
+            Instruction::parse_compute_budget_instruction(&[1, 0, 0, 1, 0, 0, 0, 0, 0], vec![])
+                .unwrap();
+        let ProgramDetail::ComputeBudget(detail) = parsed.kind else {
+            panic!("expected ComputeBudget detail");
+        };
+        assert_eq!("65536", detail.heap_frame_bytes);
+        assert!(Instruction::parse_compute_budget_instruction(&[5, 0, 0, 0, 0], vec![]).is_err());
         assert!(Instruction::parse_compute_budget_instruction(
             &[2, 1, 0, 0, 0],
             vec!["unexpected".to_string()]

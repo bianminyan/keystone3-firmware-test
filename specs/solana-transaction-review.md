@@ -80,7 +80,7 @@
 | 输入类别 | 行为 |
 | --- | --- |
 | 已支持指令，格式及字段合法 | 解析语义并展示 |
-| 已支持指令，存在非法截断、长度或尾随数据 | 返回错误，不降级 Unknown |
+| 已支持指令，存在非法截断、长度或尾随数据（ComputeBudget 完整字段后的尾随字节除外） | 返回错误，不降级 Unknown |
 | 不认识的 program ID | 保留原始数据进入 Unknown/raw review |
 | Jupiter v6 完整但不支持的 discriminator | 保留原始数据进入 Unknown/raw review |
 | Jupiter discriminator 少于 8 字节 | InvalidData，拒绝 |
@@ -191,7 +191,7 @@ JSON 可以独立重建原始 message bytes，并通过往返测试核对。这�
 | fingerprint 缺失或不匹配 | 扫描及最终签名拒绝 |
 | fingerprint 指针为空或长度不为 4 | FFI 返回错误，不构造非法切片 |
 | 派生公钥不在 required signers | 最终交易签名拒绝 |
-| 支持的指令截断或包含尾随字节 | 语义解析拒绝 |
+| 支持的指令截断或包含尾随字节 | 语义解析拒绝；ComputeBudget 完整字段后的尾随字节按验证器行为忽略 |
 | 未知程序或完整但未支持的 Jupiter discriminator | 保留原始数据供审查 |
 | Squads 创建或附带转账 | 按原始顺序展示全部指令 |
 | V1 回退原始指令页 | 保留默认或显式 TransactionConfig，不占指令编号 |
@@ -257,3 +257,7 @@ fixtures 使用公开 abandon 测试助记词，仅用于测试；CI 不依赖�
 ### 原始指令概览布局
 
 未解析交易的账户列表每页展示最多 4 个账户，页内可滚动；ALT 账户保留 Table、Index 和说明入口。Data 超过 512 字节时使用分页组件；单页内容直接以自动换行、内容高度标签展示，不显示翻页控件。限制单张指令卡片高度，避免大量账户和长 Data 超出 LVGL 坐标范围后与后续字段或卡片重叠。
+
+### ComputeBudget 尾随字节兼容
+
+Legacy/V0 ComputeBudget 指令按验证器的 `try_from_slice_unchecked` 行为读取完整字段并忽略尾随字节，仍拒绝截断字段及未知类型。原始消息字节保持不变用于签名。例如 `010000010000000000` 解析为 RequestHeapFrame 65536 bytes。V1 的 ComputeBudget no-op 规则不变。
