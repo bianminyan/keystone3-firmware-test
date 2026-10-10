@@ -555,10 +555,18 @@ static lv_obj_t *GuiWidgetPagedText(lv_obj_t *parent, cJSON *json)
 #ifdef FEATURE_TRON
     cJSON *textFunc = cJSON_GetObjectItem(json, "text_func");
     if (textFunc != NULL && textFunc->valuestring != NULL &&
-            strcmp(textFunc->valuestring, "GetTrxCallData") == 0) {
+            (strcmp(textFunc->valuestring, "GetTrxCallData") == 0 ||
+             strcmp(textFunc->valuestring, "GetTrxMemo") == 0 ||
+             strcmp(textFunc->valuestring, "GetTrxMemoHex") == 0)) {
         // The detail page destroys its widgets before freeing the Rust parse
-        // result. Borrow calldata directly, avoiding a full-size strcpy_s.
-        text = GuiGetTrxCallDataText(g_totalData);
+        // result. Borrow long fields directly, avoiding a full-size strcpy_s.
+        if (strcmp(textFunc->valuestring, "GetTrxMemo") == 0) {
+            text = GuiGetTrxMemoText(g_totalData);
+        } else if (strcmp(textFunc->valuestring, "GetTrxMemoHex") == 0) {
+            text = GuiGetTrxMemoHexText(g_totalData);
+        } else {
+            text = GuiGetTrxCallDataText(g_totalData);
+        }
     } else
 #endif
     {
@@ -566,7 +574,7 @@ static lv_obj_t *GuiWidgetPagedText(lv_obj_t *parent, cJSON *json)
         text = ownedText;
     }
     GuiShowPagedMessageText(obj, text, true, NULL, NULL);
-    // Only the generic text path owns an extra buffer. Rust owns calldata.
+    // Only the generic text path owns an extra buffer. Rust owns TRON fields.
     if (ownedText != NULL) {
         lv_obj_add_event_cb(obj, GuiPagedTextDelete, LV_EVENT_DELETE, ownedText);
     }

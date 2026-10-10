@@ -22,6 +22,8 @@ void GetTrxExpiration(void *indata, void *param, uint32_t maxLen);
 void GetTrxValueRaw(void *indata, void *param, uint32_t maxLen);
 void GetTrxMemo(void *indata, void *param, uint32_t maxLen);
 void GetTrxMemoHex(void *indata, void *param, uint32_t maxLen);
+const char *GuiGetTrxMemoText(void *param);
+const char *GuiGetTrxMemoHexText(void *param);
 int GetTrxMemoLen(void *param);
 int GetTrxMemoHexLen(void *param);
 void GetTrxMemoHash(void *indata, void *param, uint32_t maxLen);

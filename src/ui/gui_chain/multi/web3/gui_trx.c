@@ -259,6 +259,20 @@ void GetTrxMemo(void *indata, void *param, uint32_t maxLen)
     strcpy_s((char *)indata, maxLen, trx->detail->memo);
 }
 
+const char *GuiGetTrxMemoText(void *param)
+{
+    const DisplayTron *trx = (const DisplayTron *)param;
+    const char *text = trx != NULL && trx->detail != NULL ? trx->detail->memo : NULL;
+    return text == NULL ? "" : text;
+}
+
+const char *GuiGetTrxMemoHexText(void *param)
+{
+    const DisplayTron *trx = (const DisplayTron *)param;
+    const char *text = trx != NULL && trx->detail != NULL ? trx->detail->memo_hex : NULL;
+    return text == NULL ? "" : text;
+}
+
 int GetTrxMemoLen(void *param)
 {
     DisplayTron *trx = (DisplayTron *)param;
