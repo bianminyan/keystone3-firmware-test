@@ -971,6 +971,10 @@ static lv_obj_t *GuiShowSolTxGeneralOverview(
         }
         lastView = actionCard;
 
+        if (strcmp(method, "ConfigTransactionCreate") == 0 && strlen(general->data[i].memo) > 0) {
+            lastView = CreateTransactionItemViewWithWidth(
+                parent, _("Data"), general->data[i].memo, lastView, SOL_COMPONENT_WIDTH);
+        }
         if (strlen(general->data[i].value) > 0) {
             lastView = CreateTransactionItemViewWithWidth(
                 parent, _("Value"), general->data[i].value, lastView, SOL_COMPONENT_WIDTH);
@@ -1414,6 +1418,7 @@ static bool GuiSolInstructionsUseAddressLookupTable(PtrT_VecFFI_Instruction inst
 }
 
 #define SOL_ACCOUNTS_PER_PAGE 4
+#define SOL_ACCOUNTS_PAGER_BOTTOM_PADDING 8
 
 typedef struct {
     PtrT_VecFFI_PtrString accounts;
@@ -1515,7 +1520,10 @@ static lv_obj_t *GuiShowSolAccounts(lv_obj_t *parent, PtrT_VecFFI_PtrString acco
 {
     lv_obj_update_layout(parent);
     lv_coord_t width = lv_obj_get_content_width(parent);
-    lv_obj_t *pager = GuiCreateContainerWithParent(parent, width, 384);
+    // Keep the button shadows inside the pager's clipping rectangle.
+    lv_obj_t *pager = GuiCreateContainerWithParent(
+        parent, width, 384 + SOL_ACCOUNTS_PAGER_BOTTOM_PADDING);
+    lv_obj_set_style_pad_bottom(pager, SOL_ACCOUNTS_PAGER_BOTTOM_PADDING, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(pager, LV_OPA_TRANSP, LV_PART_MAIN);
     SolAccountsPager *state = lv_mem_alloc(sizeof(*state));
     ASSERT(state != NULL);

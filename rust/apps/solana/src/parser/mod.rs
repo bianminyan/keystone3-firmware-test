@@ -192,6 +192,14 @@ impl ParsedSolanaTx {
         if unknown_count == details.len() {
             return SolanaTxDisplayType::Unknown;
         }
+        // Configuration changes need their full actions displayed, rather than
+        // the proposal card which only shows a method and memo.
+        if details
+            .iter()
+            .any(|d| matches!(d.kind, ProgramDetail::SquadsV4ConfigTransactionCreate(_)))
+        {
+            return SolanaTxDisplayType::General;
+        }
         let squads = details
             .iter()
             .filter(|d| Self::is_sqauds_v4_detail(&d.common))
@@ -707,6 +715,9 @@ impl ParsedSolanaTx {
                     item.unusual_decimals =
                         Self::has_unusual_token_decimals(&value.mint, value.decimals);
                     item.decimals = value.decimals;
+                }
+                ProgramDetail::SquadsV4ConfigTransactionCreate(value) => {
+                    item.memo = serde_json::to_string_pretty(value)?;
                 }
                 ProgramDetail::SquadsV4VaultTransactionCreate(value) => {
                     item.memo = value.memo.clone().unwrap_or_default();
@@ -1258,6 +1269,32 @@ mod tests {
             },
             kind: ProgramDetail::GeneralUnknown(ProgramDetailGeneralUnknown::default()),
         }
+    }
+
+    #[test]
+    fn reviews_squads_config_transaction_request_in_full_order() {
+        let data = hex::decode("80010003082b8d8b3addd92759f55b840c2852f5bd50aee3552fe987ee0d4fe24b9043df8ebf971b59108b5b85a04fb093f1e21b4e3fd4c4c8f487dd09b95752769f0dd8c341af7426b48b8300268990b6aec6e1d41bf48e7f04732fb54865e8f1cf2be299e2394fff52100345b926b3fca49a43d059d27f6a771f1d39155eddfb0d114875afb04c998560a9ac7407ea3bf10c625824819009fabbfb33d95a3a271028b0f90306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000000000000000000000000000000000000000000000000000000000000000000000681c4ce47e22368b8b1555ec887af092efc7efbb66ca3f52fbf68d4ac9cb7a80b0c6a879e5fe16bb69effc546043d750720867d2dc8f59fb8a143d2d0ec720605050009035c2c040000000000060200010c02000000a08601000000000007050203000006369bec57e4894b51270100000001902cce4c0210897aa154b0529cdf3759e940e07449f7176e4656ca468ace8fbf0104000000746573740705020400000611dc3c49e01e6c4f9f0200000000000000000703020004099025a488bcd82af80000").unwrap();
+        let parsed = ParsedSolanaTx::build(&data).unwrap();
+        assert!(matches!(parsed.display_type, SolanaTxDisplayType::General));
+        let SolanaOverview::General(items) = parsed.overview else {
+            panic!("expected general overview");
+        };
+        assert_eq!(items.len(), 5);
+        assert_eq!(
+            items
+                .iter()
+                .map(|v| v.instruction_index)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3, 4, 5]
+        );
+        assert_eq!(items[2].method, "ConfigTransactionCreate");
+        let config: serde_json::Value = serde_json::from_str(&items[2].memo).unwrap();
+        assert_eq!(config["memo"], "test");
+        assert!(config["multisig"].is_string());
+        assert!(config["creator"].is_string());
+        assert!(config["actions"][0]["RemoveMember"]["old_member"].is_string());
+        assert_eq!(items[3].method, "ProposalCreate");
+        assert_eq!(items[4].method, "ProposalApprove");
     }
 
     #[test]

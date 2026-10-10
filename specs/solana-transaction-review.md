@@ -261,3 +261,13 @@ fixtures 使用公开 abandon 测试助记词，仅用于测试；CI 不依赖�
 ### ComputeBudget 尾随字节兼容
 
 Legacy/V0 ComputeBudget 指令按验证器的 `try_from_slice_unchecked` 行为读取完整字段并忽略尾随字节，仍拒绝截断字段及未知类型。原始消息字节保持不变用于签名。例如 `010000010000000000` 解析为 RequestHeapFrame 65536 bytes。V1 的 ComputeBudget no-op 规则不变。
+
+### Squads V4 配置交易
+
+支持 `config_transaction_create`（discriminator `9bec57e4894b5127`），按 Squads 官方 `ConfigTransactionCreateArgs` / `ConfigAction` 的 Borsh 字段顺序解析 actions 与 memo。支持 AddMember、RemoveMember、ChangeThreshold、SetTimeLock、AddSpendingLimit、RemoveSpendingLimit、SetRentCollector；账户地址以 base58 展示。拒绝字段截断、未知 action、空 actions 和尾随数据；至少要求官方定义的五个账户。
+
+包含配置创建指令时使用按原始指令顺序排列的 General 审阅，展示 multisig、creator、全部配置操作和 memo，避免专用 Proposal 卡片省略配置变更。签名仍使用原始消息字节。此为离线解析支持，不替代链上账户状态和权限校验。
+
+历史兼容原因：`58a3e207a` 之前 `Message::to_program_details` 将所有解析错误降级为 Unknown/raw；加固后只允许 UnsupportedProgram 降级，Squads 未支持指令的 Custom(1) 因而拒绝。此处通过补充语义解析解决，未恢复所有错误降级。
+
+协议来源：https://github.com/Squads-Protocol/v4/blob/main/programs/squads_multisig_program/src/instructions/config_transaction_create.rs 、 https://github.com/Squads-Protocol/v4/blob/main/programs/squads_multisig_program/src/state/config_transaction.rs 。
