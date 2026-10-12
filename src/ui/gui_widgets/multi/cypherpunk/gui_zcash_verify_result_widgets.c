@@ -77,14 +77,19 @@ void GuiZcashVerifyResultWidgetsInit(const char *address)
     lv_obj_set_width(label, 408);
     lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
     // Same Learn More entry as the scanner's explanation page.
-    lv_obj_t *learnMore = GuiCreateContainerWithParent(cont, 144, 30);
+    lv_obj_t *learnMore = GuiCreateContainerWithParent(cont, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_add_flag(learnMore, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_flex_flow(learnMore, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(learnMore, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(learnMore, 12, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(learnMore, LV_OPA_0, LV_PART_MAIN);
     lv_obj_add_event_cb(learnMore, OpenZcashVerifyAboutHandler, LV_EVENT_CLICKED, NULL);
     lv_obj_t *learnLabel = GuiCreateIllustrateLabel(learnMore, _("learn_more"));
     lv_obj_set_style_text_color(learnLabel, BLUE_GREEN_COLOR, LV_PART_MAIN);
     lv_obj_t *learnImg = GuiCreateImg(learnMore, &imgQrcodeTurquoise);
-    lv_obj_align_to(learnImg, learnLabel, LV_ALIGN_TOP_RIGHT, 36, 3);
+    lv_obj_clear_flag(learnLabel, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(learnImg, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_update_layout(learnMore);
     // LVGL copies the address before the UI message is released.
 }
 

@@ -32,15 +32,20 @@ static void StartZcashAddressScanHandler(lv_event_t *e)
 
 static void GuiCreateLearnMoreWidget(lv_obj_t *parent, lv_obj_t *alignTo)
 {
-    lv_obj_t *cont = GuiCreateContainerWithParent(parent, 144, 30);
+    lv_obj_t *cont = GuiCreateContainerWithParent(parent, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_add_flag(cont, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(cont, 12, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(cont, LV_OPA_0, LV_PART_MAIN);
     lv_obj_add_event_cb(cont, OpenZcashVerifyAboutHandler, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *label = GuiCreateIllustrateLabel(cont, _("learn_more"));
     lv_obj_set_style_text_color(label, BLUE_GREEN_COLOR, LV_PART_MAIN);
     lv_obj_t *img = GuiCreateImg(cont, &imgQrcodeTurquoise);
-    lv_obj_align_to(img, label, LV_ALIGN_TOP_RIGHT, 36, 3);
+    lv_obj_clear_flag(label, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(img, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_update_layout(cont);
 
     lv_obj_align_to(cont, alignTo, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 12);
 }
