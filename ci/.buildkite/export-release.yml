@@ -1,0 +1,23 @@
+steps:
+  - input: "Export public release candidate"
+    if: build.message == "export-release"
+    key: "export_release_parameters"
+    fields:
+      - text: "Candidate branch"
+        key: "export_candidate"
+        hint: "Example: 3.1.0-rc4. Existing candidates are never overwritten."
+        required: true
+      - text: "Release version"
+        key: "export_version"
+        hint: "Example: 3.1.0"
+        required: true
+        format: '[0-9]+\.[0-9]+\.[0-9]+'
+
+  - label: "Export candidate to internal repository"
+    if: build.message == "export-release"
+    depends_on: "export_release_parameters"
+    command: "bash ci/ci/export-release.sh"
+    agents:
+      queue: keystone-g3/production-test-build
+    concurrency: 1
+    concurrency_group: "keystone3-firmware-internal/public-export"

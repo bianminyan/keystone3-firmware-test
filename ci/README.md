@@ -78,3 +78,9 @@ role has only `lambda:InvokeFunction`; it has no KMS grant-management permission
 The CI debug flow always uses the dev environment. It does not request build
 approval or OTA signing. Signed builds retain build approval, KMS signing, and
 KMS grant cleanup; `PURPOSE=release` selects the signed build mode, not publishing.
+
+## Export a public release
+
+See [EXPORT.md](EXPORT.md) for the manual export script, candidate verification,
+internal commit mapping, and explicit internal candidate-branch push. This is separate from
+the internal Buildkite build pipeline.
