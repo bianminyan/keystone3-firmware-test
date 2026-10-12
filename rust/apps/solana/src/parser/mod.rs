@@ -198,7 +198,13 @@ impl ParsedSolanaTx {
             .iter()
             .any(|d| matches!(d.kind, ProgramDetail::SquadsV4ConfigTransactionCreate(_)))
         {
-            return SolanaTxDisplayType::General;
+            // A trusted General overview must disclose every sibling's
+            // authorization fields. Fall back to ordered raw review otherwise.
+            return if details.iter().all(Self::can_fully_review_config_sibling) {
+                SolanaTxDisplayType::General
+            } else {
+                SolanaTxDisplayType::Unknown
+            };
         }
         let squads = details
             .iter()
@@ -279,6 +285,22 @@ impl ParsedSolanaTx {
 
     fn is_system_transfer_detail(common: &CommonDetail) -> bool {
         common.program.eq("System") && common.method.eq("Transfer")
+    }
+
+    fn can_fully_review_config_sibling(detail: &SolanaDetail) -> bool {
+        match &detail.kind {
+            ProgramDetail::SquadsV4ConfigTransactionCreate(_)
+            | ProgramDetail::SystemTransfer(_) => true,
+            // Multisig authority signers are not shown by General. Preserve
+            // these instructions in raw review instead of omitting the signers.
+            ProgramDetail::TokenTransfer(value) => {
+                value.signers.as_ref().map_or(true, Vec::is_empty)
+            }
+            ProgramDetail::TokenTransferChecked(value) => {
+                value.signers.as_ref().map_or(true, Vec::is_empty)
+            }
+            _ => false,
+        }
     }
 
     fn is_token_transfer_detail(common: &CommonDetail) -> bool {
@@ -697,6 +719,12 @@ impl ParsedSolanaTx {
                     if item.to_in_lookup_table {
                         item.to_lookup_table_reference = value.to.clone();
                     }
+                }
+                ProgramDetail::TokenTransfer(value) => {
+                    item.amount = format!("{} raw units", value.amount);
+                    item.source = value.source_account.clone();
+                    item.destination = value.recipient.clone();
+                    item.authority = value.owner.clone();
                 }
                 ProgramDetail::TokenTransferChecked(value) => {
                     Self::validate_token_decimals(&value.mint, value.decimals)?;
@@ -1244,6 +1272,9 @@ impl ParsedSolanaTx {
 
 #[cfg(test)]
 mod tests {
+    use crate::parser::detail::{
+        ProgramDetailSquadsConfigTransactionCreate, ProgramDetailTokenTransfer,
+    };
     use hex::FromHex;
     use serde_json::{json, Value};
 
@@ -1271,14 +1302,114 @@ mod tests {
         }
     }
 
+    fn config_detail_for_review_test() -> SolanaDetail {
+        use crate::solana_lib::squads_v4::instructions::{
+            ConfigAction, ConfigTransactionCreateArgs,
+        };
+        SolanaDetail {
+            common: CommonDetail {
+                program: "SquadsV4".to_string(),
+                method: "ConfigTransactionCreate".to_string(),
+            },
+            kind: ProgramDetail::SquadsV4ConfigTransactionCreate(
+                ProgramDetailSquadsConfigTransactionCreate {
+                    multisig: "multisig".to_string(),
+                    creator: "creator".to_string(),
+                    args: ConfigTransactionCreateArgs {
+                        actions: vec![ConfigAction::ChangeThreshold { new_threshold: 3 }],
+                        memo: None,
+                    },
+                },
+            ),
+        }
+    }
+
+    #[test]
+    fn config_with_plain_token_transfer_discloses_all_authorization_fields() {
+        let transfer = SolanaDetail {
+            common: CommonDetail {
+                program: "Token".to_string(),
+                method: "Transfer".to_string(),
+            },
+            kind: ProgramDetail::TokenTransfer(ProgramDetailTokenTransfer {
+                source_account: "source".to_string(),
+                recipient: "destination".to_string(),
+                owner: "authority".to_string(),
+                amount: "9007199254740993".to_string(),
+                signers: None,
+            }),
+        };
+        let details = vec![config_detail_for_review_test(), transfer.clone()];
+        assert!(matches!(
+            ParsedSolanaTx::detect_display_type(&details),
+            SolanaTxDisplayType::General
+        ));
+        let items = ParsedSolanaTx::build_general_items(&details, None).unwrap();
+        assert_eq!(items[1].amount, "9007199254740993 raw units");
+        assert_eq!(items[1].source, "source");
+        assert_eq!(items[1].destination, "destination");
+        assert_eq!(items[1].authority, "authority");
+        assert!(items[1].mint.is_empty());
+        assert!(items[1].token.is_empty());
+        let mut multisig_transfer = transfer;
+        let ProgramDetail::TokenTransfer(value) = &mut multisig_transfer.kind else {
+            unreachable!()
+        };
+        value.signers = Some(vec!["extra signer".to_string()]);
+        assert!(matches!(
+            ParsedSolanaTx::detect_display_type(&[
+                config_detail_for_review_test(),
+                multisig_transfer
+            ]),
+            SolanaTxDisplayType::Unknown
+        ));
+    }
+
+    #[test]
+    fn config_preserves_raw_review_for_unrepresented_siblings() {
+        use crate::solana_lib::squads_v4::instructions::{
+            MultisigCreateArgs, MultisigCreateArgsV2,
+        };
+        for kind in [
+            ProgramDetail::SquadsV4MultisigCreate(MultisigCreateArgs::default()),
+            ProgramDetail::SquadsV4MultisigCreateV2(MultisigCreateArgsV2::default()),
+            ProgramDetail::SquadsV4ProposalActivate,
+        ] {
+            let sibling = SolanaDetail {
+                common: CommonDetail {
+                    program: "SquadsV4".to_string(),
+                    method: "sibling".to_string(),
+                },
+                kind,
+            };
+            assert!(matches!(
+                ParsedSolanaTx::detect_display_type(&[config_detail_for_review_test(), sibling]),
+                SolanaTxDisplayType::Unknown
+            ));
+        }
+        assert!(matches!(
+            ParsedSolanaTx::detect_display_type(&[config_detail_for_review_test()]),
+            SolanaTxDisplayType::General
+        ));
+    }
+
+    #[test]
+    fn rejects_overflow_reproducer_with_repeated_threshold_changes() {
+        let data = hex::decode(
+            include_str!("../../../../rust_c/tests/fixtures/solana-squads-overflow.hex").trim(),
+        )
+        .unwrap();
+        assert!(ParsedSolanaTx::build(&data).is_err());
+    }
+
     #[test]
     fn reviews_squads_config_transaction_request_in_full_order() {
         let data = hex::decode("80010003082b8d8b3addd92759f55b840c2852f5bd50aee3552fe987ee0d4fe24b9043df8ebf971b59108b5b85a04fb093f1e21b4e3fd4c4c8f487dd09b95752769f0dd8c341af7426b48b8300268990b6aec6e1d41bf48e7f04732fb54865e8f1cf2be299e2394fff52100345b926b3fca49a43d059d27f6a771f1d39155eddfb0d114875afb04c998560a9ac7407ea3bf10c625824819009fabbfb33d95a3a271028b0f90306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000000000000000000000000000000000000000000000000000000000000000000000681c4ce47e22368b8b1555ec887af092efc7efbb66ca3f52fbf68d4ac9cb7a80b0c6a879e5fe16bb69effc546043d750720867d2dc8f59fb8a143d2d0ec720605050009035c2c040000000000060200010c02000000a08601000000000007050203000006369bec57e4894b51270100000001902cce4c0210897aa154b0529cdf3759e940e07449f7176e4656ca468ace8fbf0104000000746573740705020400000611dc3c49e01e6c4f9f0200000000000000000703020004099025a488bcd82af80000").unwrap();
         let parsed = ParsedSolanaTx::build(&data).unwrap();
-        assert!(matches!(parsed.display_type, SolanaTxDisplayType::General));
-        let SolanaOverview::General(items) = parsed.overview else {
-            panic!("expected general overview");
-        };
+        assert!(matches!(parsed.display_type, SolanaTxDisplayType::Unknown));
+        let message = Message::read_exact(&mut data.clone()).unwrap();
+        let details = message.to_program_details().unwrap();
+        let items = ParsedSolanaTx::build_general_items(&details, None).unwrap();
         assert_eq!(items.len(), 5);
         assert_eq!(
             items

@@ -194,7 +194,16 @@ impl Dispatch for SquadsInstructions {
             "9bec57e4894b5127" => {
                 let args = from_slice::<ConfigTransactionCreateArgs>(ix_data)
                     .map_err(|_| SquadsV4Error::InvalidInstruction)?;
-                if args.actions.is_empty() {
+                // Device support policy: a config proposal may change its
+                // threshold at most once, even though the protocol allows repeats.
+                if args.actions.is_empty()
+                    || args
+                        .actions
+                        .iter()
+                        .filter(|action| matches!(action, ConfigAction::ChangeThreshold { .. }))
+                        .count()
+                        > 1
+                {
                     return Err(SquadsV4Error::InvalidInstruction.into());
                 }
                 Ok(SquadsInstructions::ConfigTransactionCreate(args))
@@ -274,6 +283,25 @@ mod tests {
     use crate::solana_lib::utils::{sighash, SIGHASH_GLOBAL_NAMESPACE};
 
     use super::*;
+
+    #[test]
+    fn rejects_repeated_threshold_changes_even_when_equal_or_separated() {
+        for actions in [
+            vec![2, 3, 0, 2, 1, 0],
+            vec![2, 3, 0, 2, 3, 0],
+            vec![2, 3, 0, 3, 60, 0, 0, 0, 2, 1, 0],
+        ] {
+            let count = if actions.len() == 6 { 2u32 } else { 3u32 };
+            let mut data = hex::decode("9bec57e4894b5127").unwrap();
+            data.extend_from_slice(&count.to_le_bytes());
+            data.extend_from_slice(&actions);
+            data.push(0); // no memo
+            assert!(SquadsInstructions::dispatch(&data).is_err());
+        }
+        // Different config operations with a single threshold change remain valid.
+        let data = hex::decode("9bec57e4894b512702000000020300033c00000000").unwrap();
+        assert!(SquadsInstructions::dispatch(&data).is_ok());
+    }
 
     #[test]
     fn parses_config_transaction_create_and_rejects_malformed_fields() {

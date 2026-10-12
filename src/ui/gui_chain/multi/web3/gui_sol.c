@@ -14,6 +14,7 @@
 #define SQUADS_V4_CREATE_MULTISIG_CONTRACT_ADDRESS "5DH2e3cJmFpyi6mk65EGFediunm4ui6BiKNUNrhWtD1b"
 #define SOL_COMPONENT_WIDTH 376
 #define SOL_COMPONENT_CONTENT_WIDTH (SOL_COMPONENT_WIDTH - 48)
+#define SOL_CONFIG_REVIEW_MAX_HEIGHT 420
 typedef struct SolanaLearnMoreData {
     PtrString title;
     PtrString content;
@@ -956,6 +957,49 @@ static void GuiShowSolTxVoteOverview(lv_obj_t *parent, PtrT_DisplaySolanaTxOverv
     lv_obj_align(label, LV_ALIGN_TOP_LEFT, 24, 54);
 }
 
+static char GuiSolProtocolTextByteAt(void *context, size_t offset);
+
+static lv_obj_t *GuiCreateSolConfigReviewCard(lv_obj_t *parent, const char *text, lv_obj_t *lastView)
+{
+    lv_obj_t *card = CreateTransactionContentContainer(
+        parent, SOL_COMPONENT_WIDTH, SOL_CONFIG_REVIEW_MAX_HEIGHT);
+    lv_obj_set_style_max_height(card, SOL_CONFIG_REVIEW_MAX_HEIGHT, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(card, 24, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(card, 24, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(card, 16, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(card, 8, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(card, 8, LV_PART_MAIN);
+    lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+    if (lastView != NULL) lv_obj_align_to(card, lastView, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 16);
+    lv_obj_t *title = GuiCreateIllustrateLabel(card, _("Data"));
+    lv_obj_set_width(title, lv_pct(100));
+    lv_obj_set_height(title, LV_SIZE_CONTENT);
+    lv_obj_set_style_text_opa(title, 144, LV_PART_MAIN);
+    lv_obj_t *pager = GuiCreateContainerWithParent(card, SOL_COMPONENT_CONTENT_WIDTH, 0);
+    lv_obj_set_style_bg_opa(pager, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_flex_grow(pager, 1);
+    lv_obj_update_layout(card);
+    // The parse result outlives the card and its pager callbacks. Borrow the
+    // full JSON without a safe-string copy or an unbounded-height label.
+    const lv_font_t *font = &openSansEnIllustrate;
+    for (const unsigned char *p = (const unsigned char *)text; *p != '\0'; p++) {
+        if (*p >= 0x80) {
+            font = g_defIllustrateFont;
+            break;
+        }
+    }
+    GuiPagedMessageSource_t source = {
+        .context = (void *)text,
+        .length = strlen(text),
+        .byte_at = GuiSolProtocolTextByteAt,
+        .utf8 = true,
+        .font = font,
+    };
+    GuiShowPagedMessage(pager, &source);
+    return card;
+}
+
 static lv_obj_t *GuiShowSolTxGeneralOverview(
     lv_obj_t *parent,
     PtrT_DisplaySolanaTxOverview overviewData,
@@ -1003,8 +1047,7 @@ static lv_obj_t *GuiShowSolTxGeneralOverview(
         lastView = actionCard;
 
         if (strcmp(method, "ConfigTransactionCreate") == 0 && strlen(general->data[i].memo) > 0) {
-            lastView = CreateTransactionItemViewWithWidth(
-                parent, _("Data"), general->data[i].memo, lastView, SOL_COMPONENT_WIDTH);
+            lastView = GuiCreateSolConfigReviewCard(parent, general->data[i].memo, lastView);
         }
         if (strlen(general->data[i].value) > 0) {
             lastView = CreateTransactionItemViewWithWidth(
@@ -1035,10 +1078,15 @@ static lv_obj_t *GuiShowSolTxGeneralOverview(
             }
             lastView = CreateTransactionItemViewWithWidth(
                 parent, _("Amount"), general->data[i].amount, lastView, SOL_COMPONENT_WIDTH);
-            lastView = CreateTransactionItemViewWithWidth(
-                parent, _("Token"), general->data[i].token, lastView, SOL_COMPONENT_WIDTH);
-            lastView = CreateTransactionItemViewWithWidth(
-                parent, _("Mint Address"), general->data[i].mint, lastView, SOL_COMPONENT_WIDTH);
+            // Plain SPL Transfer carries neither mint nor decimal metadata.
+            if (strlen(general->data[i].token) > 0) {
+                lastView = CreateTransactionItemViewWithWidth(
+                    parent, _("Token"), general->data[i].token, lastView, SOL_COMPONENT_WIDTH);
+            }
+            if (strlen(general->data[i].mint) > 0) {
+                lastView = CreateTransactionItemViewWithWidth(
+                    parent, _("Mint Address"), general->data[i].mint, lastView, SOL_COMPONENT_WIDTH);
+            }
             lastView = CreateTransactionItemViewWithWidth(
                 parent, _("Authority"), general->data[i].authority, lastView, SOL_COMPONENT_WIDTH);
             lastView = CreateTransactionItemViewWithWidth(
@@ -1817,7 +1865,7 @@ void GuiShowSolTxOverview(lv_obj_t *parent, void *totalData)
     lv_obj_scroll_to_y(parent, 0, LV_ANIM_OFF);
 }
 
-static char GuiSolRawDetailByteAt(void *context, size_t offset)
+static char GuiSolProtocolTextByteAt(void *context, size_t offset)
 {
     return ((const char *)context)[offset];
 }
@@ -1841,7 +1889,7 @@ static void GuiShowSolTxRawDetailCard(
     GuiPagedMessageSource_t source = {
         .context = (void *)rawDetail,
         .length = strlen(rawDetail),
-        .byte_at = GuiSolRawDetailByteAt,
+        .byte_at = GuiSolProtocolTextByteAt,
         .utf8 = true,
         .font = &openSansEnIllustrate,
     };

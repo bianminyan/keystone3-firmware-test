@@ -266,8 +266,12 @@ Legacy/V0 ComputeBudget 指令按验证器的 `try_from_slice_unchecked` 行为�
 
 支持 `config_transaction_create`（discriminator `9bec57e4894b5127`），按 Squads 官方 `ConfigTransactionCreateArgs` / `ConfigAction` 的 Borsh 字段顺序解析 actions 与 memo。支持 AddMember、RemoveMember、ChangeThreshold、SetTimeLock、AddSpendingLimit、RemoveSpendingLimit、SetRentCollector；账户地址以 base58 展示。拒绝字段截断、未知 action、空 actions 和尾随数据；至少要求官方定义的五个账户。
 
-包含配置创建指令时使用按原始指令顺序排列的 General 审阅，展示 multisig、creator、全部配置操作和 memo，避免专用 Proposal 卡片省略配置变更。签名仍使用原始消息字节。此为离线解析支持，不替代链上账户状态和权限校验。
+包含配置创建指令时，仅在全部兄弟指令均能完整展示授权字段时使用按原始指令顺序排列的 General 审阅；普通 SPL Transfer 展示 raw units、source、destination、authority，不猜测 mint 或 decimals。带额外 multisig signers 的 Transfer、MultisigCreate/V2 及其他未完整表示的组合回退到带警告的原始指令审阅。配置展示包含 multisig、creator、配置操作和 memo，避免专用 Proposal 卡片省略配置变更。签名仍使用原始消息字节。此为离线解析支持，不替代链上账户状态和权限校验。
 
 历史兼容原因：`58a3e207a` 之前 `Message::to_program_details` 将所有解析错误降级为 Unknown/raw；加固后只允许 UnsupportedProgram 降级，Squads 未支持指令的 Custom(1) 因而拒绝。此处通过补充语义解析解决，未恢复所有错误降级。
 
 协议来源：https://github.com/Squads-Protocol/v4/blob/main/programs/squads_multisig_program/src/instructions/config_transaction_create.rs 、 https://github.com/Squads-Protocol/v4/blob/main/programs/squads_multisig_program/src/state/config_transaction.rs 。
+
+冷端支持策略：同一条 `config_transaction_create` 中最多一个 ChangeThreshold；重复值相同或被其他动作隔开也拒绝。此为设备限制，非 Squads 协议限制。100 次阈值变更复现请求现用于验证拒绝行为。
+
+配置 JSON 审阅卡片高度上限为 420 像素，复用每页最多 512 字节的消息分页组件；每页内可滚动，翻页保留完整内容。卡片借用解析结果字符串，随页面销毁，不创建完整副本或无限高度标签。
