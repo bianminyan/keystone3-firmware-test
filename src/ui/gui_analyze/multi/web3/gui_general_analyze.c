@@ -69,7 +69,9 @@ GetContSizeFunc GetOtherChainPos(char *type, GuiRemapViewType remapIndex)
 
 GetCustomContainerFunc GetOtherChainCustomFunc(char *funcName)
 {
-    if (!strcmp(funcName, "GuiShowSolTxOverview")) {
+    if (!strcmp(funcName, "GuiShowSolMessageReview")) {
+        return GuiShowSolMessageReview;
+    } else if (!strcmp(funcName, "GuiShowSolTxOverview")) {
         return GuiShowSolTxOverview;
     } else if (!strcmp(funcName, "GuiShowSolTxAdvanced")) {
         return GuiShowSolTxAdvanced;

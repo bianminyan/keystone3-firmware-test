@@ -212,9 +212,9 @@ static lv_obj_t *GuiShowSolSigningPath(lv_obj_t *parent)
     lv_obj_t *container = lv_obj_create(parent);
     lv_obj_remove_style_all(container);
     lv_obj_update_layout(parent);
-    lv_obj_set_size(container, lv_obj_get_width(parent), 80);
-    lv_obj_set_scroll_dir(container, LV_DIR_VER);
-    lv_obj_add_flag(container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(container, lv_obj_get_width(parent), LV_SIZE_CONTENT);
+    lv_obj_clear_flag(container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(container, LV_FLEX_FLOW_COLUMN);
     lv_obj_t *label = GuiCreateIllustrateLabel(container, "");
     lv_obj_set_width(label, lv_obj_get_width(parent));
     lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
@@ -225,32 +225,63 @@ static lv_obj_t *GuiShowSolSigningPath(lv_obj_t *parent)
     } else {
         lv_label_set_text_fmt(label, "%s\n-", _("Path"));
     }
+    lv_obj_update_layout(container);
     return container;
 }
 
 void GuiShowSolMessagePaged(lv_obj_t *parent, void *param, bool raw)
 {
     DisplaySolanaMessage *message = (DisplaySolanaMessage *)param;
-    const char *text = raw ? message->raw_message : message->utf8_message;
-    lv_obj_update_layout(parent);
-    lv_obj_t *path = GuiShowSolSigningPath(parent);
-    lv_obj_t *lengthLabel = GuiCreateIllustrateLabel(parent, "");
-    lv_obj_set_y(lengthLabel, lv_obj_get_height(path) + 8);
-    lv_label_set_text_fmt(lengthLabel, _("solana_message_length"), (unsigned)message->message_length);
-    lv_obj_set_width(lengthLabel, lv_obj_get_width(parent));
-    lv_obj_update_layout(lengthLabel);
-    lv_coord_t offset = lv_obj_get_y(lengthLabel) + lv_obj_get_height(lengthLabel) + 12;
-    lv_obj_t *pager = lv_obj_create(parent);
-    lv_obj_remove_style_all(pager);
-    lv_obj_set_pos(pager, 0, offset);
-    lv_obj_set_size(pager, lv_obj_get_width(parent), lv_obj_get_height(parent) - offset);
-    lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
     GuiShowPagedMessageText(
-        pager,
-        text,
-        !raw,
+        parent, raw ? message->raw_message : message->utf8_message, !raw,
         raw ? _("solana_blind_sign_title") : NULL,
         raw ? _("solana_unparsed_message_warning") : NULL);
+}
+
+static lv_obj_t *GuiSolMessageField(lv_obj_t *parent, const char *text, bool title)
+{
+    lv_obj_t *label = GuiCreateIllustrateLabel(parent, text);
+    lv_obj_set_width(label, lv_pct(100));
+    lv_obj_set_height(label, LV_SIZE_CONTENT);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    if (title) lv_obj_set_style_text_opa(label, 144, LV_PART_MAIN);
+    return label;
+}
+
+void GuiShowSolMessageReview(lv_obj_t *parent, void *param)
+{
+    DisplaySolanaMessage *message = (DisplaySolanaMessage *)param;
+    bool raw = message->utf8_message == NULL;
+    lv_obj_set_size(parent, 408, 500);
+    lv_obj_set_style_pad_left(parent, 24, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(parent, 24, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(parent, 16, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(parent, 8, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(parent, 8, LV_PART_MAIN);
+    lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
+    lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+    if (message->from != NULL) {
+        GuiSolMessageField(parent, _("From"), true);
+        lv_obj_t *address = GuiSolMessageField(parent, message->from, false);
+        lv_obj_set_style_text_font(address, &openSansEnIllustrate, LV_PART_MAIN);
+    } else {
+        lv_obj_t *notice = GuiCreateContainerWithParent(parent, 360, LV_SIZE_CONTENT);
+        CreateNoticeCard(notice, _("custom_path_parse_notice"));
+    }
+    GuiSolMessageField(parent, _("Path"), true);
+    void *data = g_isMulti ? (g_urMultiResult == NULL ? NULL : g_urMultiResult->data) :
+                 (g_urResult == NULL ? NULL : g_urResult->data);
+    char *path = data == NULL ? NULL : sol_get_path(data);
+    lv_obj_t *pathValue = GuiSolMessageField(parent, "", false);
+    lv_obj_set_style_text_font(pathValue, &openSansEnIllustrate, LV_PART_MAIN);
+    lv_label_set_text_fmt(pathValue, "M/%s", path == NULL ? "-" : path);
+    if (path != NULL) free_ptr_string(path);
+    GuiSolMessageField(parent, raw ? _("Raw Message") : _("Message"), true);
+    lv_obj_t *pager = GuiCreateContainerWithParent(parent, 360, 0);
+    lv_obj_set_style_bg_opa(pager, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_flex_grow(pager, 1);
+    lv_obj_update_layout(parent);
+    GuiShowSolMessagePaged(pager, param, raw);
 }
 
 
@@ -1146,7 +1177,10 @@ void SquadsLearnMoreHandler(lv_event_t *e)
 static void SolanaAddressLearnMore(lv_event_t *e)
 {
     lv_obj_t* obj = lv_event_get_target(e);
-    const char* reference = (const char*)lv_obj_get_user_data(obj);
+    const char *reference = lv_event_get_user_data(e);
+    if (reference == NULL) {
+        reference = (const char *)lv_obj_get_user_data(obj);
+    }
     if (reference != NULL) {
         const char *table = reference;
         if (strncmp(table, "Table ", 6) == 0) {
@@ -1417,7 +1451,8 @@ static bool GuiSolInstructionsUseAddressLookupTable(PtrT_VecFFI_Instruction inst
     return false;
 }
 
-#define SOL_ACCOUNTS_PER_PAGE 4
+// Three wrapped addresses fit above the pager controls in the 320px viewport.
+#define SOL_ACCOUNTS_PER_PAGE 3
 #define SOL_ACCOUNTS_PAGER_BOTTOM_PADDING 8
 
 typedef struct {
@@ -1454,11 +1489,17 @@ static void GuiSolAccountsRefresh(SolAccountsPager *state)
                     separator + 1);
                 lv_label_set_text(account_label, altReference);
             }
-            lv_obj_t *info_icon = GuiCreateImg(state->content, &imgInfoSmall);
-            lv_obj_set_style_pad_right(info_icon, 0, LV_PART_MAIN);
-            lv_obj_add_flag(info_icon, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_set_user_data(info_icon, state->accounts->data[j]);
-            lv_obj_add_event_cb(info_icon, SolanaAddressLearnMore, LV_EVENT_CLICKED, NULL);
+            // Use a full touch target instead of the small image's hit area.
+            lv_obj_t *infoButton = lv_btn_create(state->content);
+            lv_obj_remove_style_all(infoButton);
+            lv_obj_set_size(infoButton, 48, 48);
+            lv_obj_clear_flag(infoButton, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_add_flag(infoButton, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_t *infoIcon = GuiCreateImg(infoButton, &imgInfoSmall);
+            lv_obj_align(infoIcon, LV_ALIGN_LEFT_MID, 0, 0);
+            lv_obj_clear_flag(infoIcon, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_add_event_cb(infoButton, SolanaAddressLearnMore, LV_EVENT_CLICKED,
+                                state->accounts->data[j]);
         } else {
             lv_label_set_text(account_label, state->accounts->data[j]);
         }
@@ -1533,7 +1574,10 @@ static lv_obj_t *GuiShowSolAccounts(lv_obj_t *parent, PtrT_VecFFI_PtrString acco
     lv_obj_set_style_bg_opa(state->content, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_flex_flow(state->content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(state->content, 8, LV_PART_MAIN);
-    lv_obj_add_flag(state->content, LV_OBJ_FLAG_SCROLLABLE);
+    // The container helper clears CLICKABLE; restore it so long ALT rows can
+    // actually be scrolled by touch rather than leaving their bottom clipped.
+    lv_obj_add_flag(state->content, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_scrollbar_mode(state->content, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_set_scroll_dir(state->content, LV_DIR_VER);
     state->previous = GuiSolAccountsButton(pager, "<");
     lv_obj_align(state->previous, LV_ALIGN_BOTTOM_LEFT, 0, 0);

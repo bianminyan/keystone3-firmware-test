@@ -1294,7 +1294,14 @@ void *GuiTemplateReload(lv_obj_t *parent, uint8_t index)
         return NULL;
     }
 #ifdef COMPILE_SIMULATOR
+#ifdef WEB3_VERSION
+    // SOL follows the same tab assembly and single-page path as the firmware.
+    if (g_reMapIndex != REMAPVIEW_SOL && g_reMapIndex != REMAPVIEW_SOL_MESSAGE) {
+        return g_templateContainer;
+    }
+#else
     return g_templateContainer;
+#endif
 #endif
 
     if (g_tableView == NULL || g_analyzeTabview.obj[0] == NULL) {
