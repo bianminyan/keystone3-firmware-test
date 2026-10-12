@@ -3,6 +3,10 @@ steps:
     if: build.message == "export-release"
     key: "export_release_parameters"
     fields:
+      - text: "Current online release"
+        key: "export_online_base"
+        hint: "Already reconciled public ref: public/master, tag 3.1.2, or full commit SHA."
+        required: true
       - text: "Candidate branch"
         key: "export_candidate"
         hint: "Example: 3.1.0-rc4. Existing candidates are never overwritten."

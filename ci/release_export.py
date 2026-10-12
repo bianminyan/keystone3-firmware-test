@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -12,7 +13,7 @@ sys.dont_write_bytecode = True
 
 from export_comments import strip_new, supported, check_unsupported
 
-RULES = 3
+RULES = 4
 REMOVE = ['ci', '.github/CODEOWNERS', '.github/copilot-instructions.md',
           '.github/instructions', '.github/workflows/copilot-review-gate.yml']
 KEEP = ['.gitignore', 'keystone3-firmware-release']
@@ -25,7 +26,8 @@ def git(*args, env=None, data=None, ok=True):
     p = subprocess.run(['git', *args], input=data, stdout=subprocess.PIPE,
                        stderr=subprocess.PIPE, env=env)
     if ok and p.returncode:
-        raise RuntimeError(p.stderr.decode().strip() or 'git command failed')
+        detail = '\n'.join(part.decode(errors='replace').strip() for part in (p.stderr, p.stdout) if part.strip())
+        raise RuntimeError(f'git {args[0]} failed (exit {p.returncode})' + (':\n' + detail if detail else ''))
     return p.stdout if ok else p
 
 
@@ -52,6 +54,11 @@ def snapshot(source, base):
             p = os.fsdecode(raw)
             if any(p == x or p.startswith(x + '/') for x in REMOVE):
                 git('update-index', '--force-remove', '--', p, env=env)
+        base_entries = {}
+        for item in git('ls-tree', '-r', '-z', base).split(b'\0'):
+            if item:
+                meta, name = item.split(b'\t', 1)
+                base_entries[os.fsdecode(name)] = meta.decode().split()
         for item in git('ls-files', '--stage', '-z', env=env).split(b'\0'):
             if not item:
                 continue
@@ -60,8 +67,8 @@ def snapshot(source, base):
             path = os.fsdecode(raw)
             if mode not in ('100644', '100755') or path in KEEP or path.startswith(('external/', 'src/ui/gui_assets/')):
                 continue
-            old_entry = entry(base, path)
-            if old_entry and old_entry.split(b'\t')[0].decode().split()[2] == blob:
+            old_entry = base_entries.get(path)
+            if old_entry and old_entry[2] == blob:
                 continue
             before = git('show', base + ':' + path) if old_entry else b''
             original = git('cat-file', 'blob', blob)
@@ -106,8 +113,25 @@ def check(args):
     source = sha(args.source)
     if exists('refs/heads/main') and sha('main') != base:
         raise RuntimeError('Local main differs from public baseline; reconcile it first')
-    common = sha(git('merge-base', source, base).decode().strip())
-    changes = git('diff', '--name-only', '-z', common, base).split(b'\0')
+    online_ref = args.online_base
+    remote_prefix = args.remote + '/'
+    full_prefix = 'refs/remotes/' + remote_prefix
+    if online_ref.startswith(full_prefix):
+        online_ref = 'refs/heads/' + online_ref[len(full_prefix):]
+    elif online_ref.startswith(remote_prefix):
+        online_ref = 'refs/heads/' + online_ref[len(remote_prefix):]
+    elif not online_ref.startswith(('refs/tags/', 'refs/heads/')) and not re.fullmatch(r'[0-9a-fA-F]{40}|[0-9a-fA-F]{64}', online_ref):
+        online_ref = 'refs/tags/' + online_ref
+    if online_ref.startswith('refs/'):
+        git('check-ref-format', online_ref)
+    if online_ref == 'refs/heads/' + args.public_branch:
+        online = base
+    else:
+        git('fetch', '--no-tags', args.remote, online_ref)
+        online = sha('FETCH_HEAD')
+    if git('merge-base', '--is-ancestor', online, base, ok=False).returncode:
+        raise RuntimeError('Online version is not an ancestor of public baseline')
+    changes = git('diff', '--name-only', '-z', online, base).split(b'\0')
     divergent = []
     for raw in changes:
         if not raw:
@@ -118,9 +142,10 @@ def check(args):
         if entry(source, path) != entry(base, path):
             divergent.append(path)
     if divergent and not args.ack_public_base:
-        raise RuntimeError('Public changes need review; reconcile source or explicitly acknowledge with --ack-public-base:\n' + '\n'.join(divergent))
+        raise RuntimeError('Public changes after the selected online version need review; reconcile source or explicitly acknowledge with --ack-public-base:\n' + '\n'.join(divergent))
     tree = snapshot(source, base)
     return dict(rules=RULES, source=source, public_base=base, tree=tree,
+                online_base=online, online_ref=args.online_base,
                 remote=args.remote, remote_url=git('remote', 'get-url', args.remote).decode().strip(),
                 internal_url=git('remote', 'get-url', '--push', 'origin').decode().strip(),
                 public_branch=args.public_branch, acknowledged_public_differences=divergent,
@@ -142,7 +167,7 @@ def verify(candidate):
     tree = snapshot(record['source'], record['public_base'])
     if tree != record['tree'] or git('rev-parse', commit + '^{tree}').decode().strip() != tree:
         raise RuntimeError('Candidate does not match export rules')
-    git('diff', '--check', record['public_base'], commit)
+    git('diff', '--check', record['source'], commit)
     return record
 
 
@@ -152,6 +177,7 @@ def main():
     for name in ['check', 'create']:
         p = commands.add_parser(name)
         p.add_argument('--source', required=True)
+        p.add_argument('--online-base', required=True, help='Already reconciled public ref: public/master, release tag, or full commit SHA')
         p.add_argument('--remote', default='public')
         p.add_argument('--public-branch', default='master')
         p.add_argument('--ack-public-base', action='store_true', help='Confirm reviewed public/source differences')
@@ -171,7 +197,7 @@ def main():
             if exists('refs/heads/' + args.candidate) or exists('refs/tags/' + TAG_PREFIX + args.candidate):
                 raise RuntimeError('Candidate or mapping tag already exists')
         record = check(args)
-        git('diff', '--check', record['public_base'], record['tree'])
+        git('diff', '--check', record['source'], record['tree'])
         if args.command == 'create':
             commit = git('commit-tree', record['tree'], '-p', record['public_base'], '-m', 'release ' + args.version).decode().strip()
             record.update(commit=commit, candidate=args.candidate, version=args.version)

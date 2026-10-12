@@ -12,14 +12,14 @@
 所有命令都会使用固定 SHA。`check`、`create` 会 fetch 公开基线，但不会自动 pull 内部 release，也不会替你更新 main。
 
 ```bash
-python3 ci/release_export.py check --source release/v3.1.0
-python3 ci/release_export.py create --source release/v3.1.0 --candidate 3.1.0-rc3 --version 3.1.0
+python3 ci/release_export.py check --source release/v3.1.0 --online-base 3.1.2
+python3 ci/release_export.py create --source release/v3.1.0 --online-base 3.1.2 --candidate 3.1.0-rc3 --version 3.1.0
 python3 ci/release_export.py verify --candidate 3.1.0-rc3
 ```
 
 默认公开基线是 `public` remote 的 `master`，可以用 `--remote` 和 `--public-branch` 指定。若本地 main 存在但未对齐公开基线，脚本停止。
 
-脚本比较共同祖先以来的公开侧变化。若公开修改在源码快照中不一致，默认停止并列出路径。人工确认差异已经正确处理后，才能在 `check` / `create` 中加 `--ack-public-base`；这不是自动合并，源码快照仍会覆盖这些路径。该确认及路径清单会写入映射记录。
+必须用 `--online-base` 指定已确认同步到内部的当前线上版本，支持 `public/master`、public tag（例如 `3.1.2`）、`refs/heads/<branch>` 或完整 commit SHA。脚本从 public 获取并固定该版本，确认它属于公开 master 历史。只检查该版本到最新公开 master 之间新增的修改，不再追溯内外部分支的共同祖先。若这些后续公开修改在源码快照中不一致，默认停止并列出路径。人工确认差异已经正确处理后，才能在 `check` / `create` 中加 `--ack-public-base`；这不是自动合并，源码快照仍会覆盖这些路径。该确认及路径清单会写入映射记录。
 
 ## 导出规则
 
@@ -36,7 +36,7 @@ python3 ci/release_export.py verify --candidate 3.1.0-rc3
 
 本地 annotated tag `internal-export/<candidate>` 保存 JSON，包含源码 SHA、公开基线 SHA、候选 SHA、导出 tree、公开 release 子模块指针、规则版本、远端地址和人工确认的差异。
 
-`verify` 重新构造期望 tree，核对内容、父提交及 tag 指向，并执行 `git diff --check`。候选被手工修改后验证会失败，应修改源码或规则，再创建新候选。记录与候选不是加密签名或独立审计证明。
+`verify` 重新构造期望 tree，核对内容、父提交及 tag 指向，并对“内部源码 → 导出结果”执行 `git diff --check`，防止导出操作引入空白错误；源代码或生成资源已有的空白不会被自动格式化或作为导出失败条件。候选被手工修改后验证会失败，应修改源码或规则，再创建新候选。记录与候选不是加密签名或独立审计证明。
 
 脚本不编译固件，记录中明确标记 `firmware_build: not_run`。需要构建验证时，可显式创建工作区：
 
@@ -73,7 +73,7 @@ python3 -m unittest discover -s ci/tests -p 'test_release_export.py'
 
 ## Buildkite 自动导出
 
-在内部 Buildkite 选择 GitHub 分支，构建消息填写 `export-release`。随后输入候选分支名和版本号；无需填写源码分支。任务固定使用 `BUILDKITE_COMMIT`，而不是再次读取分支头。
+在内部 Buildkite 选择 GitHub 分支，构建消息填写 `export-release`。随后输入当前线上版本、候选分支名和目标版本号；无需填写源码分支。任务固定使用 `BUILDKITE_COMMIT`，而不是再次读取分支头。
 
 流程为：隔离克隆 → create → verify → publish 原子推送候选分支和映射 tag 到 internal。没有额外的推送审批，也不构建固件或创建正式 release。人工同步到 public 后，再进行公开侧构建和 PR 审核。导出 JSON 会作为 Buildkite artifact 保存。
 
@@ -88,7 +88,7 @@ CI 会检查内部同名候选及映射 tag 是否存在；存在就停止，不
 
 内部候选与映射 tag 使用 `git push --atomic` 一起写入，避免只有其中一个成功。远端不支持 atomic 时直接失败，不降级成分开推送。任务在临时 clone 中操作，退出后删除临时目录。
 
-脚本映射格式升级为规则版本 3，旧映射需重新导出。
+脚本映射格式升级为规则版本 4，旧映射需重新导出。
 
 ## 候选注释清理
 
@@ -99,3 +99,7 @@ CI 会检查内部同名候选及映射 tag 是否存在；存在就停止，不
 混合历史行和新内容的多行注释会报错，需在源码中人工处理。Shell、YAML、TOML、JS/TS 的新增行若含疑似注释标记，保守停止，不冒险删除字符串或语法；这也可能要求人工处理含标记的字符串。Markdown 文档不参与清理。
 
 `verify` 使用同样的清理算法重新生成预期树。移除注释会改变行号，不能据此保证固件 hash 与内部构建一致。
+
+选择线上版本表示你已确认该版本的线上修复回迁到内部；脚本不会自动证明这件事。当所选版本等于最新 public master 时，没有后续公开修改需要拦截，内部新开发造成的文件差异可以正常导出。候选父提交、公开配置及注释清理对比仍使用最新 public master。映射记录同时保存 `online_ref`、`online_base` 和 `public_base`，避免混淆已上线版本与本次导出基线。
+
+`--source` 是准备导出的内部代码；`--online-base` 是你已确认回迁完成的公开版本，不是内部代码。填 `public/master` 表示确认当前公开最新版已回迁，直接使用本次 fetch 的最新 SHA，不使用本地可能过时的跟踪引用，也不重复按 tag 拉取。此时不会再检查已上线历史是否遗漏，仍会执行导出内容验证。

@@ -61,6 +61,8 @@ class ExportTests(unittest.TestCase):
         p.write_text(text)
 
     def export(self, *args, success=True):
+        if args[0] in ('check', 'create') and '--online-base' not in args:
+            args = (*args, '--online-base', self.base)
         return self.run_cmd('python3', str(SCRIPT), *args, success=success)
 
     def create(self):
@@ -109,10 +111,10 @@ class ExportTests(unittest.TestCase):
         binary = self.root / 'bin'
         binary.mkdir()
         agent = binary / 'buildkite-agent'
-        agent.write_text('#!/bin/bash\ncase "$1:$3" in\nmeta-data:export_candidate) echo 3.1.0-rc4;;\nmeta-data:export_version) echo 3.1.0;;\nartifact:*) test -f "$3";;\n*) exit 1;;\nesac\n')
+        agent.write_text('#!/bin/bash\ncase "$1:$3" in\nmeta-data:export_candidate) echo 3.1.0-rc4;;\nmeta-data:export_version) echo 3.1.0;;\nmeta-data:export_online_base) echo "$ONLINE_BASE";;\nartifact:*) test -f "$3";;\n*) exit 1;;\nesac\n')
         agent.chmod(0o755)
         self.env.update(PATH=str(binary) + ':' + os.environ['PATH'],
-                        BUILDKITE_COMMIT=source, BUILDKITE_BRANCH='release/v3.1.0',
+                        BUILDKITE_COMMIT=source, BUILDKITE_BRANCH='release/v3.1.0', ONLINE_BASE=self.base,
                         GIT_CONFIG_COUNT='1',
                         GIT_CONFIG_KEY_0='url.' + str(self.remote) + '.insteadOf',
                         GIT_CONFIG_VALUE_0='https://github.com/KeystoneHQ/keystone3-firmware.git')
@@ -134,6 +136,28 @@ class ExportTests(unittest.TestCase):
         self.assertIn('// new explanation', self.git('show', 'HEAD:src/code.c'))
         self.export('verify', '--candidate', '3.1.0-rc3')
 
+    def test_online_tag_allows_internal_changes_to_public_release_files(self):
+        self.git('tag', '3.1.2', self.base)
+        self.git('push', 'public', 'refs/tags/3.1.2')
+        record = json.loads(self.export('check', '--source', 'release/v3.1.0', '--online-base', '3.1.2'))
+        self.assertEqual(record['online_base'], self.base)
+        self.assertEqual(record['acknowledged_public_differences'], [])
+        self.export('check', '--source', 'release/v3.1.0', '--online-base', 'missing', success=False)
+
+    def test_online_remote_branch_ref(self):
+        for ref in ['public/master', 'refs/remotes/public/master', 'refs/heads/master']:
+            record = json.loads(self.export('check', '--source', 'release/v3.1.0', '--online-base', ref))
+            self.assertEqual(record['online_base'], self.base)
+            self.assertEqual(record['acknowledged_public_differences'], [])
+
+    def test_existing_generated_whitespace_is_preserved(self):
+        self.write('src/ui/gui_assets/image.c', 'const int image[] = {1, 2};  \n')
+        self.git('add', '.')
+        self.git('commit', '-m', 'generated resource')
+        self.create()
+        self.export('verify', '--candidate', '3.1.0-rc3')
+        self.assertEqual(self.git('show', '3.1.0-rc3:src/ui/gui_assets/image.c'), 'const int image[] = {1, 2};  \n')
+
     def test_reject_modified_candidate(self):
         self.create()
         self.git('update-ref', 'refs/heads/3.1.0-rc3', self.base)
@@ -153,6 +177,9 @@ class ExportTests(unittest.TestCase):
         self.export('check', '--source', 'release/v3.1.0', success=False)
         record = json.loads(self.export('check', '--source', 'release/v3.1.0', '--ack-public-base'))
         self.assertIn('CHANGELOG.md', record['acknowledged_public_differences'])
+        online = self.git('rev-parse', 'main').strip()
+        record = json.loads(self.export('check', '--source', 'release/v3.1.0', '--online-base', online))
+        self.assertEqual(record['acknowledged_public_differences'], [])
 
 
 if __name__ == '__main__':

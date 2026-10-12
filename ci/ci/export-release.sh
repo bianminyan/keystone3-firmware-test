@@ -6,6 +6,7 @@ set -euo pipefail
 
 candidate=$(buildkite-agent meta-data get export_candidate)
 version=$(buildkite-agent meta-data get export_version)
+online_base=$(buildkite-agent meta-data get export_online_base)
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid release version" >&2; exit 1; }
 git check-ref-format "refs/heads/$candidate"
 [[ "$candidate" != main && "$candidate" != master ]] || { echo "Use a candidate branch" >&2; exit 1; }
@@ -39,7 +40,7 @@ fi
 
 report="$work/export.json"
 python3 "$root/ci/release_export.py" create --source "$source_commit" \
-    --candidate "$candidate" --version "$version" > "$report"
+    --candidate "$candidate" --version "$version" --online-base "$online_base" > "$report"
 python3 "$root/ci/release_export.py" verify --candidate "$candidate"
 python3 "$root/ci/release_export.py" publish --candidate "$candidate"
 buildkite-agent artifact upload "$report"
