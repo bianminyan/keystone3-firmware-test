@@ -20,7 +20,12 @@ const char g_softwareVersionString[] = SOFTWARE_VERSION_STR;
 const char g_softwareVersionString[] __attribute__((section(".fixSection"))) = SOFTWARE_VERSION_STR;
 #endif
 static bool GetBootSoftwareVersionFormData(uint32_t *major, uint32_t *minor, uint32_t *build, const uint8_t *data, uint32_t dataLen);
+#ifdef BUILD_PRODUCTION
 static bool g_migrationTestSkipBootUpdate = false;
+#else
+// Command-channel builds keep the migration bootloader installed.
+static bool g_migrationTestSkipBootUpdate = true;
+#endif
 
 void SetMigrationTestSkipBootUpdate(bool skip)
 {

@@ -220,12 +220,15 @@ int SaveBootParam(void)
         goto cleanup;
     }
 
-    if (Gd25FlashWriteBuffer(BOOT_SECURE_PARAM_FLAG, cipher, sizeof(cipher)) != SUCCESS_CODE) {
+    if (Gd25FlashWriteBuffer(BOOT_SECURE_PARAM_FLAG, cipher, sizeof(cipher)) !=
+            (int32_t)sizeof(cipher)) {
         ret = ERR_GD25_BAD_PARAM;
         goto cleanup;
     }
 
-    if (Gd25FlashReadBuffer(BOOT_SECURE_PARAM_FLAG, verifyBuffer, sizeof(verifyBuffer)) != SUCCESS_CODE) {
+    if (Gd25FlashReadBuffer(BOOT_SECURE_PARAM_FLAG, verifyBuffer,
+                           sizeof(verifyBuffer)) !=
+            (int32_t)sizeof(verifyBuffer)) {
         ret = ERR_GD25_BAD_PARAM;
         goto cleanup;
     }
