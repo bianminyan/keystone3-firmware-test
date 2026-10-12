@@ -2099,3 +2099,94 @@ fn preflight_input_validation() {
     set.txes[0].sources[0].amount += 1;
     assert!(set.validate_for_wallet(&spend, &view).is_err());
 }
+
+#[test]
+fn preflight_attached_transfer_validation() {
+    use crate::errors::MoneroError;
+    use crate::key::{KeyPair, PrivateKey, PublicKey};
+    use crate::outputs::ExportedTransferDetail;
+    use crate::transfer::UnsignedTx;
+    let attach = |set: &UnsignedTx, details: Vec<ExportedTransferDetail>| {
+        use crate::utils::io::{write_tx_construction_data, write_varinteger};
+        let mut bytes = vec![2];
+        bytes.extend(write_varinteger(set.txes.len() as u64));
+        for tx in &set.txes {
+            bytes.extend(write_tx_construction_data(tx));
+        }
+        bytes.extend([3, 0, 0]);
+        bytes.extend(write_varinteger(details.len() as u64));
+        for detail in details {
+            bytes.push(0);
+            bytes.extend(detail.pubkey);
+            bytes.extend(write_varinteger(detail.internal_output_index));
+            bytes.extend(write_varinteger(detail.global_output_index));
+            bytes.extend(detail.tx_pubkey);
+            bytes.push(detail.flags);
+            bytes.extend(write_varinteger(detail.amount));
+            bytes.extend(write_varinteger(detail.additional_tx_keys.len() as u64));
+            for key in detail.additional_tx_keys {
+                bytes.extend(key.as_bytes());
+            }
+            bytes.extend(write_varinteger(detail.major as u64));
+            bytes.extend(write_varinteger(detail.minor as u64));
+        }
+        UnsignedTx::deserialize(&bytes).unwrap()
+    };
+    let wallet = Party::new();
+    let recipient = Party::new();
+    let keys = KeyPair::new(PrivateKey::new(wallet.view), PrivateKey::new(wallet.spend));
+    let mut tx = tx_data(vec![recipient.standard_dest(2)], wallet.standard_dest(1));
+    tx.sources[0].amount = 4;
+    prepare_wallet_input(&mut tx, &wallet);
+    let mut set = UnsignedTx::default();
+    set.txes.push(tx);
+    for (major, minor) in [(0, 0), (0, 2), (1, 0)] {
+        for additional in [false, true] {
+            let mut input = set.txes[0].clone();
+            input.subaddr_account = major;
+            input.subaddr_indices = vec![minor];
+            input.sources[0].real_output_in_tx_index = 2;
+            prepare_wallet_input(&mut input, &wallet);
+            let source = &input.sources[0];
+            let mut detail = ExportedTransferDetail {
+                pubkey: source.outputs[0].key.dest,
+                internal_output_index: 2,
+                global_output_index: 10,
+                tx_pubkey: source.real_out_tx_key,
+                flags: 4,
+                amount: source.amount,
+                additional_tx_keys: vec![],
+                major,
+                minor,
+            };
+            if additional {
+                detail.additional_tx_keys =
+                    vec![PublicKey::from_bytes(&detail.tx_pubkey).unwrap(); 3];
+                detail.tx_pubkey = EdwardsPoint::mul_base(&Scalar::from(23u64))
+                    .compress()
+                    .to_bytes();
+            }
+            set = attach(&set, vec![detail.clone()]);
+            assert!(set
+                .validate_for_wallet(&keys.get_public_spend(), &keys.view)
+                .is_ok());
+            assert!(detail.generate_key_image_without_signature(&keys).is_ok());
+            let mut other = detail.clone();
+            other.pubkey = recipient.spend_point().compress().to_bytes();
+            set = attach(&set, vec![detail.clone(), other]);
+            assert_eq!(
+                set.validate_for_wallet(&keys.get_public_spend(), &keys.view),
+                Err(MoneroError::GenerateKeyImageError)
+            );
+            assert!(matches!(
+                set.sign(&keys),
+                Err(MoneroError::GenerateKeyImageError)
+            ));
+            detail.minor += 1;
+            set = attach(&set, vec![detail]);
+            assert!(set
+                .validate_for_wallet(&keys.get_public_spend(), &keys.view)
+                .is_err());
+        }
+    }
+}

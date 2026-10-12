@@ -883,6 +883,18 @@ impl UnsignedTx {
                 }
             }
         }
+        for transfer in &self.transfers.details {
+            crate::key_images::validate_input_owner(
+                public_spend,
+                private_view,
+                &transfer.tx_pubkey,
+                &transfer.pubkey,
+                &transfer.additional_tx_keys,
+                transfer.internal_output_index,
+                transfer.major,
+                &[transfer.minor],
+            )?;
+        }
         Ok(())
     }
 
