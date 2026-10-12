@@ -18,6 +18,7 @@ static inline uint32_t op_f(uint32_t val) { UNUSED(val); return 0; }
 static inline uint32_t op_t(uint32_t val) { UNUSED(val); return 0; }
 
 const static lv_i18n_phrase_t en_singulars[] = {
+    {"tron_unknown_contract_warning", "Unrecognized contract call. The device cannot determine its effects. Verify the contract, attached assets and call data before signing."},
     {"zcash_seed_warning_title", "24 words recommended for Zcash"},
     {"zcash_seed_warning_desc", "For better security when using Zcash, we recommend using a 24-word seed phrase."},
     {"zcash_seed_warning_back", "Back"},
@@ -1065,6 +1066,7 @@ static const lv_i18n_lang_t en_lang = {
 };
 
 const static lv_i18n_phrase_t de_singulars[] = {
+    {"tron_unknown_contract_warning", "Unbekannter Vertragsaufruf. Das Gerät kann dessen Auswirkungen nicht bestimmen. Prüfen Sie vor dem Signieren den Vertrag, die beigefügten Vermögenswerte und die Aufrufdaten."},
     {"zcash_seed_warning_title", "24 Wörter für Zcash empfohlen"},
     {"zcash_seed_warning_desc", "Für mehr Sicherheit bei der Nutzung von Zcash empfehlen wir eine Seed-Phrase mit 24 Wörtern."},
     {"zcash_seed_warning_back", "Zurück"},
@@ -2112,6 +2114,7 @@ static const lv_i18n_lang_t de_lang = {
 };
 
 const static lv_i18n_phrase_t es_singulars[] = {
+    {"tron_unknown_contract_warning", "Llamada de contrato desconocida. El dispositivo no puede determinar sus efectos. Verifique el contrato, los activos adjuntos y los datos de llamada antes de firmar."},
     {"zcash_seed_warning_title", "Se recomiendan 24 palabras para Zcash"},
     {"zcash_seed_warning_desc", "Para mayor seguridad al usar Zcash, recomendamos utilizar una frase semilla de 24 palabras."},
     {"zcash_seed_warning_back", "Volver"},
@@ -3158,6 +3161,7 @@ static const lv_i18n_lang_t es_lang = {
 };
 
 const static lv_i18n_phrase_t ja_singulars[] = {
+    {"tron_unknown_contract_warning", "認識できないコントラクト呼び出しです。デバイスではその影響を判断できません。署名前にコントラクト、付随する資産、呼び出しデータを確認してください。"},
     {"zcash_seed_warning_title", "Zcashには24単語を推奨"},
     {"zcash_seed_warning_desc", "Zcashをより安全に使用するために、24単語のシードフレーズを使用することをおすすめします。"},
     {"zcash_seed_warning_back", "戻る"},
@@ -4203,6 +4207,7 @@ static const lv_i18n_lang_t ja_lang = {
 };
 
 const static lv_i18n_phrase_t ko_singulars[] = {
+    {"tron_unknown_contract_warning", "인식할 수 없는 계약 호출입니다. 기기에서 그 영향을 확인할 수 없습니다. 서명하기 전에 계약, 첨부된 자산 및 호출 데이터를 확인하세요."},
     {"zcash_seed_warning_title", "Zcash에는 24개 단어를 권장합니다"},
     {"zcash_seed_warning_desc", "Zcash를 더 안전하게 사용하려면 24개의 단어로 구성된 시드 구문을 사용하는 것이 좋습니다."},
     {"zcash_seed_warning_back", "뒤로"},
@@ -5248,6 +5253,7 @@ static const lv_i18n_lang_t ko_lang = {
 };
 
 const static lv_i18n_phrase_t ru_singulars[] = {
+    {"tron_unknown_contract_warning", "Неизвестный вызов контракта. Устройство не может определить его последствия. Перед подписанием проверьте контракт, приложенные активы и данные вызова."},
     {"zcash_seed_warning_title", "Для Zcash рекомендуется 24 слова"},
     {"zcash_seed_warning_desc", "Для большей безопасности при использовании Zcash мы рекомендуем использовать мнемоническую фразу из 24 слов."},
     {"zcash_seed_warning_back", "Назад"},
@@ -6298,6 +6304,7 @@ static const lv_i18n_lang_t ru_lang = {
 };
 
 const static lv_i18n_phrase_t zh_cn_singulars[] = {
+    {"tron_unknown_contract_warning", "无法识别此合约调用，设备无法确定其影响。签名前请核对合约、附带资产及调用数据。"},
     {"zcash_seed_warning_title", "建议使用 24 个助记词来使用 Zcash"},
     {"zcash_seed_warning_desc", "为了更安全地使用 Zcash，我们建议使用 24 个助记词。"},
     {"zcash_seed_warning_back", "返回"},

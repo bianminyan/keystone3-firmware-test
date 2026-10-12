@@ -42,16 +42,26 @@ typedef struct {
     lv_obj_t *next;
 } GuiPagedMessageState_t;
 
+// Protocol values and addresses use the same Latin glyphs in every language.
+// Keep the selected language font when the value itself contains non-ASCII text.
+static const lv_font_t *GetTransactionValueFont(const char *value, const lv_font_t *localized, const lv_font_t *latin)
+{
+    for (const unsigned char *p = (const unsigned char *)value; *p != '\0'; p++) {
+        if (*p >= 0x80) return localized;
+    }
+    return latin;
+}
+
 const lv_font_t *GetOverviewAmountFont(const char *value)
 {
     size_t length = strlen(value);
     if (length <= 24) {
-        return g_defLittleTitleFont;
+        return GetTransactionValueFont(value, g_defLittleTitleFont, &openSansEnLittleTitle);
     }
     if (length <= 40) {
-        return g_defTextFont;
+        return GetTransactionValueFont(value, g_defTextFont, &openSansEnText);
     }
-    return g_defIllustrateFont;
+    return GetTransactionValueFont(value, g_defIllustrateFont, &openSansEnIllustrate);
 }
 
 lv_obj_t* CreateRelativeTransactionContentContainer(lv_obj_t *parent, uint16_t w, uint16_t h, lv_obj_t *last_view)
@@ -110,7 +120,8 @@ lv_obj_t *CreateTransactionItemViewWithHintAndWidth(lv_obj_t *parent, const char
     uint16_t titleWidth = lv_obj_get_width(titleLabel);
 
     //render value
-    lv_obj_t *valueLabel = GuiCreateIllustrateLabel(container, value);
+    lv_obj_t *valueLabel = GuiCreateLabelWithFont(container, value,
+        GetTransactionValueFont(value, g_defIllustrateFont, &openSansEnIllustrate));
     lv_obj_update_layout(valueLabel);
     uint16_t valueWidth = lv_obj_get_width(valueLabel);
     uint16_t valueHeight = lv_obj_get_height(valueLabel);
@@ -191,7 +202,8 @@ lv_obj_t *CreateTransactionOverviewCardWithWidth(lv_obj_t *parent, const char* t
     lv_obj_update_layout(label);
     uint16_t titleWidth = lv_obj_get_self_width(label);
 
-    label = GuiCreateIllustrateLabel(container, text2);
+    label = GuiCreateLabelWithFont(container, text2,
+        GetTransactionValueFont(text2, g_defIllustrateFont, &openSansEnIllustrate));
     lv_obj_set_style_text_color(label, ORANGE_COLOR, LV_PART_MAIN);
     lv_obj_update_layout(label);
     lv_obj_t *valueLabel = label;
@@ -614,7 +626,8 @@ void GuiShowPagedMessage(lv_obj_t *parent, const GuiPagedMessageSource_t *source
     lv_obj_set_pos(state->label, 0, 0);
     lv_obj_set_width(state->label, contentWidth);
     lv_obj_set_height(state->label, LV_SIZE_CONTENT);
-    lv_obj_set_style_text_font(state->label, g_defIllustrateFont, LV_PART_MAIN);
+    lv_obj_set_style_text_font(state->label,
+        source->font != NULL ? source->font : g_defIllustrateFont, LV_PART_MAIN);
     lv_obj_set_style_text_color(state->label, WHITE_COLOR, LV_PART_MAIN);
     lv_label_set_long_mode(state->label, LV_LABEL_LONG_WRAP);
 

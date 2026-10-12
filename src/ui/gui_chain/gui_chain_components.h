@@ -18,6 +18,7 @@ typedef struct {
     bool utf8;
     const char *warning_title;
     const char *warning_content;
+    const lv_font_t *font; // NULL uses the selected language font.
 } GuiPagedMessageSource_t;
 
 lv_obj_t *CreateTransactionContentContainer(lv_obj_t *parent, uint16_t w, uint16_t h);

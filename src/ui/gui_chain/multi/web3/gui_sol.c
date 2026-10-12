@@ -1715,6 +1715,10 @@ static void GuiShowSolTxOrderedOverview(lv_obj_t *parent, PtrT_DisplaySolanaTxOv
 void GuiShowSolTxOverview(lv_obj_t *parent, void *totalData)
 {
     lv_obj_set_size(parent, 408, 444);
+    // Center the 376px cards inside the 408px tab content.
+    const lv_coord_t sidePadding = (408 - SOL_COMPONENT_WIDTH) / 2;
+    lv_obj_set_style_pad_left(parent, sidePadding, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(parent, sidePadding, LV_PART_MAIN);
     lv_obj_add_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(parent, LV_OBJ_FLAG_CLICKABLE);
     DisplaySolanaTx *txData = (DisplaySolanaTx*)totalData;
@@ -1769,6 +1773,11 @@ void GuiShowSolTxOverview(lv_obj_t *parent, void *totalData)
     lv_obj_scroll_to_y(parent, 0, LV_ANIM_OFF);
 }
 
+static char GuiSolRawDetailByteAt(void *context, size_t offset)
+{
+    return ((const char *)context)[offset];
+}
+
 static void GuiShowSolTxRawDetailCard(
     lv_obj_t *parent,
     PtrString txDetail,
@@ -1784,7 +1793,15 @@ static void GuiShowSolTxRawDetailCard(
     lv_obj_set_scrollbar_mode(cont, LV_SCROLLBAR_MODE_OFF);
 
     const char *rawDetail = txDetail == NULL ? "" : txDetail;
-    GuiShowPagedMessageText(cont, rawDetail, true, NULL, NULL);
+    // Details is protocol JSON, independent of the selected UI language.
+    GuiPagedMessageSource_t source = {
+        .context = (void *)rawDetail,
+        .length = strlen(rawDetail),
+        .byte_at = GuiSolRawDetailByteAt,
+        .utf8 = true,
+        .font = &openSansEnIllustrate,
+    };
+    GuiShowPagedMessage(cont, &source);
     if (lastView == NULL) {
         lv_obj_align(cont, LV_ALIGN_TOP_LEFT, 0, 0);
     } else {

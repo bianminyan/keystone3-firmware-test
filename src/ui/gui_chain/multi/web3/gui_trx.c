@@ -332,7 +332,13 @@ const char *GuiGetTrxCallDataText(void *param)
     return text == NULL ? "" : text;
 }
 
-DEFINE_TRX_DETAIL_GETTER(GetTrxContractWarning, contract_warning)
+void GetTrxContractWarning(void *indata, void *param, uint32_t maxLen)
+{
+    const DisplayTron *trx = (const DisplayTron *)param;
+    const bool hasWarning = trx != NULL && trx->detail != NULL &&
+        trx->detail->contract_warning != NULL && trx->detail->contract_warning[0] != '\0';
+    strcpy_s((char *)indata, maxLen, hasWarning ? _("tron_unknown_contract_warning") : "");
+}
 
 bool GetTrxAttachedTokenExist(void *indata, void *param)
 {
