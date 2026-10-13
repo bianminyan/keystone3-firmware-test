@@ -117,14 +117,11 @@ impl SignedTxSet {
                 // res.push(0x01);
                 res.extend_from_slice(key_images_bytes);
             }
-            // The real transaction key: the host needs it for its own bookkeeping,
-            // payment proofs and to recover outputs if a transaction is ever built
-            // with an unusable derivation.
-            res.extend_from_slice(&ptx.tx_key.to_bytes());
-            res.extend_from_slice(write_varinteger(ptx.additional_tx_keys.len() as u64).as_slice());
-            for key in ptx.additional_tx_keys {
-                res.extend_from_slice(&key.to_bytes());
-            }
+            // Match the offline signed-set format without exporting transaction secrets.
+            let mut placeholder = [0u8; 32];
+            placeholder[0] = 1;
+            res.extend_from_slice(&placeholder);
+            res.extend_from_slice(&write_varinteger(0));
             res.extend_from_slice(write_varinteger(ptx.dests.len() as u64).as_slice());
             for dest in ptx.dests {
                 res.extend_from_slice(&write_tx_destination_entry(&dest));

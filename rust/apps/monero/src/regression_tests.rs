@@ -2190,3 +2190,60 @@ fn preflight_attached_transfer_validation() {
         }
     }
 }
+
+#[test]
+fn signed_response_transaction_key_fields() {
+    use crate::key::PrivateKey;
+    use crate::signed_transaction::{PendingTx, SignedTxSet};
+    use monero_serai::transaction::{Timelock, Transaction, TransactionPrefix};
+    let wallet = Party::new();
+    let data = tx_data(vec![wallet.standard_dest(2)], wallet.standard_dest(1));
+    let tx = Transaction::V2 {
+        prefix: TransactionPrefix {
+            additional_timelock: Timelock::None,
+            inputs: vec![],
+            outputs: vec![],
+            extra: vec![],
+        },
+        proofs: None,
+    };
+    let offset = 3
+        + tx.serialize().len()
+        + 8
+        + 8
+        + 1
+        + crate::utils::io::write_tx_destination_entry(&data.change_dts).len()
+        + crate::signed_transaction::write_selected_transfers(&[]).len()
+        + 1;
+    let serialize = |main: u64, additional: Vec<PrivateKey>| {
+        SignedTxSet::new(
+            vec![PendingTx::new(
+                tx.clone(),
+                0,
+                1,
+                false,
+                data.change_dts.clone(),
+                vec![],
+                String::new(),
+                PrivateKey::new(Scalar::from(main)),
+                additional,
+                vec![],
+                data.clone(),
+            )],
+            vec![],
+            vec![],
+        )
+        .serialize()
+    };
+    let response = serialize(
+        19,
+        vec![
+            PrivateKey::new(Scalar::from(23u64)),
+            PrivateKey::new(Scalar::from(29u64)),
+        ],
+    );
+    let mut expected = [0u8; 33];
+    expected[0] = 1;
+    assert_eq!(&response[offset..offset + 33], &expected);
+    assert_eq!(response, serialize(31, vec![]));
+}
