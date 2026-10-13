@@ -472,9 +472,7 @@ mod tests {
     #[test]
     fn dash_psbt_extend_uses_coin_id_five() {
         use super::CryptoPSBTExtend;
-        let request = CryptoPSBTExtend::try_from(
-            hex::decode("a20142aabb0205").unwrap(),
-        ).unwrap();
+        let request = CryptoPSBTExtend::try_from(hex::decode("a20142aabb0205").unwrap()).unwrap();
         assert_eq!(request.get_coin_id(), Some(5));
         assert!(matches!(request.infer(), Ok(ViewType::DashTx)));
     }
