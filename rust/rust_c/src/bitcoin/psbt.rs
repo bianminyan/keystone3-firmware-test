@@ -693,7 +693,7 @@ unsafe fn utxo_sign_psbt_extend_dynamic(
         };
 
     let seed = extract_array!(seed, u8, seed_len as usize);
-    let result = app_bitcoin::sign_psbt(psbt, seed, master_fingerprint);
+    let result = app_bitcoin::sign_psbt_extend(psbt, seed, master_fingerprint, coin_id);
 
     match result {
         Ok(psbt_data) => match CryptoPSBTExtend::new(psbt_data, coin_id) {

@@ -49,8 +49,22 @@ pub fn sign_psbt(psbt_hex: Vec<u8>, seed: &[u8], mfp: Fingerprint) -> Result<Vec
     sign_psbt_no_serialize(psbt_hex, seed, mfp).map(|v| v.serialize())
 }
 
+/// Sign PSBT Extend using the explicit coin ID from its UR envelope.
+pub fn sign_psbt_extend(
+    psbt: Vec<u8>,
+    seed: &[u8],
+    mfp: Fingerprint,
+    coin_id: Option<i128>,
+) -> Result<Vec<u8>> {
+    if coin_id == Some(145) {
+        return transactions::psbt::bch::sign(&psbt, seed, mfp);
+    }
+    sign_psbt(psbt, seed, mfp)
+}
+
 pub fn sign_psbt_no_serialize(psbt_hex: Vec<u8>, seed: &[u8], mfp: Fingerprint) -> Result<Psbt> {
-    let psbt = deserialize_psbt(psbt_hex)?;
+    let psbt =
+        Psbt::deserialize(&psbt_hex).map_err(|e| BitcoinError::InvalidPsbt(e.to_string()))?;
     let mut wpsbt = WrappedPsbt { psbt };
     wpsbt.sign(seed, mfp)
 }
@@ -125,7 +139,23 @@ pub fn check_raw_tx(raw_tx: protoc::Payload, context: keystone::ParseContext) ->
 }
 
 fn deserialize_psbt(psbt_hex: Vec<u8>) -> Result<Psbt> {
-    Psbt::deserialize(&psbt_hex).map_err(|e| BitcoinError::InvalidPsbt(e.to_string()))
+    match Psbt::deserialize(&psbt_hex) {
+        Ok(psbt) => Ok(psbt),
+        Err(error) => {
+            // Read-only compatibility for returned BCH partial signatures. The
+            // generic Bitcoin signer deliberately uses the strict decoder above.
+            if let Ok(psbt) = transactions::psbt::bch::deserialize(&psbt_hex) {
+                let wrapper = WrappedPsbt { psbt };
+                if matches!(
+                    wrapper.determine_network(),
+                    Ok(network::Network::BitcoinCash)
+                ) {
+                    return Ok(wrapper.psbt);
+                }
+            }
+            Err(BitcoinError::InvalidPsbt(error.to_string()))
+        }
+    }
 }
 
 #[cfg(test)]
