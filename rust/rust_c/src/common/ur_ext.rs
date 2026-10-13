@@ -90,7 +90,7 @@ impl InferViewType for CryptoPSBTExtend {
         match self.get_coin_id() {
             Some(2) => Ok(ViewType::LtcTx),
             Some(3) => Ok(ViewType::DogeTx),
-            Some(4) => Ok(ViewType::DashTx),
+            Some(5) => Ok(ViewType::DashTx),
             Some(145) => Ok(ViewType::BchTx),
             _ => Ok(ViewType::BtcTx),
         }
@@ -468,6 +468,17 @@ impl InferViewType for QRHardwareCall {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "multi-coins")]
+    #[test]
+    fn dash_psbt_extend_uses_coin_id_five() {
+        use super::CryptoPSBTExtend;
+        let request = CryptoPSBTExtend::try_from(
+            hex::decode("a20142aabb0205").unwrap(),
+        ).unwrap();
+        assert_eq!(request.get_coin_id(), Some(5));
+        assert!(matches!(request.infer(), Ok(ViewType::DashTx)));
+    }
+
     #[cfg(feature = "solana")]
     #[test]
     fn solana_view_type_follows_the_payload_not_the_type_hint() {

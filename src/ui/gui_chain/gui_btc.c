@@ -359,7 +359,7 @@ static void PreparePublicKeys(PtrT_CSliceFFI_ExtendedPublicKey public_keys, Exte
     keys[3].path = "m/86'/0'/0'";
     keys[3].xpub = GetCurrentAccountPublicKey(XPUB_TYPE_BTC_TAPROOT);
 #ifdef WEB3_VERSION
-    public_keys->size = 9;
+    public_keys->size = 10;
     keys[4].path = "m/44'/60'/0'";
     keys[4].xpub = GetCurrentAccountPublicKey(XPUB_TYPE_AVAX_BIP44_STANDARD);
     keys[5].path = "m/44'/3'/0'";

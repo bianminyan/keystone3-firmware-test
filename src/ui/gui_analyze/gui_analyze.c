@@ -50,22 +50,14 @@ typedef struct {
 const static GuiAnalyze_t g_analyzeArray[] = {
     {
         REMAPVIEW_BTC,
-#ifndef COMPILE_SIMULATOR
         "{\"name\":\"btc_page\",\"type\":\"tabview\",\"pos\":[36,0],\"size\":[408,774],\"bg_color\":0,\"border_width\":0,\"children\":[{\"type\":\"tabview_child\",\"index\":1,\"tab_name\":\"Overview\",\"text_color\":16777215,\"font\":\"openSansEnIllustrate\",\"children\":[{\"type\":\"custom_container\",\"bg_color\":0,\"bg_opa\":0,\"pos\":[0,12],\"custom_show_func\":\"GuiBtcTxOverview\"}]},{\"type\":\"tabview_child\",\"index\":2,\"tab_name\":\"Details\",\"text_color\":16777215,\"font\":\"openSansEnIllustrate\",\"children\":[{\"type\":\"custom_container\",\"bg_color\":0,\"bg_opa\":0,\"pos\":[0,12],\"custom_show_func\":\"GuiBtcTxDetail\"}]}]}",
-#else
-        PC_SIMULATOR_PATH "/page_btc.json",
-#endif
         GuiGetParsedQrData,
         NULL,
         FreePsbtUxtoMemory,
     },
     {
         REMAPVIEW_BTC_MESSAGE,
-#ifndef COMPILE_SIMULATOR
         "{\"type\":\"container\",\"pos\":[36,0],\"size\":[408,526],\"bg_opa\":0,\"children\":[{\"type\":\"custom_container\",\"bg_color\":0,\"bg_opa\":0,\"pos\":[0,12],\"custom_show_func\":\"GuiBtcMsg\"}]}",
-#else
-        PC_SIMULATOR_PATH "/page_btc_msg.json",
-#endif
         GuiGetParsedQrData,
         NULL,
         FreeBtcMsgMemory,
