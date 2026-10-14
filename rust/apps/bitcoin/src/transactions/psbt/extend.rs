@@ -212,10 +212,38 @@ mod tests {
             assert_eq!(parsed.overview.to, original.overview.to);
             crate::check_psbt_extend(p.serialize(), context(coin), Some(coin)).unwrap();
             let signed = crate::sign_psbt_extend(p.serialize(), &seed(), fp(), Some(coin)).unwrap();
+            assert!(
+                crate::parse_psbt_hex_sign_status(&signed)
+                    .unwrap()
+                    .is_completed
+            );
+            if coin == 145 {
+                // Read-only ForkID compatibility must not enter the BTC signer.
+                assert!(crate::sign_psbt(signed.clone(), &seed(), fp()).is_err());
+            }
             let signed_display =
                 crate::parse_psbt_extend(signed, context(coin), Some(coin)).unwrap();
             assert_eq!(signed_display.overview.network, name);
             assert_eq!(signed_display.overview.to, parsed.overview.to);
+        }
+    }
+
+    #[test]
+    fn bch_sign_status_rejects_conflicting_global_xpub_metadata() {
+        let (path, xpub) = account(145);
+        let mut testnet_xpub = xpub;
+        testnet_xpub.network = NetworkKind::Test;
+        for (key, origin) in [
+            (xpub, DerivationPath::from_str("m/44'/0'/0'").unwrap()),
+            (testnet_xpub, path),
+            (xpub, DerivationPath::default()),
+        ] {
+            let mut p = fixture(145);
+            p.xpub.insert(key, (fp(), origin));
+            // Bypass the Extend gate to construct a signed result carrying
+            // conflicting metadata, as an external PSBT producer could do.
+            let signed = super::super::bch::sign(&p.serialize(), &seed(), fp()).unwrap();
+            assert!(crate::parse_psbt_hex_sign_status(&signed).is_err());
         }
     }
 

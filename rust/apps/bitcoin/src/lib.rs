@@ -176,12 +176,17 @@ fn deserialize_psbt(psbt_hex: Vec<u8>) -> Result<Psbt> {
             // Read-only compatibility for returned BCH partial signatures. The
             // generic Bitcoin signer deliberately uses the strict decoder above.
             if let Ok(psbt) = transactions::psbt::bch::deserialize(&psbt_hex) {
-                let wrapper = WrappedPsbt { psbt };
-                if matches!(
-                    wrapper.determine_network(),
-                    Ok(network::Network::BitcoinCash)
-                ) {
-                    return Ok(wrapper.psbt);
+                // BCH shares mainnet xpub serialization with Bitcoin. Require
+                // key-origin evidence and validate all metadata as BCH instead
+                // of inferring the chain from the xpub serialization prefix.
+                let has_key_origin = !psbt.xpub.is_empty()
+                    || psbt
+                        .inputs
+                        .iter()
+                        .any(|input| !input.bip32_derivation.is_empty());
+                if has_key_origin && transactions::psbt::extend::validate(&psbt, Some(145)).is_ok()
+                {
+                    return Ok(psbt);
                 }
             }
             Err(BitcoinError::InvalidPsbt(error.to_string()))
