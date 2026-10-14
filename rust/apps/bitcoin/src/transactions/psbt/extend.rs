@@ -288,6 +288,83 @@ mod tests {
     }
 
     #[test]
+    fn bch_foreign_input_display_keys_must_match_authenticated_prevout() {
+        let mut p = fixture(145);
+        let mut foreign = p.inputs[0].clone();
+        let (foreign_key, (_, foreign_path)) = p.outputs[1]
+            .bip32_derivation
+            .first_key_value()
+            .map(|(key, origin)| (*key, origin.clone()))
+            .unwrap();
+        foreign.bip32_derivation =
+            BTreeMap::from([(foreign_key, (Fingerprint::default(), foreign_path.clone()))]);
+        let previous = foreign.non_witness_utxo.as_mut().unwrap();
+        previous.output[0].script_pubkey =
+            ScriptBuf::new_p2pkh(&bitcoin::PublicKey::new(foreign_key).pubkey_hash());
+        let mut txin = p.unsigned_tx.input[0].clone();
+        txin.previous_output.txid = previous.compute_txid();
+        p.inputs.push(foreign);
+        p.unsigned_tx.input.push(txin);
+
+        // A legitimate foreign input with no partial signature still works.
+        let expected = Address::from_script(
+            &p.inputs[1].non_witness_utxo.as_ref().unwrap().output[0].script_pubkey,
+            Network::BitcoinCash,
+        )
+        .unwrap()
+        .to_string();
+        let parsed = crate::parse_psbt_extend(p.serialize(), context(145), Some(145)).unwrap();
+        assert!(parsed.overview.from.iter().any(|input| input == &expected));
+        crate::check_psbt_extend(p.serialize(), context(145), Some(145)).unwrap();
+        let signed = crate::sign_psbt_extend(p.serialize(), &seed(), fp(), Some(145)).unwrap();
+        let decoded = super::super::bch::deserialize(&signed).unwrap();
+        assert_eq!(decoded.inputs[0].partial_sigs.len(), 1);
+        assert!(decoded.inputs[1].partial_sigs.is_empty());
+
+        // Different fingerprint + valid BCH path must not bypass key/script binding.
+        let mut forged = p.clone();
+        let fake_key = *p.inputs[0].bip32_derivation.keys().next().unwrap();
+        forged.inputs[1].bip32_derivation =
+            BTreeMap::from([(fake_key, (Fingerprint::default(), foreign_path.clone()))]);
+        let expected_error = BitcoinError::InvalidPsbt(
+            "BCH input public key does not match previous output".to_string(),
+        );
+        assert_eq!(
+            crate::parse_psbt_extend(forged.serialize(), context(145), Some(145)).unwrap_err(),
+            expected_error
+        );
+        assert_eq!(
+            crate::check_psbt_extend(forged.serialize(), context(145), Some(145)).unwrap_err(),
+            expected_error
+        );
+        assert_eq!(
+            crate::sign_psbt_extend(forged.serialize(), &seed(), fp(), Some(145)).unwrap_err(),
+            expected_error
+        );
+        // Check all metadata keys, not just the first displayed one.
+        forged.inputs[1]
+            .bip32_derivation
+            .extend(p.inputs[1].bip32_derivation.clone());
+        rejected_at_all_stages(&forged, 145);
+
+        let mut missing = p.clone();
+        missing.inputs[1].non_witness_utxo = None;
+        rejected_at_all_stages(&missing, 145);
+        let mut tampered = p.clone();
+        tampered.inputs[1].non_witness_utxo.as_mut().unwrap().output[0].value =
+            bitcoin::Amount::from_sat(1);
+        rejected_at_all_stages(&tampered, 145);
+        let mut out_of_bounds = p.clone();
+        out_of_bounds.unsigned_tx.input[1].previous_output.vout = u32::MAX;
+        rejected_at_all_stages(&out_of_bounds, 145);
+        let mut mismatch = p;
+        let mut witness = mismatch.inputs[1].non_witness_utxo.as_ref().unwrap().output[0].clone();
+        witness.value = bitcoin::Amount::from_sat(1);
+        mismatch.inputs[1].witness_utxo = Some(witness);
+        rejected_at_all_stages(&mismatch, 145);
+    }
+
+    #[test]
     fn bch_p2sh_recipient_is_exact_cashaddr_and_signable() {
         // CashAddr specification's 160-bit P2SH example.
         let script = ScriptBuf::from_bytes(

@@ -101,7 +101,18 @@ pub(crate) fn deserialize(bytes: &[u8]) -> Result<Psbt> {
         return Err(BitcoinError::NoInputs);
     }
     validate_outputs(&psbt)?;
-    for input in &psbt.inputs {
+    for (index, input) in psbt.inputs.iter().enumerate() {
+        // Even foreign, unsigned inputs contribute to the confirmation page.
+        // Authenticate the prevout and bind every displayed key to its script
+        // before parsing, checking, or signing can use the supplied metadata.
+        let output = prevout(&psbt, index)?;
+        for key in input.bip32_derivation.keys() {
+            if ScriptBuf::new_p2pkh(&PublicKey::new(*key).pubkey_hash()) != output.script_pubkey {
+                return Err(invalid(
+                    "BCH input public key does not match previous output",
+                ));
+            }
+        }
         if input.sighash_type.is_some_and(|t| t.to_u32() != ALL_FORKID) {
             return Err(invalid("BCH supports only SIGHASH_ALL | FORKID"));
         }
