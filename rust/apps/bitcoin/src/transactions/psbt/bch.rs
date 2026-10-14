@@ -13,6 +13,29 @@ use bitcoin::{
 };
 
 const ALL_FORKID: u32 = 0x41;
+// Own the derived key without Copy/Clone and wipe it on every scope exit,
+// including early returns after public-key validation fails.
+struct SigningKey(bitcoin::secp256k1::SecretKey);
+impl Drop for SigningKey {
+    fn drop(&mut self) {
+        self.0.non_secure_erase();
+    }
+}
+
+pub(crate) fn validate_outputs(psbt: &Psbt) -> Result<()> {
+    if psbt.unsigned_tx.output.is_empty() {
+        return Err(BitcoinError::NoOutputs);
+    }
+    for output in &psbt.unsigned_tx.output {
+        if !output.script_pubkey.is_p2pkh() && !output.script_pubkey.is_p2sh() {
+            return Err(invalid(
+                "unsupported BCH output: cannot display a recipient address",
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn invalid(message: &str) -> BitcoinError {
     BitcoinError::InvalidPsbt(message.to_string())
 }
@@ -77,9 +100,7 @@ pub(crate) fn deserialize(bytes: &[u8]) -> Result<Psbt> {
     if psbt.inputs.is_empty() {
         return Err(BitcoinError::NoInputs);
     }
-    if psbt.unsigned_tx.output.is_empty() {
-        return Err(BitcoinError::NoOutputs);
-    }
+    validate_outputs(&psbt)?;
     for input in &psbt.inputs {
         if input.sighash_type.is_some_and(|t| t.to_u32() != ALL_FORKID) {
             return Err(invalid("BCH supports only SIGHASH_ALL | FORKID"));
@@ -181,14 +202,15 @@ pub(crate) fn sign(bytes: &[u8], seed: &[u8], fingerprint: Fingerprint) -> Resul
             if fp != fingerprint {
                 continue;
             }
-            let secret =
+            let secret = SigningKey(
                 keystore::algorithms::secp256k1::get_private_key_by_seed(seed, &path.to_string())
-                    .map_err(|e| BitcoinError::GetKeyError(e.to_string()))?;
-            let public = PublicKey::new(secret.public_key(&secp));
+                    .map_err(|e| BitcoinError::GetKeyError(e.to_string()))?,
+            );
+            let public = PublicKey::new(secret.0.public_key(&secp));
             if public.inner != key || ScriptBuf::new_p2pkh(&public.pubkey_hash()) != script {
                 return Err(invalid("BCH derived public key does not match input"));
             }
-            let signature = secp.sign_ecdsa(&message, &secret);
+            let signature = secp.sign_ecdsa(&message, &secret.0);
             psbt.inputs[index]
                 .partial_sigs
                 .insert(public, bitcoin::ecdsa::Signature::sighash_all(signature));

@@ -56,6 +56,8 @@ pub fn sign_psbt_extend(
     mfp: Fingerprint,
     coin_id: Option<i128>,
 ) -> Result<Vec<u8>> {
+    let decoded = decode_psbt_extend(&psbt, coin_id)?;
+    transactions::psbt::extend::validate(&decoded, coin_id)?;
     if coin_id == Some(145) {
         return transactions::psbt::bch::sign(&psbt, seed, mfp);
     }
@@ -101,6 +103,37 @@ pub fn sign_msg(msg: &str, seed: &[u8], path: &String) -> Result<Vec<u8>> {
                 .serialize()
                 .to_vec()
         })
+}
+
+fn decode_psbt_extend(bytes: &[u8], coin_id: Option<i128>) -> Result<Psbt> {
+    if coin_id == Some(145) {
+        return transactions::psbt::bch::deserialize(bytes);
+    }
+    Psbt::deserialize(bytes).map_err(|e| BitcoinError::InvalidPsbt(e.to_string()))
+}
+
+pub fn parse_psbt_extend(
+    bytes: Vec<u8>,
+    context: ParseContext,
+    coin_id: Option<i128>,
+) -> Result<ParsedTx> {
+    let psbt = decode_psbt_extend(&bytes, coin_id)?;
+    let network = transactions::psbt::extend::validate(&psbt, coin_id)?;
+    let wrapper = WrappedPsbt { psbt };
+    match network {
+        Some(network) => wrapper.parse_in_network(Some(&context), network, false),
+        None => wrapper.parse(Some(&context)),
+    }
+}
+
+pub fn check_psbt_extend(
+    bytes: Vec<u8>,
+    context: ParseContext,
+    coin_id: Option<i128>,
+) -> Result<()> {
+    let psbt = decode_psbt_extend(&bytes, coin_id)?;
+    transactions::psbt::extend::validate(&psbt, coin_id)?;
+    WrappedPsbt { psbt }.check(Left(&context))
 }
 
 pub fn parse_psbt(psbt_hex: Vec<u8>, context: ParseContext) -> Result<ParsedTx> {

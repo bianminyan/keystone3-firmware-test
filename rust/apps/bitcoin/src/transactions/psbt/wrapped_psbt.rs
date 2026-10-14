@@ -1511,7 +1511,10 @@ mod tests {
                     .unwrap(),
                 expected
             );
-            assert!(!expected.is_empty());
+            assert_eq!(
+                Address::from_str(&expected).unwrap().script_pubkey(),
+                output.script_pubkey
+            );
         }
         let script = ScriptBuf::new_p2wsh(&redeem_script.wscript_hash());
         let output = TxOut {
