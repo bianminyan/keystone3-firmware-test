@@ -14,15 +14,23 @@ fn invalid() -> BitcoinError {
     BitcoinError::InvalidPsbt("PSBT metadata conflicts with the PSBT Extend coin ID".to_string())
 }
 
-pub(crate) fn validate(psbt: &Psbt, coin_id: Option<i128>) -> Result<Option<Network>> {
-    let (coin, network) = match coin_id {
-        None | Some(0) => return Ok(None),
-        Some(2) => (2, Network::Litecoin),
-        Some(3) => (3, Network::Dogecoin),
-        Some(5) => (5, Network::Dash),
-        Some(145) => (145, Network::BitcoinCash),
-        _ => return Err(invalid()),
-    };
+/// PSBT Extend supports only these four explicit mainnet coin IDs.
+pub(crate) fn network_for_coin(coin_id: Option<i128>) -> Result<Network> {
+    match coin_id {
+        Some(2) => Ok(Network::Litecoin),
+        Some(3) => Ok(Network::Dogecoin),
+        Some(5) => Ok(Network::Dash),
+        Some(145) => Ok(Network::BitcoinCash),
+        _ => Err(BitcoinError::InvalidPsbt(
+            "missing or unsupported PSBT Extend coin ID".to_string(),
+        )),
+    }
+}
+
+pub(crate) fn validate(psbt: &Psbt, coin_id: Option<i128>) -> Result<Network> {
+    let network = network_for_coin(coin_id)?;
+    // The allowlist above guarantees that this conversion is lossless.
+    let coin = coin_id.unwrap() as u32;
     // Even unrecognized chain markers must not override the approved network.
     if psbt.unknown.keys().any(|key| key.key == b"chain") {
         return Err(invalid());
@@ -84,10 +92,24 @@ pub(crate) fn validate(psbt: &Psbt, coin_id: Option<i128>) -> Result<Option<Netw
             return Err(invalid());
         }
     }
+    if matches!(coin, 3 | 5) {
+        if psbt.unsigned_tx.output.is_empty() {
+            return Err(BitcoinError::NoOutputs);
+        }
+        // DOGE and DASH address encoders support only these legacy scripts.
+        // Validate every output, including claimed change, before approval/signing.
+        for output in &psbt.unsigned_tx.output {
+            if !output.script_pubkey.is_p2pkh() && !output.script_pubkey.is_p2sh() {
+                return Err(BitcoinError::InvalidPsbt(
+                    "unsupported DOGE/DASH output: cannot display a recipient address".to_string(),
+                ));
+            }
+        }
+    }
     if coin == 145 {
         super::bch::validate_outputs(psbt)?;
     }
-    Ok(Some(network))
+    Ok(network)
 }
 
 #[cfg(test)]
@@ -134,6 +156,39 @@ mod tests {
         assert!(crate::parse_psbt_extend(psbt.serialize(), context(coin), Some(coin)).is_err());
         assert!(crate::check_psbt_extend(psbt.serialize(), context(coin), Some(coin)).is_err());
         assert!(crate::sign_psbt_extend(psbt.serialize(), &seed(), fp(), Some(coin)).is_err());
+    }
+
+    #[test]
+    fn invalid_coin_ids_are_rejected_at_every_extend_entry() {
+        for coin_id in [
+            None,
+            Some(0),
+            Some(1),
+            Some(4),
+            Some(-1),
+            Some(146),
+            Some(i128::MIN),
+            Some(i128::MAX),
+        ] {
+            // Include malformed payloads to prove coin validation happens first.
+            for bytes in [fixture(3).serialize(), Vec::new()] {
+                let expected = BitcoinError::InvalidPsbt(
+                    "missing or unsupported PSBT Extend coin ID".to_string(),
+                );
+                assert_eq!(
+                    crate::parse_psbt_extend(bytes.clone(), context(3), coin_id).unwrap_err(),
+                    expected
+                );
+                assert_eq!(
+                    crate::check_psbt_extend(bytes.clone(), context(3), coin_id).unwrap_err(),
+                    expected
+                );
+                assert_eq!(
+                    crate::sign_psbt_extend(bytes, &seed(), fp(), coin_id).unwrap_err(),
+                    expected
+                );
+            }
+        }
     }
 
     #[test]
@@ -242,6 +297,66 @@ mod tests {
                 .script_pubkey(),
             different_script
         );
+    }
+
+    #[test]
+    fn doge_dash_unrenderable_outputs_rejected_at_all_stages() {
+        let mut witness_script_hash = vec![0x00, 0x20];
+        witness_script_hash.extend_from_slice(&[1; 32]);
+        let mut taproot = vec![0x51, 0x20];
+        taproot.extend_from_slice(&[1; 32]);
+        for coin in [3, 5] {
+            for script in [
+                ScriptBuf::new(),
+                ScriptBuf::from_bytes(vec![0x6a]),
+                ScriptBuf::from_bytes(vec![0x51]),
+                ScriptBuf::from_bytes(
+                    hex::decode("001476a04053bda0a88bda5177b86a15c3b29f559873").unwrap(),
+                ),
+                ScriptBuf::from_bytes(witness_script_hash.clone()),
+                ScriptBuf::from_bytes(taproot.clone()),
+            ] {
+                for index in 0..fixture(coin).unsigned_tx.output.len() {
+                    let mut p = fixture(coin);
+                    p.unsigned_tx.output[index].script_pubkey = script.clone();
+                    rejected_at_all_stages(&p, coin);
+                }
+            }
+            let mut p = fixture(coin);
+            p.unsigned_tx.output.clear();
+            p.outputs.clear();
+            rejected_at_all_stages(&p, coin);
+        }
+    }
+
+    #[test]
+    fn doge_dash_supported_outputs_display_and_sign() {
+        for coin in [3, 5] {
+            for script in [
+                fixture(coin).unsigned_tx.output[0].script_pubkey.clone(),
+                ScriptBuf::from_bytes(
+                    hex::decode("a91476a04053bda0a88bda5177b86a15c3b29f55987387").unwrap(),
+                ),
+            ] {
+                let mut p = fixture(coin);
+                p.unsigned_tx.output[0].script_pubkey = script.clone();
+                let display =
+                    crate::parse_psbt_extend(p.serialize(), context(coin), Some(coin)).unwrap();
+                let address = &display.detail.to[0].address;
+                assert_eq!(Address::from_str(address).unwrap().script_pubkey(), script);
+                assert!(display
+                    .overview
+                    .to
+                    .iter()
+                    .any(|output| &output.address == address));
+                crate::check_psbt_extend(p.serialize(), context(coin), Some(coin)).unwrap();
+                let signed =
+                    crate::sign_psbt_extend(p.serialize(), &seed(), fp(), Some(coin)).unwrap();
+                let signed_display =
+                    crate::parse_psbt_extend(signed, context(coin), Some(coin)).unwrap();
+                assert_eq!(signed_display.detail.to[0].address, *address);
+            }
+        }
     }
 
     #[test]

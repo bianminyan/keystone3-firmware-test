@@ -106,6 +106,7 @@ pub fn sign_msg(msg: &str, seed: &[u8], path: &String) -> Result<Vec<u8>> {
 }
 
 fn decode_psbt_extend(bytes: &[u8], coin_id: Option<i128>) -> Result<Psbt> {
+    transactions::psbt::extend::network_for_coin(coin_id)?;
     if coin_id == Some(145) {
         return transactions::psbt::bch::deserialize(bytes);
     }
@@ -120,10 +121,7 @@ pub fn parse_psbt_extend(
     let psbt = decode_psbt_extend(&bytes, coin_id)?;
     let network = transactions::psbt::extend::validate(&psbt, coin_id)?;
     let wrapper = WrappedPsbt { psbt };
-    match network {
-        Some(network) => wrapper.parse_in_network(Some(&context), network, false),
-        None => wrapper.parse(Some(&context)),
-    }
+    wrapper.parse_in_network(Some(&context), network, false)
 }
 
 pub fn check_psbt_extend(
