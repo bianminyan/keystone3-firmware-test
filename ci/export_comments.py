@@ -50,6 +50,10 @@ def spans(text, path):
                 i = end + len(endmark)
                 continue
         if not rust and not cmake:
+            identifier = re.match(r'(?:[^\W\d]|[$_])[\w$]*', text[i:])
+            if identifier:
+                i += len(identifier[0])
+                continue
             number = re.match(r"(?:[0-9]|\.[0-9])(?:[eEpP][+-]|[A-Za-z0-9_.]|'[A-Za-z0-9_])*", text[i:])
             if number:
                 i += len(number[0])

@@ -13,7 +13,7 @@ sys.dont_write_bytecode = True
 
 from export_comments import strip_new, supported, check_unsupported
 
-RULES = 5
+RULES = 6
 REMOVE = ['ci', '.github/CODEOWNERS', '.github/copilot-instructions.md',
           '.github/instructions', '.github/workflows/copilot-review-gate.yml']
 KEEP = ['.gitignore', 'keystone3-firmware-release']

@@ -63,3 +63,19 @@ class CommentTests(unittest.TestCase):
         for text in (source, cleaned):
             p = subprocess.run(['clang++', '-std=c++14', '-fsyntax-only', '-x', 'c++', '-'], input=text, text=True, capture_output=True)
             self.assertEqual(p.returncode, 0, p.stderr)
+
+    @unittest.skipUnless(shutil.which('clang++'), 'clang++ is required for token boundary regression')
+    def test_identifier_digit_adjacent_to_character_literal(self):
+        source = "#define S(x) #x\nconst char *s = S(foo1'a');\nconst char *t = \"'//literal\"; // remove\n"
+        cleaned = self.clean('', source, 'a.cpp')
+        self.assertIn("S(foo1'a')", cleaned)
+        self.assertIn('"\'//literal"', cleaned)
+        self.assertNotIn('// remove', cleaned)
+        outputs = []
+        for text in (source, cleaned):
+            compiled = subprocess.run(['clang++', '-std=c++14', '-fsyntax-only', '-x', 'c++', '-'], input=text, text=True, capture_output=True)
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+            preprocessed = subprocess.run(['clang++', '-std=c++14', '-E', '-P', '-x', 'c++', '-'], input=text, text=True, capture_output=True)
+            self.assertEqual(preprocessed.returncode, 0, preprocessed.stderr)
+            outputs.append(preprocessed.stdout)
+        self.assertEqual(outputs[0], outputs[1])
