@@ -1519,9 +1519,6 @@ static void GuiSolAccountsRefresh(SolAccountsPager *state)
     size_t end = start + SOL_ACCOUNTS_PER_PAGE;
     if (end > state->accounts->size) end = state->accounts->size;
     for (size_t j = start; j < end; j++) {
-        char order[BUFFER_SIZE_16] = {0};
-        snprintf_s(order, BUFFER_SIZE_16, "%u", (unsigned)(j + 1));
-        lv_obj_t *orderLabel = GuiCreateNoticeLabel(state->content, order);
         lv_obj_t *account_label = GuiCreateIllustrateLabel(state->content, state->accounts->data[j]);
         lv_obj_set_width(account_label, lv_pct(100));
         if (CheckIsAddressLookupTableAccount(state->accounts->data[j])) {
@@ -1558,11 +1555,13 @@ static void GuiSolAccountsRefresh(SolAccountsPager *state)
     lv_obj_update_layout(state->content);
     lv_obj_scroll_to_y(state->content, 0, LV_ANIM_OFF);
     size_t pages = (state->accounts->size + SOL_ACCOUNTS_PER_PAGE - 1) / SOL_ACCOUNTS_PER_PAGE;
-    lv_label_set_text_fmt(state->counter, "%u / %u", (unsigned)(state->page + 1), (unsigned)pages);
-    if (state->page == 0) lv_obj_add_state(state->previous, LV_STATE_DISABLED);
-    else lv_obj_clear_state(state->previous, LV_STATE_DISABLED);
-    if (state->page + 1 >= pages) lv_obj_add_state(state->next, LV_STATE_DISABLED);
-    else lv_obj_clear_state(state->next, LV_STATE_DISABLED);
+    if (state->counter != NULL) {
+        lv_label_set_text_fmt(state->counter, "%u / %u", (unsigned)(state->page + 1), (unsigned)pages);
+        if (state->page == 0) lv_obj_add_state(state->previous, LV_STATE_DISABLED);
+        else lv_obj_clear_state(state->previous, LV_STATE_DISABLED);
+        if (state->page + 1 >= pages) lv_obj_add_state(state->next, LV_STATE_DISABLED);
+        else lv_obj_clear_state(state->next, LV_STATE_DISABLED);
+    }
 }
 
 static void GuiSolAccountsEvent(lv_event_t *event)
@@ -1627,16 +1626,32 @@ static lv_obj_t *GuiShowSolAccounts(lv_obj_t *parent, PtrT_VecFFI_PtrString acco
     lv_obj_add_flag(state->content, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_scrollbar_mode(state->content, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_set_scroll_dir(state->content, LV_DIR_VER);
-    state->previous = GuiSolAccountsButton(pager, "<");
-    lv_obj_align(state->previous, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-    state->next = GuiSolAccountsButton(pager, ">");
-    lv_obj_align(state->next, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-    state->counter = GuiCreateIllustrateLabel(pager, "");
-    lv_obj_align(state->counter, LV_ALIGN_BOTTOM_MID, 0, -9);
-    lv_obj_add_event_cb(state->previous, GuiSolAccountsEvent, LV_EVENT_CLICKED, state);
-    lv_obj_add_event_cb(state->next, GuiSolAccountsEvent, LV_EVENT_CLICKED, state);
+    const bool paginated = accounts->size > SOL_ACCOUNTS_PER_PAGE;
+    if (paginated) {
+        state->previous = GuiSolAccountsButton(pager, "<");
+        lv_obj_align(state->previous, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+        state->next = GuiSolAccountsButton(pager, ">");
+        lv_obj_align(state->next, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+        state->counter = GuiCreateIllustrateLabel(pager, "");
+        lv_obj_align(state->counter, LV_ALIGN_BOTTOM_MID, 0, -9);
+        lv_obj_add_event_cb(state->previous, GuiSolAccountsEvent, LV_EVENT_CLICKED, state);
+        lv_obj_add_event_cb(state->next, GuiSolAccountsEvent, LV_EVENT_CLICKED, state);
+    }
     lv_obj_add_event_cb(pager, GuiSolAccountsEvent, LV_EVENT_DELETE, state);
     GuiSolAccountsRefresh(state);
+    if (!paginated) {
+        lv_obj_set_height(state->content, LV_SIZE_CONTENT);
+        lv_obj_update_layout(state->content);
+        lv_coord_t contentHeight = lv_obj_get_height(state->content);
+        if (contentHeight > 320) {
+            contentHeight = 320;
+        } else {
+            lv_obj_clear_flag(state->content, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+        }
+        lv_obj_set_height(state->content, contentHeight);
+        lv_obj_set_style_pad_bottom(pager, 0, LV_PART_MAIN);
+        lv_obj_set_height(pager, contentHeight);
+    }
     return pager;
 }
 
