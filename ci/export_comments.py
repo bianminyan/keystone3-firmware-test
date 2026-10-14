@@ -49,6 +49,11 @@ def spans(text, path):
                     raise ValueError('Unclosed raw string: ' + path)
                 i = end + len(endmark)
                 continue
+        if not rust and not cmake:
+            number = re.match(r"(?:[0-9]|\.[0-9])(?:[eEpP][+-]|[A-Za-z0-9_.]|'[A-Za-z0-9_])*", text[i:])
+            if number:
+                i += len(number[0])
+                continue
         if text[i] == '"' or (not cmake and text[i] == "'" and (not rust or re.match(r"'(?:[^'\\\n]|\\(?:u\{[0-9a-fA-F_]+\}|x[0-9a-fA-F]{2}|.))'", text[i:]))):
             quote = text[i]
             i += 1
@@ -130,7 +135,13 @@ def strip_new(before, after, path):
         end = new.find('\n', b)
         end = len(new) if end < 0 else end
         if not new[start:a].strip() and not new[b:end].strip():
-            edits.append((start, min(end+1, len(new)), ''))
+            previous_start = new.rfind('\n', 0, max(0, start-1))+1
+            previous_line = new[previous_start:max(0, start-1)]
+            continued = (not path.endswith(('.rs', '.py', '.cmake'))
+                         and Path(path).name != 'CMakeLists.txt'
+                         and previous_line.rstrip(' \t\r').endswith('\\'))
+            newline = '\r\n' if end > 0 and new[end-1:end] == '\r' else '\n'
+            edits.append((start, min(end+1, len(new)), newline if continued else ''))
         else:
             # Preserve token separation and preprocessor line boundaries.
             replacement = '\n' * new[a:b].count('\n') or ' '

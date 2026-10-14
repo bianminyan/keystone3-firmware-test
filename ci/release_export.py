@@ -13,7 +13,7 @@ sys.dont_write_bytecode = True
 
 from export_comments import strip_new, supported, check_unsupported
 
-RULES = 4
+RULES = 5
 REMOVE = ['ci', '.github/CODEOWNERS', '.github/copilot-instructions.md',
           '.github/instructions', '.github/workflows/copilot-review-gate.yml']
 KEEP = ['.gitignore', 'keystone3-firmware-release']
@@ -226,12 +226,14 @@ def main():
                 raise RuntimeError('Public baseline advanced; regenerate candidate')
             branch = 'refs/heads/' + args.candidate
             tag = 'refs/tags/' + TAG_PREFIX + args.candidate
+            leases = []
             for ref in [branch, tag]:
                 existing = git('ls-remote', '--refs', internal_url, ref).decode().split()
+                leases.append('--force-with-lease=' + ref + ':' + (existing[0] if existing else ''))
                 local = git('rev-parse', ref).decode().strip()
                 if existing and existing[0] != local:
                     raise RuntimeError('Internal candidate or mapping already exists with different content')
-            git('-c', 'push.followTags=false', 'push', '--atomic', '--no-follow-tags', internal_url,
+            git('-c', 'push.followTags=false', 'push', '--atomic', '--no-follow-tags', *leases, internal_url,
                 branch + ':' + branch, tag + ':' + tag)
     print(json.dumps(record, ensure_ascii=False, indent=2))
 

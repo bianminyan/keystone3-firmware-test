@@ -1,4 +1,6 @@
 import sys
+import shutil
+import subprocess
 from pathlib import Path
 import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -35,3 +37,29 @@ class CommentTests(unittest.TestCase):
 
     def test_inline_separator(self):
         self.assertEqual(self.clean('', 'int/* note */value;\n'), 'int value;\n')
+
+    @unittest.skipUnless(shutil.which('clang'), 'clang is required for preprocessing regression')
+    def test_comment_after_macro_continuation_preserves_preprocessing(self):
+        for ending in ('\n', '\r\n'):
+            for comment in ('/* note */', '// note', '/* first' + ending + 'second */'):
+                source = '#define X \\' + ending + comment + ending + 'int value;' + ending
+                cleaned = self.clean('', source)
+                self.assertNotIn('note', cleaned)
+                self.assertNotIn('/*', cleaned)
+                def preprocess(text):
+                    p = subprocess.run(['clang', '-E', '-P', '-x', 'c', '-'], input=text, text=True, capture_output=True)
+                    self.assertEqual(p.returncode, 0, p.stderr)
+                    return [line.strip() for line in p.stdout.splitlines() if line.strip()]
+                self.assertEqual(preprocess(source), ['int value;'])
+                self.assertEqual(preprocess(cleaned), preprocess(source))
+
+    @unittest.skipUnless(shutil.which('clang++'), 'clang++ is required for C++ regression')
+    def test_cpp_digit_separators_preserve_literals_and_compile(self):
+        source = "int n = 1'000;\nconst char *s = \"'//literal\"; // remove\nunsigned h = 0xA'B;\ndouble f = 1.2'34e+1;\nchar c = '\"';\n"
+        cleaned = self.clean('', source, 'a.cpp')
+        self.assertIn("1'000", cleaned)
+        self.assertIn('"\'//literal"', cleaned)
+        self.assertNotIn('// remove', cleaned)
+        for text in (source, cleaned):
+            p = subprocess.run(['clang++', '-std=c++14', '-fsyntax-only', '-x', 'c++', '-'], input=text, text=True, capture_output=True)
+            self.assertEqual(p.returncode, 0, p.stderr)

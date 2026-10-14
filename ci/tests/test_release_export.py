@@ -158,6 +158,37 @@ class ExportTests(unittest.TestCase):
         self.export('verify', '--candidate', '3.1.0-rc3')
         self.assertEqual(self.git('show', '3.1.0-rc3:src/ui/gui_assets/image.c'), 'const int image[] = {1, 2};  \n')
 
+    def test_publish_rejects_refs_created_after_precheck(self):
+        self.git('push', 'origin', 'main:master')
+        self.create()
+        branch = 'refs/heads/3.1.0-rc3'
+        tag = 'refs/tags/internal-export/3.1.0-rc3'
+        for raced_ref in (branch, tag):
+            with self.subTest(ref=raced_ref):
+                code = f"""
+import sys, subprocess
+sys.path.insert(0, {str(SCRIPT.parent)!r})
+import release_export as export
+original = export.git
+raced = False
+def racing_git(*args, **kwargs):
+    global raced
+    result = original(*args, **kwargs)
+    if args[:2] == ('ls-remote', '--refs') and args[-1] == {tag!r} and not raced:
+        raced = True
+        subprocess.run(['git', '--git-dir', {str(self.internal)!r}, 'update-ref', {raced_ref!r}, {self.base!r}], check=True)
+    return result
+export.git = racing_git
+sys.argv = ['release_export', 'publish', '--candidate', '3.1.0-rc3']
+export.main()
+"""
+                self.run_cmd('python3', '-c', code, success=False)
+                refs = self.git('ls-remote', '--refs', 'origin')
+                self.assertIn(self.base + '\t' + raced_ref, refs)
+                other = tag if raced_ref == branch else branch
+                self.assertNotIn(other, refs)
+                self.run_cmd('git', '--git-dir', str(self.internal), 'update-ref', '-d', raced_ref)
+
     def test_reject_modified_candidate(self):
         self.create()
         self.git('update-ref', 'refs/heads/3.1.0-rc3', self.base)
