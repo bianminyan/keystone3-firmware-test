@@ -180,7 +180,7 @@ extern bool g_reboot;
     }, \
     { \
         REMAPVIEW_ADA, \
-        PC_SIMULATOR_PATH "/page_ada.json", \
+        GUI_ADA_PAGE_TEMPLATE, \
         GuiGetAdaData, \
         NULL, \
         FreeAdaMemory, \
