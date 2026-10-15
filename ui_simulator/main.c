@@ -341,8 +341,9 @@ static void simulator_save_s39_auto(int argc, char *argv[])
     }
     printf("next blank account=%d\r\n", accountIndex);
     PrintArray("entropy", entropy, (uint16_t)entropyLen);
+    bool cleanupRequired = false;
     ret = CreateNewSlip39Account(accountIndex, ems, entropy, (uint8_t)entropyLen, argv[5], (uint16_t)slip39Id, slip39Extendable != 0,
-                                 (uint8_t)slip39IterationExponent);
+                                 (uint8_t)slip39IterationExponent, &cleanupRequired);
     printf("CreateNewSlip39Account=%d\r\n", ret);
     CLEAR_ARRAY(entropy);
     CLEAR_ARRAY(ems);
