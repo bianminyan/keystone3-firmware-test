@@ -7,6 +7,9 @@
 
 #define GUI_SOL_MESSAGE_TEMPLATE "{\"table\":{\"utf8_message\":{\"type\":\"custom_container\",\"pos\":[0,39],\"size\":[408,500],\"align\":2,\"bg_color\":16777215,\"bg_opa\":31,\"radius\":24,\"custom_show_func\":\"GuiShowSolMessageReview\"},\"raw_message\":{\"type\":\"custom_container\",\"pos\":[0,39],\"size\":[408,500],\"align\":2,\"bg_color\":16777215,\"bg_opa\":31,\"radius\":24,\"custom_show_func\":\"GuiShowSolMessageReview\"}}}"
 
+// ADA transaction layout is created by GuiShowAdaTx on both targets.
+#define GUI_ADA_PAGE_TEMPLATE "{\"type\":\"custom_container\",\"pos\":[36,0],\"size\":[408,542],\"bg_color\":0,\"bg_opa\":0,\"custom_show_func\":\"GuiShowAdaTx\"}"
+
 #ifndef COMPILE_SIMULATOR
 
 #include "gui_trx_template.h"
@@ -108,7 +111,7 @@
     },\
     {\
         REMAPVIEW_ADA,\
-        "{\"type\":\"custom_container\",\"pos\":[36,0],\"size\":[408,542],\"bg_color\":0,\"bg_opa\":0,\"custom_show_func\":\"GuiShowAdaTx\"}",\
+        GUI_ADA_PAGE_TEMPLATE,\
         GuiGetAdaData,\
         NULL,\
         FreeAdaMemory,\
