@@ -25,6 +25,7 @@
 #include "gui_api.h"
 #include "gui_framework.h"
 #include "gui_lock_widgets.h"
+#include "gui_model.h"
 #include "gui_views.h"
 extern bool g_reboot;
 #include "gui_wallet.h"
@@ -369,6 +370,29 @@ static void simulator_key_store_test(int argc, char *argv[])
         return;
     }
     KeyStoreTest(argc, argv);
+}
+
+static void simulator_migration_test(int argc, char *argv[])
+{
+    if (argc != 2 || strcmp(argv[0], "ar_setup") != 0) {
+        printf("unsupported migration test: %s\r\n", argc > 0 ? argv[0] : "");
+        return;
+    }
+
+#ifdef WEB3_VERSION
+    uint8_t accountIndex = GetCurrentAccountIndex();
+    int32_t ret = accountIndex <= 2 ? VerifyCurrentAccountPassword(argv[1]) : ERR_GENERAL_FAIL;
+    if (ret != SUCCESS_CODE) {
+        ret = VerifyPasswordAndLogin(&accountIndex, argv[1]);
+    }
+    if (ret == SUCCESS_CODE) {
+        SecretCacheSetPassword(argv[1]);
+        ret = RsaGenerateKeyPair(false, true, NULL);
+    }
+    printf("MigrationArSetup=%d,accountIndex=%d\r\n", ret, accountIndex);
+#else
+    printf("MigrationArSetup=-1,accountIndex=0\r\n");
+#endif
 }
 
 static bool parse_optional_eth_path(int argc, char *argv[], int path_arg_index, char **path)
@@ -778,13 +802,27 @@ static void simulator_address_arweave(int argc, char *argv[])
         printf("input err!\r\n");
         return;
     }
-    (void)argv[1];
-    (void)argv[2];
-    char *xpub = GetCurrentAccountPublicKey(XPUB_TYPE_ARWEAVE);
-    if (!simulator_validate_xpub(xpub)) {
+    uint8_t account_index = 0;
+    int32_t ret = VerifyPasswordAndLogin(&account_index, argv[2]);
+    if (ret != SUCCESS_CODE || account_index != atoi(argv[1])) {
+        printf("address error_code: %d\r\n", ret == SUCCESS_CODE ? ERR_GENERAL_FAIL : ret);
+        printf("address error_message: login failed\r\n");
         return;
     }
-    simulator_print_address_result(arweave_get_address(xpub));
+    SecretCacheSetPassword(argv[2]);
+    SimpleResponse_c_char *public_key = NULL;
+    ret = RsaGenerateKeyPair(false, false, &public_key);
+    if (ret != SUCCESS_CODE || public_key == NULL || public_key->data == NULL) {
+        printf("address error_code: %d\r\n", ret == SUCCESS_CODE ? ERR_GENERAL_FAIL : ret);
+        printf("address error_message: AR key unavailable\r\n");
+        if (public_key != NULL) {
+            free_simple_response_c_char(public_key);
+        }
+        return;
+    }
+    SimpleResponse_c_char *address = arweave_get_address(public_key->data);
+    free_simple_response_c_char(public_key);
+    simulator_print_address_result(address);
 }
 
 static void simulator_address_solana(int argc, char *argv[])
@@ -861,6 +899,9 @@ static bool simulator_dispatch_command(char *command)
         return true;
     }
     if (dispatch_prefixed_command(command, "address test:", simulator_address_test)) {
+        return true;
+    }
+    if (dispatch_prefixed_command(command, "migration test:", simulator_migration_test)) {
         return true;
     }
     if (dispatch_prefixed_command(command, "rust test eth tx:", simulator_eth_legacy_sign)) {

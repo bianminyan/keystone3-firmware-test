@@ -19,6 +19,7 @@
 // Keep the legacy JSON field name so existing simulator accounts remain readable.
 #define SIMULATOR_ACCOUNT_BLOB_AUTH_KEY_JSON        "zcash_auth_key"
 #define SIMULATOR_FLASH_BLOCK_SIZE                  (64 * 1024)
+#define SIMULATOR_SE_HASH_SIZE                      32
 
 #define PC_SIMULATOR_PATH "C:/assets"
 
@@ -43,6 +44,20 @@ static int32_t SimulatorVerifyCurrentPasswordInternal(uint8_t accountIndex, cons
 static int32_t ClearSimulatorStoragePath(const char *path);
 static const char *GetSimulatorAccountSecretPath(uint8_t accountIndex);
 static bool IsAllZero32(const uint8_t *data);
+
+static bool IsSimulatorRsaFlashEntry(const SimulatorFlashPath *entry)
+{
+    return entry != NULL &&
+           (entry->addr == SPI_FLASH_RSA_USER1_DATA ||
+            entry->addr == SPI_FLASH_RSA_USER2_DATA ||
+            entry->addr == SPI_FLASH_RSA_USER3_DATA);
+}
+
+static bool IsSimulatorRsaHashPage(uint8_t page)
+{
+    return page >= PAGE_WALLET1_RSA_PRIMES_HASH &&
+           page < PAGE_WALLET1_RSA_PRIMES_HASH + 3;
+}
 
 int32_t StorageGetDataSize(uint32_t addr, uint8_t *buffer, uint32_t size);
 int32_t StorageSetDataSize(uint32_t addr, uint8_t *buffer, uint32_t size);
@@ -171,6 +186,12 @@ int32_t StorageGetData(uint32_t addr, uint8_t *buffer, uint32_t size)
     const char *path = entry->path;
     uint32_t offset = addr - entry->addr;
 
+    // A real erased flash region reads back as 0xFF. RSA setup relies on
+    // that state to distinguish an unused slot from a storage failure.
+    if (IsSimulatorRsaFlashEntry(entry)) {
+        memset(buffer, 0xFF, size);
+    }
+
     ret = lv_fs_open(&fd, path, LV_FS_MODE_ALWAYS | LV_FS_MODE_RD);
     if (ret != LV_FS_RES_OK) {
         printf("lv_fs_open failed %s ret = %d line = %d\n", path, ret, __LINE__);
@@ -193,7 +214,7 @@ int32_t StorageGetData(uint32_t addr, uint8_t *buffer, uint32_t size)
     }
     lv_fs_close(&fd);
 
-    return readBytes;
+    return IsSimulatorRsaFlashEntry(entry) ? (int32_t)size : readBytes;
 }
 
 int32_t StorageSetData(uint32_t addr, uint8_t *buffer, uint32_t size)
@@ -618,6 +639,22 @@ uint8_t SE_GetAccountIndexFromPage(uint8_t page)
 int32_t SE_HmacEncryptRead(uint8_t *data, uint8_t page)
 {
     uint8_t buffer[JSON_MAX_LEN] = {0};
+    if (IsSimulatorRsaHashPage(page)) {
+        uint8_t account = page - PAGE_WALLET1_RSA_PRIMES_HASH;
+        OperateStorageDataFunc func = FindSimulatorStorageFunc(
+            SIMULATOR_USER1_SECRET_ADDR + account * 0x1000, true);
+        if (func != NULL) {
+            func(SIMULATOR_USER1_SECRET_ADDR + account * 0x1000,
+                 buffer, JSON_MAX_LEN);
+        }
+        memset(data, 0xFF, SIMULATOR_SE_HASH_SIZE);
+        cJSON *rootJson = cJSON_Parse(buffer);
+        if (rootJson != NULL) {
+            GetJsonArrayData(rootJson, data, SIMULATOR_SE_HASH_SIZE, "rsa_primes_hash");
+            cJSON_Delete(rootJson);
+        }
+        return SUCCESS_CODE;
+    }
     if (page == PAGE_PF_ENCRYPTED_PASSWORD) {
     } else if (page == PAGE_WALLET1_PUB_KEY_HASH) {
 
@@ -675,6 +712,28 @@ int32_t SE_HmacEncryptRead(uint8_t *data, uint8_t page)
 int32_t SE_HmacEncryptWrite(const uint8_t *data, uint8_t page)
 {
     uint8_t buffer[JSON_MAX_LEN] = {0};
+    if (IsSimulatorRsaHashPage(page)) {
+        uint8_t account = page - PAGE_WALLET1_RSA_PRIMES_HASH;
+        uint32_t secretAddr = SIMULATOR_USER1_SECRET_ADDR + account * 0x1000;
+        OperateStorageDataFunc readFunc = FindSimulatorStorageFunc(secretAddr, true);
+        OperateStorageDataFunc writeFunc = FindSimulatorStorageFunc(secretAddr, false);
+        if (readFunc == NULL || writeFunc == NULL) {
+            return ERR_GENERAL_FAIL;
+        }
+        readFunc(secretAddr, buffer, JSON_MAX_LEN);
+        cJSON *rootJson = cJSON_Parse(buffer);
+        if (rootJson == NULL) {
+            rootJson = cJSON_CreateObject();
+        }
+        ModifyJsonArrayData(rootJson, (uint8_t *)data, SIMULATOR_SE_HASH_SIZE,
+                            "rsa_primes_hash");
+        char *json = cJSON_PrintBuffered(rootJson, BUFFER_SIZE_1024, false);
+        int32_t ret = json == NULL ? ERR_GENERAL_FAIL :
+                      writeFunc(secretAddr, (uint8_t *)json, strlen(json));
+        free(json);
+        cJSON_Delete(rootJson);
+        return ret < 0 ? ERR_GENERAL_FAIL : SUCCESS_CODE;
+    }
     if (page == PAGE_PF_ENCRYPTED_PASSWORD) {
     } else if (page == PAGE_WALLET1_PUB_KEY_HASH) {
 

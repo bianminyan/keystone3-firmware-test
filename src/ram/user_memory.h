@@ -39,7 +39,7 @@ void PrintHeapInfo(void);
 #ifndef strncpy_s
 #define strncpy_s(dest, destsz, src, size)  (strncpy(dest, src, size), 0)
 #endif
-#define memcpy_s(dest, destsz, src, count)  memcpy(dest, src, count)
+#define memcpy_s(dest, destsz, src, count)  (memcpy(dest, src, count), 0)
 #define strnlen_s(sstr, smax)               strnlen(sstr, smax)
 #define strncat_s(str, max, src, len)       strncat(str, src, len)
 #ifndef strcasecmp_s

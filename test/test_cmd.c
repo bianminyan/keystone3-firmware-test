@@ -155,6 +155,9 @@ static void RustGetConnectKeplrUR(int argc, char *argv[]);
 static void RustGetConnectXrpToolKitUR(int argc, char *argv[]);
 static void RustTestMemory(int argc, char *argv[]);
 static void RustGetConnectMetaMaskUR(int argc, char *argv[]);
+static void RustGetConnectMetaMaskLedgerLiveUR(int argc, char *argv[]);
+static void RustGetConnectMetaMaskLedgerLegacyUR(int argc, char *argv[]);
+static void RustGetConnectBtcUR(int argc, char *argv[]);
 static void RustGetConnectSolflareUR(int argc, char *argv[]);
 static void RustGetConnectKeystoneNexusUR(int argc, char *argv[]);
 static void RustTestGetAddressLTCSucceed(int argc, char *argv[]);
@@ -288,6 +291,9 @@ const static UartTestCmdItem_t g_uartTestCmdTable[] = {
     {"rust test get connect keplr wallet ur", RustGetConnectKeplrUR},
     {"rust test get connect xrp toolkit ur", RustGetConnectXrpToolKitUR},
     {"rust test connect metamask", RustGetConnectMetaMaskUR},
+    {"rust test connect metamask ledger_live", RustGetConnectMetaMaskLedgerLiveUR},
+    {"rust test connect metamask ledger_legacy", RustGetConnectMetaMaskLedgerLegacyUR},
+    {"rust test connect btc", RustGetConnectBtcUR},
     {"rust test connect solflare:", RustGetConnectSolflareUR},
     {"rust test connect keystone nexus", RustGetConnectKeystoneNexusUR},
     {"rust test solana parse:", testSolanaParseTx},
@@ -1164,13 +1170,27 @@ static void AddressTestCardano(int argc, char *argv[])
 static void AddressTestArweave(int argc, char *argv[])
 {
     VALUE_CHECK(argc, 3);
-    (void)argv[1];
-    (void)argv[2];
-    char *xpub = GetCurrentAccountPublicKey(XPUB_TYPE_ARWEAVE);
-    if (!AddressValidateXpub(xpub)) {
+    uint8_t accountIndex = 0;
+    int32_t ret = VerifyPasswordAndLogin(&accountIndex, argv[2]);
+    if (ret != SUCCESS_CODE || accountIndex != atoi(argv[1])) {
+        printf("address error_code: %d\r\n", ret == SUCCESS_CODE ? ERR_GENERAL_FAIL : ret);
+        printf("address error_message: login failed\r\n");
         return;
     }
-    AddressPrintResult(arweave_get_address(xpub));
+    SecretCacheSetPassword(argv[2]);
+    SimpleResponse_c_char *publicKey = NULL;
+    ret = RsaGenerateKeyPair(false, false, &publicKey);
+    if (ret != SUCCESS_CODE || publicKey == NULL || publicKey->data == NULL) {
+        printf("address error_code: %d\r\n", ret == SUCCESS_CODE ? ERR_GENERAL_FAIL : ret);
+        printf("address error_message: AR key unavailable\r\n");
+        if (publicKey != NULL) {
+            free_simple_response_c_char(publicKey);
+        }
+        return;
+    }
+    SimpleResponse_c_char *address = arweave_get_address(publicKey->data);
+    free_simple_response_c_char(publicKey);
+    AddressPrintResult(address);
 }
 
 static void AddressTestSolana(int argc, char *argv[])
@@ -1321,8 +1341,11 @@ static void MigrationTestFunc(int argc, char *argv[])
     if (strcmp(argv[0], "ar_setup") == 0) {
 #ifdef WEB3_VERSION
         VALUE_CHECK(argc, 2);
-        uint8_t accountIndex = 0;
-        int32_t ret = VerifyPasswordAndLogin(&accountIndex, argv[1]);
+        uint8_t accountIndex = GetCurrentAccountIndex();
+        int32_t ret = accountIndex <= 2 ? VerifyCurrentAccountPassword(argv[1]) : ERR_GENERAL_FAIL;
+        if (ret != SUCCESS_CODE) {
+            ret = VerifyPasswordAndLogin(&accountIndex, argv[1]);
+        }
         if (ret == SUCCESS_CODE) {
             SecretCacheSetPassword(argv[1]);
             ret = RsaGenerateKeyPair(false, true, NULL);
@@ -2409,49 +2432,97 @@ static void RustGetConnectKeplrUR(int argc, char *argv[])
     printf("FreeHeapSize = %d\n", xPortGetFreeHeapSize());
 }
 
+static uint32_t GetURFragmentCount(const char *data)
+{
+    if (data == NULL) {
+        return 0;
+    }
+
+    const char *sequence = strchr(data, '/');
+    if (sequence == NULL) {
+        return 0;
+    }
+
+    uint32_t index = 0;
+    uint32_t count = 0;
+    if (sscanf(sequence + 1, "%u-%u/", &index, &count) != 2) {
+        return 0;
+    }
+    return count;
+}
+
+static void PrintAllURFragments(UREncodeResult *ur)
+{
+    if (ur == NULL) {
+        printf("error_code is -1\r\n");
+        printf("error_message is null\r\n");
+        return;
+    }
+
+    printf("is_multi_part is %d\r\n", ur->is_multi_part);
+    printf("data is %s\r\n", ur->data != NULL ? ur->data : "");
+    if (ur->is_multi_part && ur->encoder != NULL) {
+        uint32_t fragmentCount = 1;
+        uint32_t expectedCount = GetURFragmentCount(ur->data);
+        while (fragmentCount < expectedCount) {
+            UREncodeMultiResult *part = get_next_part(ur->encoder);
+            if (part == NULL || part->error_code != 0) {
+                if (part != NULL) {
+                    free_ur_encode_muilt_result(part);
+                }
+                break;
+            }
+            if (part->data != NULL) {
+                printf("data is %s\r\n", part->data);
+                fragmentCount++;
+            }
+            free_ur_encode_muilt_result(part);
+        }
+        printf("fragment_count is %u\r\n", fragmentCount);
+    }
+    printf("error_code is %d\r\n", ur->error_code);
+    printf("error_message is %s\r\n", ur->error_message != NULL ? ur->error_message : "");
+    free_ur_encode_result(ur);
+}
+
 static void RustGetConnectXrpToolKitUR(int argc, char *argv[])
 {
+    (void)argc;
+    (void)argv;
     printf("RustGetConnectXrpToolKitUR\r\n");
-    char *hd_path = "44'/144'/0'/0/0";
-    char *root_x_pub = "xpub6CFKyZTfzj3cyeRLUDKwQQ5s1tqTTdVgywKMVkrB2i1taGFbhazkxDzWVsfBHZpv7rg6qpDBGYR5oA8iazEfa44CdQkkknPFHJ7YCzncCS9";
-    char *root_path = "44'/144'/0'";
-    UREncodeResult *ur = get_connect_xrp_toolkit_ur(hd_path, root_x_pub, root_path);
-    printf("encode ur\r\n");
-    if (ur->error_code == 0) {
-        printf("XrpToolkit is_multi_part is %d\r\n", ur->is_multi_part);
-        printf("XrpToolkit data is %s\r\n", ur->data);
-    } else {
-        printf("XrpToolkit error_code is %s\r\n", ur->error_code);
-        printf("XrpToolkit error_message is %s\r\n", ur->error_message);
-    }
-    free_ur_encode_result(ur);
-    PrintRustMemoryStatus();
-    printf("FreeHeapSize = %d\n", xPortGetFreeHeapSize());
+    PrintAllURFragments(GuiGetXrpToolkitDataByIndex(0));
 }
 
 static void RustGetConnectMetaMaskUR(int argc, char *argv[])
 {
-    uint8_t mfp[4] = {0x75, 0x7e, 0x6f, 0xc9};
-    struct ExtendedPublicKey key0 = {"", "xpub6C8zKiZZ8V75XynjThhvdjy7hbnJHAFkhW7jL9EvBCsRFSRov4sXUJATU6CqUF9BxAbryiU3eghdHDLbwgF8ASE4AwHTzkLHaHsbwiCnkHc"};
-    struct ExtendedPublicKey key1 = {"", "xpub6C8zKiZZ8V75aXTgYAswqCgYUHeBYg1663a4Ri6zdJ4GW58r67Kmj4Fr8pbBK9usq45o8iQ8dBM75o67ct1M38yeb6RhFTWBxiYeq8Kg84Z"};
-    struct ExtendedPublicKey key2 = {"", "xpub6C8zKiZZ8V75e1B4yeB8hpw9itcx9aKWvxfWH5jmX9xf1YeqaUM1zotxXg2pX8Jin4NUS7L1KKGTUuuCr1kMf2ox6c5ebQ14XTZa9seWuCW"};
-    struct ExtendedPublicKey key3 = {"", "xpub6C8zKiZZ8V75gaav5YzPCb19oSARjXNWHrBRtoQA7Fx7uMSXSnkgCrwviTPqHswrP5JSxzMshS2jetwo7V9sR3mbjMqr3bukHy3She7adEX"};
-    struct ExtendedPublicKey key4 = {"", "xpub6C8zKiZZ8V75hek8cS7byAQtfQBWov8osxA4bREa8JLvXBkmynFd8fttUVX723ZCHvVaYnJMgQsE35E7JBQr5eqYSwYwGBYa2cjFXYi9Z6u"};
-    struct ExtendedPublicKey key5 = {"", "xpub6C8zKiZZ8V75nabUFPJEspYfLqsJRqbmQ5LBvUy8nDRzj9SejBCGCKbAT127LQjKQVoFasayzam5ozijG3f2kCf7uZQrPBQG4zAfSFJ6c2Z"};
-    struct ExtendedPublicKey key6 = {"", "xpub6C8zKiZZ8V75phnqeXtW6Qm8duCmHXUE18PkYHHJqmCPmcf5iEdqLPfSVNsPKm7HsUGPorG5KSxmWc3nAkfbhmWN7PuqFzpYbmHocAiqMH1"};
-    struct ExtendedPublicKey key7 = {"", "xpub6C8zKiZZ8V75qcUxEpYCXebRF23VMcJqcWdCSvZjcfMWYU4dcQnKZ8LiXPXBwYioYc62wC6F1B6UhnWYtX1Ss9ZfT3dC6e63Bzfq4AHULQh"};
-    struct ExtendedPublicKey key8 = {"", "xpub6C8zKiZZ8V75tgxbNbnWfAbC63k1s6tQvfpYLNLaEzq3aUhhZu798JUyMJVL3fNK2CcF2vKauyBdF73TxjLyfU9Cfb4SLKxLDr3SUVVSAQL"};
-    struct ExtendedPublicKey key9 = {"", "xpub6C8zKiZZ8V75xAiMExpbA2YBTvgC3o5sLkHjv6jm1zdWrAQ2pCq9CUnGQgBiVd2xrUh2yxBSUccXguJgdJ3SdnJvhAD5KGhWa6fjKsyt8Wy"};
-    ExtendedPublicKey keys[] = {key0, key1, key2, key3, key4, key5, key6, key7, key8, key9};
-    PtrT_CSliceFFI_ExtendedPublicKey public_keys = SRAM_MALLOC(sizeof(CSliceFFI_ExtendedPublicKey));
-    public_keys->size = 10;
-    public_keys->data = keys;
-    PtrT_UREncodeResult ur = get_connect_metamask_ur(mfp, sizeof(mfp), LedgerLive, public_keys, GetWalletName());
-    printf("encode ur\r\n");
-    printf("is_multi_part is %d\r\n", ur->is_multi_part);
-    printf("data is %s\r\n", ur->data);
-    printf("error_code is %d\r\n", ur->error_code);
-    printf("error_message is %s\r\n", ur->error_message);
+    (void)argc;
+    (void)argv;
+    printf("RustGetConnectMetaMaskUR\r\n");
+    PrintAllURFragments(GetUnlimitedMetamaskDataForAccountType(Bip44Standard));
+}
+
+static void RustGetConnectMetaMaskLedgerLiveUR(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+    printf("RustGetConnectMetaMaskLedgerLiveUR\r\n");
+    PrintAllURFragments(GetUnlimitedMetamaskDataForAccountType(LedgerLive));
+}
+
+static void RustGetConnectMetaMaskLedgerLegacyUR(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+    printf("RustGetConnectMetaMaskLedgerLegacyUR\r\n");
+    PrintAllURFragments(GetUnlimitedMetamaskDataForAccountType(LedgerLegacy));
+}
+
+static void RustGetConnectBtcUR(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+    printf("RustGetConnectBtcUR\r\n");
+    PrintAllURFragments(GuiGetStandardBtcData());
 }
 
 static void RustGetConnectSolflareUR(int argc, char *argv[])
@@ -2494,20 +2565,11 @@ static void RustGetConnectSolflareUR(int argc, char *argv[])
     }
 
     PtrT_UREncodeResult ur = generate_common_crypto_multi_accounts_ur(mfp, sizeof(mfp), publicKeys, "SOL");
-    printf("encode ur\r\n");
-    if (ur->error_code == 0) {
-        printf("is_multi_part is %d\r\n", ur->is_multi_part);
-        printf("data is %s\r\n", ur->data);
-        printf("error_code is %d\r\n", ur->error_code);
-    } else {
-        printf("error_code is %d\r\n", ur->error_code);
-        printf("error_message is %s\r\n", ur->error_message);
-    }
+    PrintAllURFragments(ur);
     for (int i = 0; i < publicKeys->size; i++) {
         SRAM_FREE(publicKeys->data[i].path);
     }
     SRAM_FREE(publicKeys);
-    free_ur_encode_result(ur);
 }
 
 static void RustGetConnectKeystoneNexusUR(int argc, char *argv[])
@@ -2520,21 +2582,7 @@ static void RustGetConnectKeystoneNexusUR(int argc, char *argv[])
         ur = GuiGetKeystoneConnectWalletDataBip39();
     }
 
-    printf("encode ur\r\n");
-    if (ur == NULL) {
-        printf("error_code is -1\r\n");
-        printf("error_message is failed to generate Keystone Nexus UR\r\n");
-        return;
-    }
-    if (ur->error_code == 0) {
-        printf("is_multi_part is %d\r\n", ur->is_multi_part);
-        printf("data is %s\r\n", ur->data);
-        printf("error_code is %d\r\n", ur->error_code);
-    } else {
-        printf("error_code is %d\r\n", ur->error_code);
-        printf("error_message is %s\r\n", ur->error_message);
-    }
-    free_ur_encode_result(ur);
+    PrintAllURFragments(ur);
 }
 
 static void RustTestKeyDerivation(int argc, char *argv[])
