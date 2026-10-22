@@ -1422,6 +1422,7 @@ void KeyStoreTest(int argc, char *argv[])
             printf("passphrase=%s\r\n", g_passphraseInfo[accountIndex].passphrase);
             printf("mfp=0x%08X\r\n", (unsigned int) * ((uint32_t *)(g_passphraseInfo[accountIndex].mfp)));
         }
+        printf("get passphrase done\r\n");
     } else if (strcmp(argv[0], "set_fp_info") == 0) {
         printf("set fp info test\r\n");
         TrngGet(key, 32);

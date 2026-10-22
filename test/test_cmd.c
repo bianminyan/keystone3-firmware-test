@@ -130,6 +130,10 @@ static void SdCardTestFunc(int argc, char *argv[]);
 #ifdef WEB3_VERSION
 static void RustTestDecodeKeystoneSignRequest(int argc, char *argv[]);
 static void RustTestSignPSBT(int argc, char *argv[]);
+static void RustTestSignDynamicPSBT(int argc, char *argv[]);
+static void RustTestSignDynamicBTCMessage(int argc, char *argv[]);
+static void RustTestSignDynamicEthBatch(int argc, char *argv[]);
+static void PrintAllURFragments(UREncodeResult *ur);
 static void RustTestSignBTCKeystone(int argc, char *argv[]);
 static void RustTestSignLTCKeystone(int argc, char *argv[]);
 static void RustTestSignDASHKeystone(int argc, char *argv[]);
@@ -157,6 +161,8 @@ static void RustTestMemory(int argc, char *argv[]);
 static void RustGetConnectMetaMaskUR(int argc, char *argv[]);
 static void RustGetConnectSolflareUR(int argc, char *argv[]);
 static void RustGetConnectKeystoneNexusUR(int argc, char *argv[]);
+static void RustGetConnectOkxUR(int argc, char *argv[]);
+static void RustGetConnectBackpackUR(int argc, char *argv[]);
 static void RustTestGetAddressLTCSucceed(int argc, char *argv[]);
 static void RustTestGetAddressTronSucceed(int argc, char *argv[]);
 static void RustTestGetAddressSolanaSucceed(int argc, char *argv[]);
@@ -279,6 +285,9 @@ const static UartTestCmdItem_t g_uartTestCmdTable[] = {
     {"rust test decode keystone sign request", RustTestDecodeKeystoneSignRequest},
     {"rust test decode multi psbt", RustTestDecodeMultiCryptoPSBT},
     {"rust test sign psbt:", RustTestSignPSBT},
+    {"rust test sign psbt dynamic:", RustTestSignDynamicPSBT},
+    {"rust test sign btc message dynamic:", RustTestSignDynamicBTCMessage},
+    {"rust test sign eth batch dynamic:", RustTestSignDynamicEthBatch},
     {"rust test sign btc keystone:", RustTestSignBTCKeystone},
     {"rust test sign ltc:", RustTestSignLTCKeystone},
     {"rust test sign dash:", RustTestSignDASHKeystone},
@@ -290,6 +299,8 @@ const static UartTestCmdItem_t g_uartTestCmdTable[] = {
     {"rust test connect metamask", RustGetConnectMetaMaskUR},
     {"rust test connect solflare:", RustGetConnectSolflareUR},
     {"rust test connect keystone nexus", RustGetConnectKeystoneNexusUR},
+    {"rust test connect okx", RustGetConnectOkxUR},
+    {"rust test connect backpack", RustGetConnectBackpackUR},
     {"rust test solana parse:", testSolanaParseTx},
     {"rust test xrp parse:", testXrpParseTx},
     {"rust test near get address:", testNearGetAddress},
@@ -2294,6 +2305,218 @@ static void RustTestSignPSBT(int argc, char *argv[])
     printf("data, %s\r\n", result->data);
 }
 
+static void RustTestSignDynamicPSBT(int argc, char *argv[])
+{
+    VALUE_CHECK(argc, 2);
+
+    uint8_t accountIndex = 0;
+    int32_t ret = VerifyPasswordAndLogin(&accountIndex, argv[0]);
+    if (ret != SUCCESS_CODE) {
+        printf("BtcPsbtSign=%d,accountIndex=%d,status=login_error\r\n", ret, accountIndex);
+        printf("BtcPsbtSignDone=1\r\n");
+        return;
+    }
+
+    URParseResult *request = parse_ur(argv[1]);
+    if (request == NULL || request->error_code != 0 || request->data == NULL) {
+        uint32_t errorCode = request == NULL ? ERR_GENERAL_FAIL : request->error_code;
+        printf("BtcPsbtSign=%d,accountIndex=%d,status=parse_error\r\n", (int)errorCode, accountIndex);
+        if (request != NULL && request->error_message != NULL) {
+            printf("BtcPsbtSignErrorMessage=%s\r\n", request->error_message);
+        }
+        if (request != NULL) {
+            free_ur_parse_result(request);
+        }
+        printf("BtcPsbtSignDone=1\r\n");
+        return;
+    }
+
+    uint8_t seed[64] = {0};
+    int seedLen = GetMnemonicType() == MNEMONIC_TYPE_BIP39 ? sizeof(seed) : GetCurrentAccountEntropyLen();
+    ret = GetAccountSeed(accountIndex, seed, argv[0]);
+    if (ret != SUCCESS_CODE) {
+        printf("BtcPsbtSign=%d,accountIndex=%d,status=seed_error\r\n", ret, accountIndex);
+        free_ur_parse_result(request);
+        printf("BtcPsbtSignDone=1\r\n");
+        return;
+    }
+
+    uint8_t masterFingerprint[4] = {0};
+    GetMasterFingerPrint(masterFingerprint);
+    UREncodeResult *result = btc_sign_psbt_unlimited(
+        request->data,
+        seed,
+        seedLen,
+        masterFingerprint,
+        sizeof(masterFingerprint)
+    );
+    memset_s(seed, sizeof(seed), 0, sizeof(seed));
+
+    if (result == NULL) {
+        printf("BtcPsbtSign=%d,accountIndex=%d,status=sign_error\r\n", ERR_GENERAL_FAIL, accountIndex);
+    } else {
+        printf("BtcPsbtSign=%d,accountIndex=%d,status=%s\r\n",
+               result->error_code,
+               accountIndex,
+               result->error_code == 0 ? "signed" : "sign_error");
+        if (result->error_message != NULL) {
+            printf("BtcPsbtSignErrorMessage=%s\r\n", result->error_message);
+        }
+        if (result->error_code == 0 && result->data != NULL) {
+            printf("BtcPsbtSignedUr=%s\r\n", result->data);
+        }
+        free_ur_encode_result(result);
+    }
+    free_ur_parse_result(request);
+    printf("BtcPsbtSignDone=1\r\n");
+}
+
+static void RustTestSignDynamicBTCMessage(int argc, char *argv[])
+{
+    VALUE_CHECK(argc, 2);
+
+    uint8_t accountIndex = 0;
+    int32_t ret = VerifyPasswordAndLogin(&accountIndex, argv[0]);
+    if (ret != SUCCESS_CODE) {
+        printf("BtcMessageSign=%d,accountIndex=%d,status=login_error\r\n", ret, accountIndex);
+        printf("BtcMessageSignDone=1\r\n");
+        return;
+    }
+
+    URParseResult *request = parse_ur(argv[1]);
+    if (request == NULL || request->error_code != 0 || request->data == NULL || request->ur_type != BtcSignRequest) {
+        uint32_t errorCode = request == NULL ? ERR_GENERAL_FAIL : request->error_code;
+        printf("BtcMessageSign=%d,accountIndex=%d,status=parse_error\r\n", (int)errorCode, accountIndex);
+        if (request != NULL && request->error_message != NULL) {
+            printf("BtcMessageSignErrorMessage=%s\r\n", request->error_message);
+        }
+        if (request != NULL) {
+            free_ur_parse_result(request);
+        }
+        printf("BtcMessageSignDone=1\r\n");
+        return;
+    }
+
+    uint8_t seed[64] = {0};
+    int seedLen = GetMnemonicType() == MNEMONIC_TYPE_BIP39 ? sizeof(seed) : GetCurrentAccountEntropyLen();
+    ret = GetAccountSeed(accountIndex, seed, argv[0]);
+    if (ret != SUCCESS_CODE) {
+        printf("BtcMessageSign=%d,accountIndex=%d,status=seed_error\r\n", ret, accountIndex);
+        free_ur_parse_result(request);
+        printf("BtcMessageSignDone=1\r\n");
+        return;
+    }
+
+    uint8_t masterFingerprint[4] = {0};
+    GetMasterFingerPrint(masterFingerprint);
+    UREncodeResult *result = btc_sign_msg(
+        request->data,
+        seed,
+        seedLen,
+        masterFingerprint,
+        sizeof(masterFingerprint)
+    );
+    memset_s(seed, sizeof(seed), 0, sizeof(seed));
+
+    if (result == NULL) {
+        printf("BtcMessageSign=%d,accountIndex=%d,status=sign_error\r\n", ERR_GENERAL_FAIL, accountIndex);
+    } else {
+        printf("BtcMessageSign=%d,accountIndex=%d,status=%s\r\n",
+               result->error_code,
+               accountIndex,
+               result->error_code == 0 ? "signed" : "sign_error");
+        if (result->error_message != NULL) {
+            printf("BtcMessageSignErrorMessage=%s\r\n", result->error_message);
+        }
+        if (result->error_code == 0 && result->data != NULL) {
+            printf("BtcMessageSignatureUr=%s\r\n", result->data);
+        }
+        free_ur_encode_result(result);
+    }
+    free_ur_parse_result(request);
+    printf("BtcMessageSignDone=1\r\n");
+}
+
+static void RustTestSignDynamicEthBatch(int argc, char *argv[])
+{
+    VALUE_CHECK(argc, 2);
+
+    uint8_t accountIndex = 0;
+    int32_t ret = VerifyPasswordAndLogin(&accountIndex, argv[0]);
+    if (ret != SUCCESS_CODE) {
+        printf("EthBatchSign=%d,accountIndex=%d,status=login_error\r\n", ret, accountIndex);
+        printf("EthBatchSignDone=1\r\n");
+        return;
+    }
+
+    URParseResult *request = parse_ur(argv[1]);
+    if (request == NULL || request->error_code != 0 || request->data == NULL || request->ur_type != EthBatchSignRequest) {
+        uint32_t errorCode = request == NULL ? ERR_GENERAL_FAIL : request->error_code;
+        printf("EthBatchSign=%d,accountIndex=%d,status=parse_error\r\n", (int)errorCode, accountIndex);
+        if (request != NULL && request->error_message != NULL) {
+            printf("EthBatchSignErrorMessage=%s\r\n", request->error_message);
+        }
+        if (request != NULL) {
+            free_ur_parse_result(request);
+        }
+        printf("EthBatchSignDone=1\r\n");
+        return;
+    }
+
+    uint8_t masterFingerprint[4] = {0};
+    GetMasterFingerPrint(masterFingerprint);
+    char *xpub = GetCurrentAccountPublicKey(XPUB_TYPE_ETH_BIP44_STANDARD);
+    PtrT_TransactionParseResult_DisplayETHBatchTx parsed = xpub == NULL ? NULL :
+        eth_check_then_parse_batch_tx(request->data, masterFingerprint, sizeof(masterFingerprint), xpub);
+    if (parsed == NULL || parsed->error_code != 0 || parsed->data == NULL) {
+        uint32_t errorCode = parsed == NULL ? ERR_GENERAL_FAIL : parsed->error_code;
+        printf("EthBatchSign=%d,accountIndex=%d,status=validation_error\r\n", (int)errorCode, accountIndex);
+        if (parsed != NULL && parsed->error_message != NULL) {
+            printf("EthBatchSignErrorMessage=%s\r\n", parsed->error_message);
+        }
+        if (parsed != NULL) {
+            free_TransactionParseResult_DisplayETHBatchTx(parsed);
+        }
+        free_ur_parse_result(request);
+        printf("EthBatchSignDone=1\r\n");
+        return;
+    }
+    free_TransactionParseResult_DisplayETHBatchTx(parsed);
+
+    uint8_t seed[64] = {0};
+    int seedLen = GetMnemonicType() == MNEMONIC_TYPE_BIP39 ? sizeof(seed) : GetCurrentAccountEntropyLen();
+    ret = GetAccountSeed(accountIndex, seed, argv[0]);
+    if (ret != SUCCESS_CODE) {
+        printf("EthBatchSign=%d,accountIndex=%d,status=seed_error\r\n", ret, accountIndex);
+        free_ur_parse_result(request);
+        printf("EthBatchSignDone=1\r\n");
+        return;
+    }
+
+    UREncodeResult *result = eth_sign_batch_tx(request->data, seed, seedLen);
+    memset_s(seed, sizeof(seed), 0, sizeof(seed));
+    if (result == NULL) {
+        printf("EthBatchSign=%d,accountIndex=%d,status=sign_error\r\n", ERR_GENERAL_FAIL, accountIndex);
+    } else {
+        printf("EthBatchSign=%d,accountIndex=%d,status=%s\r\n",
+               result->error_code,
+               accountIndex,
+               result->error_code == 0 ? "signed" : "sign_error");
+        if (result->error_message != NULL) {
+            printf("EthBatchSignErrorMessage=%s\r\n", result->error_message);
+        }
+        if (result->error_code == 0 && result->data != NULL) {
+            PrintAllURFragments(result);
+            result = NULL;
+        }
+        if (result != NULL) {
+            free_ur_encode_result(result);
+        }
+    }
+    free_ur_parse_result(request);
+    printf("EthBatchSignDone=1\r\n");
+}
+
 static void RustTestGetAddressLTCSucceed(int argc, char *argv[])
 {
     printf("RustTestGetAddressLTCSucceed\r\n");
@@ -2520,6 +2743,22 @@ static void RustGetConnectKeystoneNexusUR(int argc, char *argv[])
         printf("error_message is %s\r\n", ur->error_message);
     }
     free_ur_encode_result(ur);
+}
+
+static void RustGetConnectOkxUR(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+    printf("RustGetConnectOkxUR\r\n");
+    PrintAllURFragments(GuiGetOkxWalletData());
+}
+
+static void RustGetConnectBackpackUR(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+    printf("RustGetConnectBackpackUR\r\n");
+    PrintAllURFragments(GuiGetBackpackData());
 }
 
 static void RustTestKeyDerivation(int argc, char *argv[])
