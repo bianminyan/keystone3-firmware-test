@@ -68,6 +68,7 @@ static void *command_server_main(void *arg);
 static void start_command_server(void);
 static bool simulator_dispatch_command(char *command);
 static void simulator_process_pending_command(void);
+static void simulator_print_ur_result(UREncodeResult *ur);
 #endif
 
 struct URParseResult *test_get_eth_sign_request(void);
@@ -395,6 +396,227 @@ static void simulator_migration_test(int argc, char *argv[])
 #endif
 }
 
+static void simulator_sign_dynamic_psbt(int argc, char *argv[])
+{
+    if (argc != 2) {
+        printf("input err!\r\n");
+        return;
+    }
+
+    uint8_t account_index = 0;
+    int32_t ret = VerifyPasswordAndLogin(&account_index, argv[0]);
+    if (ret != SUCCESS_CODE) {
+        printf("BtcPsbtSign=%d,accountIndex=%d,status=login_error\r\n", ret, account_index);
+        printf("BtcPsbtSignDone=1\r\n");
+        return;
+    }
+
+    URParseResult *request = parse_ur(argv[1]);
+    if (request == NULL || request->error_code != 0 || request->data == NULL) {
+        int32_t error_code = request == NULL ? ERR_GENERAL_FAIL : request->error_code;
+        printf("BtcPsbtSign=%d,accountIndex=%d,status=parse_error\r\n", error_code, account_index);
+        if (request != NULL && request->error_message != NULL) {
+            printf("BtcPsbtSignErrorMessage=%s\r\n", request->error_message);
+        }
+        if (request != NULL) {
+            free_ur_parse_result(request);
+        }
+        printf("BtcPsbtSignDone=1\r\n");
+        return;
+    }
+
+    uint8_t seed[64] = {0};
+    uint32_t seed_len = GetMnemonicType() == MNEMONIC_TYPE_BIP39 ? sizeof(seed) : GetCurrentAccountEntropyLen();
+    ret = GetAccountSeed(account_index, seed, argv[0]);
+    if (ret != SUCCESS_CODE) {
+        printf("BtcPsbtSign=%d,accountIndex=%d,status=seed_error\r\n", ret, account_index);
+        free_ur_parse_result(request);
+        printf("BtcPsbtSignDone=1\r\n");
+        return;
+    }
+
+    uint8_t master_fingerprint[4] = {0};
+    GetMasterFingerPrint(master_fingerprint);
+    UREncodeResult *result = btc_sign_psbt_unlimited(
+        request->data,
+        seed,
+        seed_len,
+        master_fingerprint,
+        sizeof(master_fingerprint)
+    );
+    memset_s(seed, sizeof(seed), 0, sizeof(seed));
+
+    if (result == NULL) {
+        printf("BtcPsbtSign=%d,accountIndex=%d,status=sign_error\r\n", ERR_GENERAL_FAIL, account_index);
+    } else {
+        printf("BtcPsbtSign=%d,accountIndex=%d,status=%s\r\n",
+               result->error_code,
+               account_index,
+               result->error_code == 0 ? "signed" : "sign_error");
+        if (result->error_message != NULL) {
+            printf("BtcPsbtSignErrorMessage=%s\r\n", result->error_message);
+        }
+        if (result->error_code == 0 && result->data != NULL) {
+            printf("BtcPsbtSignedUr=%s\r\n", result->data);
+        }
+        free_ur_encode_result(result);
+    }
+    free_ur_parse_result(request);
+    printf("BtcPsbtSignDone=1\r\n");
+}
+
+static void simulator_sign_dynamic_btc_message(int argc, char *argv[])
+{
+    if (argc != 2) {
+        printf("input err!\r\n");
+        return;
+    }
+
+    uint8_t account_index = 0;
+    int32_t ret = VerifyPasswordAndLogin(&account_index, argv[0]);
+    if (ret != SUCCESS_CODE) {
+        printf("BtcMessageSign=%d,accountIndex=%d,status=login_error\r\n", ret, account_index);
+        printf("BtcMessageSignDone=1\r\n");
+        return;
+    }
+
+    URParseResult *request = parse_ur(argv[1]);
+    if (request == NULL || request->error_code != 0 || request->data == NULL || request->ur_type != BtcSignRequest) {
+        int32_t error_code = request == NULL ? ERR_GENERAL_FAIL : request->error_code;
+        printf("BtcMessageSign=%d,accountIndex=%d,status=parse_error\r\n", error_code, account_index);
+        if (request != NULL && request->error_message != NULL) {
+            printf("BtcMessageSignErrorMessage=%s\r\n", request->error_message);
+        }
+        if (request != NULL) {
+            free_ur_parse_result(request);
+        }
+        printf("BtcMessageSignDone=1\r\n");
+        return;
+    }
+
+    uint8_t seed[64] = {0};
+    uint32_t seed_len = GetMnemonicType() == MNEMONIC_TYPE_BIP39 ? sizeof(seed) : GetCurrentAccountEntropyLen();
+    ret = GetAccountSeed(account_index, seed, argv[0]);
+    if (ret != SUCCESS_CODE) {
+        printf("BtcMessageSign=%d,accountIndex=%d,status=seed_error\r\n", ret, account_index);
+        free_ur_parse_result(request);
+        printf("BtcMessageSignDone=1\r\n");
+        return;
+    }
+
+    uint8_t master_fingerprint[4] = {0};
+    GetMasterFingerPrint(master_fingerprint);
+    UREncodeResult *result = btc_sign_msg(
+        request->data,
+        seed,
+        seed_len,
+        master_fingerprint,
+        sizeof(master_fingerprint)
+    );
+    memset_s(seed, sizeof(seed), 0, sizeof(seed));
+
+    if (result == NULL) {
+        printf("BtcMessageSign=%d,accountIndex=%d,status=sign_error\r\n", ERR_GENERAL_FAIL, account_index);
+    } else {
+        printf("BtcMessageSign=%d,accountIndex=%d,status=%s\r\n",
+               result->error_code,
+               account_index,
+               result->error_code == 0 ? "signed" : "sign_error");
+        if (result->error_message != NULL) {
+            printf("BtcMessageSignErrorMessage=%s\r\n", result->error_message);
+        }
+        if (result->error_code == 0 && result->data != NULL) {
+            printf("BtcMessageSignatureUr=%s\r\n", result->data);
+        }
+        free_ur_encode_result(result);
+    }
+    free_ur_parse_result(request);
+    printf("BtcMessageSignDone=1\r\n");
+}
+
+static void simulator_sign_dynamic_eth_batch(int argc, char *argv[])
+{
+    if (argc != 2) {
+        printf("input err!\r\n");
+        return;
+    }
+
+    uint8_t account_index = 0;
+    int32_t ret = VerifyPasswordAndLogin(&account_index, argv[0]);
+    if (ret != SUCCESS_CODE) {
+        printf("EthBatchSign=%d,accountIndex=%d,status=login_error\r\n", ret, account_index);
+        printf("EthBatchSignDone=1\r\n");
+        return;
+    }
+
+    URParseResult *request = parse_ur(argv[1]);
+    if (request == NULL || request->error_code != 0 || request->data == NULL || request->ur_type != EthBatchSignRequest) {
+        int32_t error_code = request == NULL ? ERR_GENERAL_FAIL : request->error_code;
+        printf("EthBatchSign=%d,accountIndex=%d,status=parse_error\r\n", error_code, account_index);
+        if (request != NULL && request->error_message != NULL) {
+            printf("EthBatchSignErrorMessage=%s\r\n", request->error_message);
+        }
+        if (request != NULL) {
+            free_ur_parse_result(request);
+        }
+        printf("EthBatchSignDone=1\r\n");
+        return;
+    }
+
+    uint8_t master_fingerprint[4] = {0};
+    GetMasterFingerPrint(master_fingerprint);
+    char *xpub = GetCurrentAccountPublicKey(XPUB_TYPE_ETH_BIP44_STANDARD);
+    PtrT_TransactionParseResult_DisplayETHBatchTx parsed = xpub == NULL ? NULL :
+        eth_check_then_parse_batch_tx(request->data, master_fingerprint, sizeof(master_fingerprint), xpub);
+    if (parsed == NULL || parsed->error_code != 0 || parsed->data == NULL) {
+        int32_t error_code = parsed == NULL ? ERR_GENERAL_FAIL : parsed->error_code;
+        printf("EthBatchSign=%d,accountIndex=%d,status=validation_error\r\n", error_code, account_index);
+        if (parsed != NULL && parsed->error_message != NULL) {
+            printf("EthBatchSignErrorMessage=%s\r\n", parsed->error_message);
+        }
+        if (parsed != NULL) {
+            free_TransactionParseResult_DisplayETHBatchTx(parsed);
+        }
+        free_ur_parse_result(request);
+        printf("EthBatchSignDone=1\r\n");
+        return;
+    }
+    free_TransactionParseResult_DisplayETHBatchTx(parsed);
+
+    uint8_t seed[64] = {0};
+    uint32_t seed_len = GetMnemonicType() == MNEMONIC_TYPE_BIP39 ? sizeof(seed) : GetCurrentAccountEntropyLen();
+    ret = GetAccountSeed(account_index, seed, argv[0]);
+    if (ret != SUCCESS_CODE) {
+        printf("EthBatchSign=%d,accountIndex=%d,status=seed_error\r\n", ret, account_index);
+        free_ur_parse_result(request);
+        printf("EthBatchSignDone=1\r\n");
+        return;
+    }
+
+    UREncodeResult *result = eth_sign_batch_tx(request->data, seed, seed_len);
+    memset_s(seed, sizeof(seed), 0, sizeof(seed));
+    if (result == NULL) {
+        printf("EthBatchSign=%d,accountIndex=%d,status=sign_error\r\n", ERR_GENERAL_FAIL, account_index);
+    } else {
+        printf("EthBatchSign=%d,accountIndex=%d,status=%s\r\n",
+               result->error_code,
+               account_index,
+               result->error_code == 0 ? "signed" : "sign_error");
+        if (result->error_message != NULL) {
+            printf("EthBatchSignErrorMessage=%s\r\n", result->error_message);
+        }
+        if (result->error_code == 0 && result->data != NULL) {
+            simulator_print_ur_result(result);
+            result = NULL;
+        }
+        if (result != NULL) {
+            free_ur_encode_result(result);
+        }
+    }
+    free_ur_parse_result(request);
+    printf("EthBatchSignDone=1\r\n");
+}
+
 static bool parse_optional_eth_path(int argc, char *argv[], int path_arg_index, char **path)
 {
     *path = "m/44'/60'/0'/0/0";
@@ -621,6 +843,16 @@ static void simulator_connect_keystone_nexus(void)
         ur = GuiGetKeystoneConnectWalletDataBip39();
     }
     simulator_print_ur_result(ur);
+}
+
+static void simulator_connect_okx(void)
+{
+    simulator_print_ur_result(GuiGetOkxWalletData());
+}
+
+static void simulator_connect_backpack(void)
+{
+    simulator_print_ur_result(GuiGetBackpackData());
 }
 
 static void simulator_eth_typed_data_sign(int argc, char *argv[])
@@ -888,6 +1120,15 @@ static void simulator_address_test(int argc, char *argv[])
 
 static bool simulator_dispatch_command(char *command)
 {
+    if (dispatch_prefixed_command(command, "rust test sign psbt dynamic:", simulator_sign_dynamic_psbt)) {
+        return true;
+    }
+    if (dispatch_prefixed_command(command, "rust test sign btc message dynamic:", simulator_sign_dynamic_btc_message)) {
+        return true;
+    }
+    if (dispatch_prefixed_command(command, "rust test sign eth batch dynamic:", simulator_sign_dynamic_eth_batch)) {
+        return true;
+    }
     if (dispatch_prefixed_command(command, "device settings test:", DeviceSettingsTest)) {
         return true;
     }
@@ -941,6 +1182,14 @@ static bool simulator_dispatch_command(char *command)
     }
     if (strcmp(command, "rust test connect keystone nexus") == 0) {
         simulator_connect_keystone_nexus();
+        return true;
+    }
+    if (strcmp(command, "rust test connect okx") == 0) {
+        simulator_connect_okx();
+        return true;
+    }
+    if (strcmp(command, "rust test connect backpack") == 0) {
+        simulator_connect_backpack();
         return true;
     }
     return false;
