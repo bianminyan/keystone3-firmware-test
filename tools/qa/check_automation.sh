@@ -34,6 +34,7 @@ check_marker ui_simulator/main.c '"rust test connect eternl "'
 check_marker ui_simulator/main.c '"rust test connect wander: "'
 check_marker ui_simulator/main.c '"rust test connect keplr: "'
 check_marker ui_simulator/main.c '"rust test connect mintscan: "'
+check_marker ui_simulator/main.c "simulator_derive_arweave_public_key"
 check_marker rust/rust_c/Cargo.toml 'simulator-multi-coins = ["test_cmd", "simulator", "multi-coins"]'
 check_marker src/device_settings.c 'strcmp(argv[0], "automation")'
 check_marker src/managers/keystore.c 'strcmp(argv[0], "save_new_entropy_auto")'

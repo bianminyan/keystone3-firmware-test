@@ -30,6 +30,7 @@ extern bool g_reboot;
 #include "keystore.h"
 #include "librust_c.h"
 #include "log_print.h"
+#include "rsa.h"
 #include "secret_cache.h"
 #include "se_manager.h"
 #include "user_memory.h"
@@ -817,6 +818,58 @@ static void simulator_connect_eternl(int argc, char *argv[])
     simulator_print_ur_result(GuiGetADADataByDerivationType(path_index, 0));
 }
 
+static SimpleResponse_c_char *simulator_derive_arweave_public_key(
+    uint8_t account_index,
+    const char *password,
+    int32_t *error_code)
+{
+    uint8_t seed[64] = {0};
+    SimpleResponse_u8 *secret = NULL;
+    SimpleResponse_c_char *public_key = NULL;
+    int32_t ret = GetAccountSeed(account_index, (uint8_t *)seed, (char *)password);
+
+    if (ret == SUCCESS_CODE) {
+        uint32_t seed_len = GetMnemonicType() == MNEMONIC_TYPE_BIP39
+            ? sizeof(seed)
+            : GetCurrentAccountEntropyLen();
+        secret = generate_arweave_secret(seed, seed_len);
+        if (secret == NULL || secret->error_code != SUCCESS_CODE || secret->data == NULL) {
+            ret = secret != NULL ? secret->error_code : ERR_GENERAL_FAIL;
+        } else {
+            public_key = generate_rsa_public_key(
+                secret->data,
+                SPI_FLASH_RSA_PRIME_SIZE,
+                secret->data + SPI_FLASH_RSA_PRIME_SIZE,
+                SPI_FLASH_RSA_PRIME_SIZE
+            );
+            if (public_key == NULL || public_key->error_code != SUCCESS_CODE || public_key->data == NULL) {
+                ret = public_key != NULL ? public_key->error_code : ERR_GENERAL_FAIL;
+                if (public_key != NULL) {
+                    free_simple_response_c_char(public_key);
+                    public_key = NULL;
+                }
+            }
+        }
+    }
+
+    memset_s(seed, sizeof(seed), 0, sizeof(seed));
+    if (secret != NULL) {
+        if (secret->data != NULL) {
+            memset_s(
+                secret->data,
+                SPI_FLASH_RSA_ORIGIN_DATA_SIZE,
+                0,
+                SPI_FLASH_RSA_ORIGIN_DATA_SIZE
+            );
+        }
+        free_simple_response_u8(secret);
+    }
+    if (error_code != NULL) {
+        *error_code = ret;
+    }
+    return public_key;
+}
+
 static void simulator_connect_wander(int argc, char *argv[])
 {
     if (argc != 1) {
@@ -834,15 +887,26 @@ static void simulator_connect_wander(int argc, char *argv[])
         return;
     }
 
-    SecretCacheSetPassword(argv[0]);
-    ret = RsaGenerateKeyPair(false, true, NULL);
-    if (ret != SUCCESS_CODE) {
-        printf("WanderConnect=%d,accountIndex=%d,status=ar_setup_error\r\n", ret, account_index);
+    SimpleResponse_c_char *public_key = simulator_derive_arweave_public_key(
+        account_index,
+        argv[0],
+        &ret
+    );
+    if (ret != SUCCESS_CODE || public_key == NULL) {
+        printf("WanderConnect=%d,accountIndex=%d,status=derive_error\r\n", ret, account_index);
         return;
     }
 
+    uint8_t mfp[4] = {0};
+    GetMasterFingerPrint(mfp);
+    UREncodeResult *ur = get_connect_arconnect_wallet_ur_from_xpub(
+        mfp,
+        sizeof(mfp),
+        public_key->data
+    );
+    free_simple_response_c_char(public_key);
     printf("WanderConnect=0,accountIndex=%d,status=ready\r\n", account_index);
-    simulator_print_ur_result(GuiGetWanderData());
+    simulator_print_ur_result(ur);
 }
 
 static void simulator_connect_cosmos_wallet(int argc, char *argv[])
@@ -1035,13 +1099,25 @@ static void simulator_address_arweave(int argc, char *argv[])
         printf("input err!\r\n");
         return;
     }
-    (void)argv[1];
-    (void)argv[2];
-    char *xpub = GetCurrentAccountPublicKey(XPUB_TYPE_ARWEAVE);
-    if (!simulator_validate_xpub(xpub)) {
+    uint32_t account_index;
+    if (sscanf(argv[1], "%u", &account_index) != 1 || account_index > 2) {
+        printf("input err!\r\n");
         return;
     }
-    simulator_print_address_result(arweave_get_address(xpub));
+    int32_t ret = ERR_GENERAL_FAIL;
+    SimpleResponse_c_char *public_key = simulator_derive_arweave_public_key(
+        (uint8_t)account_index,
+        argv[2],
+        &ret
+    );
+    if (ret != SUCCESS_CODE || public_key == NULL) {
+        printf("address error_code: %d\r\n", ret);
+        printf("address error_message: ar derivation failed\r\n");
+        return;
+    }
+    SimpleResponse_c_char *address = arweave_get_address(public_key->data);
+    free_simple_response_c_char(public_key);
+    simulator_print_address_result(address);
 }
 
 static void simulator_address_solana(int argc, char *argv[])
