@@ -1391,6 +1391,7 @@ static void MigrationTestFunc(int argc, char *argv[])
         if (ret == SUCCESS_CODE) {
             SecretCacheSetPassword(argv[1]);
             ret = RsaGenerateKeyPair(false, true, NULL);
+            ClearSecretCache();
         }
         printf("MigrationArSetup=%d,accountIndex=%d\r\n", ret, accountIndex);
 #else
