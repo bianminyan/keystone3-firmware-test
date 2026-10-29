@@ -313,7 +313,7 @@ const static UartTestCmdItem_t g_uartTestCmdTable[] = {
     {"rust test connect okx", RustGetConnectOkxUR},
     {"rust test connect backpack", RustGetConnectBackpackUR},
     {"rust test connect nightly", RustGetConnectNightlyUR},
-    {"rust test connect eternl", RustGetConnectEternlUR},
+    {"rust test connect eternl:", RustGetConnectEternlUR},
     {"rust test connect wander:", RustGetConnectWanderUR},
     {"rust test connect keplr:", RustGetConnectKeplrByIndexUR},
     {"rust test connect mintscan:", RustGetConnectMintscanByIndexUR},
@@ -384,6 +384,14 @@ bool CompareAndRunTestCmd(const char *inputString)
     if (strncmp(inputString, solflareCmd, compareLen) == 0) {
         argv[0] = (char *)inputString + compareLen;
         RustGetConnectSolflareUR(1, argv);
+        return true;
+    }
+
+    const char *eternlCmd = "rust test connect eternl ";
+    compareLen = strlen(eternlCmd);
+    if (strncmp(inputString, eternlCmd, compareLen) == 0) {
+        argv[0] = (char *)inputString + compareLen;
+        RustGetConnectEternlUR(1, argv);
         return true;
     }
 
