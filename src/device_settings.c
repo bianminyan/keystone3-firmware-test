@@ -502,7 +502,7 @@ int32_t WipeDevice(void)
     SimulatorWipeStorage();
     SetSetupStep(DEFAULT_SETUP_STEP);
     SaveDeviceSettingsSync();
-    return;
+    return SUCCESS_CODE;
 #endif
     // reset all account address index in receive page
     {

@@ -260,13 +260,6 @@ int32_t Gd25FlashBlockErase(uint32_t addr)
         }
     }
 
-    for (int i = 0; i < sizeof(g_simulatorDataRegions) / sizeof(g_simulatorDataRegions[0]); i++) {
-        uint32_t regionStart = g_simulatorDataRegions[i].addr;
-        if (regionStart >= blockStart && regionStart < blockEnd) {
-            ClearSimulatorStoragePath(g_simulatorDataRegions[i].path);
-        }
-    }
-
     return SUCCESS_CODE;
 }
 
@@ -282,12 +275,6 @@ int32_t SimulatorWipeStorage(void)
 
     for (int i = 0; i < sizeof(g_simulatorPathMap) / sizeof(g_simulatorPathMap[0]); i++) {
         if (ClearSimulatorStoragePath(g_simulatorPathMap[i].path) != SUCCESS_CODE) {
-            ret = ERR_GENERAL_FAIL;
-        }
-    }
-
-    for (int i = 0; i < sizeof(g_simulatorDataRegions) / sizeof(g_simulatorDataRegions[0]); i++) {
-        if (ClearSimulatorStoragePath(g_simulatorDataRegions[i].path) != SUCCESS_CODE) {
             ret = ERR_GENERAL_FAIL;
         }
     }
