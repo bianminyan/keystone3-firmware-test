@@ -428,6 +428,18 @@ else()
         target_link_libraries(${PROJECT_NAME} PRIVATE "-framework CoreGraphics")
         
         set(CODESIGN_IDENTITY "keystone simulator")
+        execute_process(
+            COMMAND security find-identity -v -p codesigning
+            OUTPUT_VARIABLE AVAILABLE_CODESIGN_IDENTITIES
+            ERROR_QUIET
+        )
+        if(NOT AVAILABLE_CODESIGN_IDENTITIES MATCHES "keystone simulator")
+            message(WARNING
+                "Code-signing identity 'keystone simulator' is unavailable; "
+                "using ad-hoc signing for the simulator"
+            )
+            set(CODESIGN_IDENTITY "-")
+        endif()
         set(ENTITLEMENTS_FILE "${CMAKE_SOURCE_DIR}/entitlements.plist")
         set(CODESIGN_COMMAND codesign --force --options runtime --entitlements ${ENTITLEMENTS_FILE} --sign "${CODESIGN_IDENTITY}")
         add_custom_command(TARGET ${PROJECT_NAME}
