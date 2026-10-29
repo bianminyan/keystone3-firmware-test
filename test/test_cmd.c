@@ -159,6 +159,9 @@ static void RustGetConnectKeplrUR(int argc, char *argv[]);
 static void RustGetConnectXrpToolKitUR(int argc, char *argv[]);
 static void RustTestMemory(int argc, char *argv[]);
 static void RustGetConnectMetaMaskUR(int argc, char *argv[]);
+static void RustGetConnectMetaMaskLedgerLiveUR(int argc, char *argv[]);
+static void RustGetConnectMetaMaskLedgerLegacyUR(int argc, char *argv[]);
+static void RustGetConnectBtcUR(int argc, char *argv[]);
 static void RustGetConnectSolflareUR(int argc, char *argv[]);
 static void RustGetConnectKeystoneNexusUR(int argc, char *argv[]);
 static void RustGetConnectOkxUR(int argc, char *argv[]);
@@ -302,6 +305,9 @@ const static UartTestCmdItem_t g_uartTestCmdTable[] = {
     {"rust test get connect keplr wallet ur", RustGetConnectKeplrUR},
     {"rust test get connect xrp toolkit ur", RustGetConnectXrpToolKitUR},
     {"rust test connect metamask", RustGetConnectMetaMaskUR},
+    {"rust test connect metamask ledger_live", RustGetConnectMetaMaskLedgerLiveUR},
+    {"rust test connect metamask ledger_legacy", RustGetConnectMetaMaskLedgerLegacyUR},
+    {"rust test connect btc", RustGetConnectBtcUR},
     {"rust test connect solflare:", RustGetConnectSolflareUR},
     {"rust test connect keystone nexus", RustGetConnectKeystoneNexusUR},
     {"rust test connect okx", RustGetConnectOkxUR},
@@ -2751,47 +2757,42 @@ static void RustGetConnectKeplrUR(int argc, char *argv[])
 
 static void RustGetConnectXrpToolKitUR(int argc, char *argv[])
 {
+    (void)argc;
+    (void)argv;
     printf("RustGetConnectXrpToolKitUR\r\n");
-    char *hd_path = "44'/144'/0'/0/0";
-    char *root_x_pub = "xpub6CFKyZTfzj3cyeRLUDKwQQ5s1tqTTdVgywKMVkrB2i1taGFbhazkxDzWVsfBHZpv7rg6qpDBGYR5oA8iazEfa44CdQkkknPFHJ7YCzncCS9";
-    char *root_path = "44'/144'/0'";
-    UREncodeResult *ur = get_connect_xrp_toolkit_ur(hd_path, root_x_pub, root_path);
-    printf("encode ur\r\n");
-    if (ur->error_code == 0) {
-        printf("XrpToolkit is_multi_part is %d\r\n", ur->is_multi_part);
-        printf("XrpToolkit data is %s\r\n", ur->data);
-    } else {
-        printf("XrpToolkit error_code is %s\r\n", ur->error_code);
-        printf("XrpToolkit error_message is %s\r\n", ur->error_message);
-    }
-    free_ur_encode_result(ur);
-    PrintRustMemoryStatus();
-    printf("FreeHeapSize = %d\n", xPortGetFreeHeapSize());
+    PrintAllURFragments(GuiGetXrpToolkitDataByIndex(0));
 }
 
 static void RustGetConnectMetaMaskUR(int argc, char *argv[])
 {
-    uint8_t mfp[4] = {0x75, 0x7e, 0x6f, 0xc9};
-    struct ExtendedPublicKey key0 = {"", "xpub6C8zKiZZ8V75XynjThhvdjy7hbnJHAFkhW7jL9EvBCsRFSRov4sXUJATU6CqUF9BxAbryiU3eghdHDLbwgF8ASE4AwHTzkLHaHsbwiCnkHc"};
-    struct ExtendedPublicKey key1 = {"", "xpub6C8zKiZZ8V75aXTgYAswqCgYUHeBYg1663a4Ri6zdJ4GW58r67Kmj4Fr8pbBK9usq45o8iQ8dBM75o67ct1M38yeb6RhFTWBxiYeq8Kg84Z"};
-    struct ExtendedPublicKey key2 = {"", "xpub6C8zKiZZ8V75e1B4yeB8hpw9itcx9aKWvxfWH5jmX9xf1YeqaUM1zotxXg2pX8Jin4NUS7L1KKGTUuuCr1kMf2ox6c5ebQ14XTZa9seWuCW"};
-    struct ExtendedPublicKey key3 = {"", "xpub6C8zKiZZ8V75gaav5YzPCb19oSARjXNWHrBRtoQA7Fx7uMSXSnkgCrwviTPqHswrP5JSxzMshS2jetwo7V9sR3mbjMqr3bukHy3She7adEX"};
-    struct ExtendedPublicKey key4 = {"", "xpub6C8zKiZZ8V75hek8cS7byAQtfQBWov8osxA4bREa8JLvXBkmynFd8fttUVX723ZCHvVaYnJMgQsE35E7JBQr5eqYSwYwGBYa2cjFXYi9Z6u"};
-    struct ExtendedPublicKey key5 = {"", "xpub6C8zKiZZ8V75nabUFPJEspYfLqsJRqbmQ5LBvUy8nDRzj9SejBCGCKbAT127LQjKQVoFasayzam5ozijG3f2kCf7uZQrPBQG4zAfSFJ6c2Z"};
-    struct ExtendedPublicKey key6 = {"", "xpub6C8zKiZZ8V75phnqeXtW6Qm8duCmHXUE18PkYHHJqmCPmcf5iEdqLPfSVNsPKm7HsUGPorG5KSxmWc3nAkfbhmWN7PuqFzpYbmHocAiqMH1"};
-    struct ExtendedPublicKey key7 = {"", "xpub6C8zKiZZ8V75qcUxEpYCXebRF23VMcJqcWdCSvZjcfMWYU4dcQnKZ8LiXPXBwYioYc62wC6F1B6UhnWYtX1Ss9ZfT3dC6e63Bzfq4AHULQh"};
-    struct ExtendedPublicKey key8 = {"", "xpub6C8zKiZZ8V75tgxbNbnWfAbC63k1s6tQvfpYLNLaEzq3aUhhZu798JUyMJVL3fNK2CcF2vKauyBdF73TxjLyfU9Cfb4SLKxLDr3SUVVSAQL"};
-    struct ExtendedPublicKey key9 = {"", "xpub6C8zKiZZ8V75xAiMExpbA2YBTvgC3o5sLkHjv6jm1zdWrAQ2pCq9CUnGQgBiVd2xrUh2yxBSUccXguJgdJ3SdnJvhAD5KGhWa6fjKsyt8Wy"};
-    ExtendedPublicKey keys[] = {key0, key1, key2, key3, key4, key5, key6, key7, key8, key9};
-    PtrT_CSliceFFI_ExtendedPublicKey public_keys = SRAM_MALLOC(sizeof(CSliceFFI_ExtendedPublicKey));
-    public_keys->size = 10;
-    public_keys->data = keys;
-    PtrT_UREncodeResult ur = get_connect_metamask_ur(mfp, sizeof(mfp), LedgerLive, public_keys, GetWalletName());
-    printf("encode ur\r\n");
-    printf("is_multi_part is %d\r\n", ur->is_multi_part);
-    printf("data is %s\r\n", ur->data);
-    printf("error_code is %d\r\n", ur->error_code);
-    printf("error_message is %s\r\n", ur->error_message);
+    (void)argc;
+    (void)argv;
+    printf("RustGetConnectMetaMaskUR,type=Bip44Standard\r\n");
+    PrintAllURFragments(GetUnlimitedMetamaskDataForAccountType(Bip44Standard));
+}
+
+static void RustGetConnectMetaMaskLedgerLiveUR(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+    printf("RustGetConnectMetaMaskUR,type=LedgerLive\r\n");
+    PrintAllURFragments(GetUnlimitedMetamaskDataForAccountType(LedgerLive));
+}
+
+static void RustGetConnectMetaMaskLedgerLegacyUR(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+    printf("RustGetConnectMetaMaskUR,type=LedgerLegacy\r\n");
+    PrintAllURFragments(GetUnlimitedMetamaskDataForAccountType(LedgerLegacy));
+}
+
+static void RustGetConnectBtcUR(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+    printf("RustGetConnectBtcUR\r\n");
+    PrintAllURFragments(GuiGetStandardBtcData());
 }
 
 static void RustGetConnectSolflareUR(int argc, char *argv[])
@@ -2959,13 +2960,14 @@ static void testEthTx(int argc, char *argv[])
     }
     sscanf(argv[0], "%d", &index);
     URParseResult *result = test_get_eth_sign_request_for_c_path(path);
-    char *xpub = "xpub6ELHKXNimKbxMCytPh7EdC2QXx46T9qLDJWGnTraz1H9kMMFdcduoU69wh9cxP12wDxqAAfbaESWGYt5rREsX1J8iR2TEunvzvddduAPYcY";
+    char *xpub = GetCurrentAccountPublicKey(XPUB_TYPE_ETH_BIP44_STANDARD);
     TransactionParseResult_DisplayETH *eth = eth_parse(result->data, xpub);
     printf("parse result: \r\n");
     printf("parse result overview from: %s\r\n", eth->data->overview->from);
     printf("parse result overview to: %s\r\n", eth->data->overview->to);
     printf("parse result overview max txn fee: %s\r\n", eth->data->overview->max_txn_fee);
     printf("parse result overview value: %s\r\n", eth->data->overview->value);
+    free_TransactionParseResult_DisplayETH(eth);
     uint8_t seed[64];
     int len = GetMnemonicType() == MNEMONIC_TYPE_BIP39 ? sizeof(seed) : GetCurrentAccountEntropyLen();
     GetAccountSeed(index, seed, argv[1]);
@@ -2973,6 +2975,9 @@ static void testEthTx(int argc, char *argv[])
     printf("sign result error_code: %d\r\n", sign_result->error_code);
     printf("sign result error_message: %s\r\n", sign_result->error_message);
     printf("sign result data: %s\r\n", sign_result->data);
+    memset_s(seed, sizeof(seed), 0, sizeof(seed));
+    free_ur_encode_result(sign_result);
+    free_ur_parse_result(result);
 }
 
 static void RustTestEthEip1559Tx(int argc, char *argv[])
@@ -2992,6 +2997,7 @@ static void RustTestEthEip1559Tx(int argc, char *argv[])
     printf("sign result error_code: %d\r\n", sign_result->error_code);
     printf("sign result error_message: %s\r\n", sign_result->error_message);
     printf("sign result data: %s\r\n", sign_result->data);
+    memset_s(seed, sizeof(seed), 0, sizeof(seed));
     free_ur_encode_result(sign_result);
     free_ur_parse_result(result);
 }
@@ -3013,6 +3019,7 @@ static void RustTestEthTypedData(int argc, char *argv[])
     printf("sign result error_code: %d\r\n", sign_result->error_code);
     printf("sign result error_message: %s\r\n", sign_result->error_message);
     printf("sign result data: %s\r\n", sign_result->data);
+    memset_s(seed, sizeof(seed), 0, sizeof(seed));
     free_ur_encode_result(sign_result);
     free_ur_parse_result(result);
 }
@@ -3474,7 +3481,7 @@ static void RustParseEthPersonalMessage(int argc, char *argv[])
     }
     sscanf(argv[0], "%d", &index);
     URParseResult *result = test_get_eth_sign_request_for_personal_message_c_path(path);
-    char *xpub = "xpub6ELHKXNimKbxMCytPh7EdC2QXx46T9qLDJWGnTraz1H9kMMFdcduoU69wh9cxP12wDxqAAfbaESWGYt5rREsX1J8iR2TEunvzvddduAPYcY";
+    char *xpub = GetCurrentAccountPublicKey(XPUB_TYPE_ETH_BIP44_STANDARD);
 
     PtrT_TransactionParseResult_DisplayETHPersonalMessage eth = eth_parse_personal_message(result->data, xpub);
 
@@ -3492,6 +3499,7 @@ static void RustParseEthPersonalMessage(int argc, char *argv[])
     printf("sign result error_message: %s\r\n", sign_result->error_message);
     printf("sign result data: %s\r\n", sign_result->data);
 
+    memset_s(seed, sizeof(seed), 0, sizeof(seed));
     free_ur_encode_result(sign_result);
     free_ur_parse_result(result);
 
