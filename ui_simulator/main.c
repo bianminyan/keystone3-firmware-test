@@ -815,7 +815,7 @@ static void simulator_connect_eternl(int argc, char *argv[])
         return;
     }
 
-    simulator_print_ur_result(GuiGetADADataByDerivationType(path_index, 0));
+    simulator_print_ur_result(GuiGetEternlDataByDerivationType(path_index));
 }
 
 static SimpleResponse_c_char *simulator_derive_arweave_public_key(

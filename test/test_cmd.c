@@ -2746,7 +2746,7 @@ static void RustGetConnectEternlUR(int argc, char *argv[])
     }
 
     printf("RustGetConnectEternlUR,pathIndex=%d\r\n", pathIndex);
-    PrintAllURFragments(GuiGetADADataByDerivationType(pathIndex, 0));
+    PrintAllURFragments(GuiGetEternlDataByDerivationType(pathIndex));
 }
 
 static void RustGetConnectWanderUR(int argc, char *argv[])

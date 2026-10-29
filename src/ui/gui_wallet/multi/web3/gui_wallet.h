@@ -27,7 +27,7 @@ UREncodeResult *GuiGetXBullData(void);
 UREncodeResult *GuiGetBackpackData(void);
 UREncodeResult *GuiGetXrpToolkitDataByIndex(uint16_t index);
 UREncodeResult *GuiGetADADataByIndex(char *walletName);
-UREncodeResult *GuiGetADADataByDerivationType(uint32_t derivationType, uint32_t accountIndex);
+UREncodeResult *GuiGetEternlDataByDerivationType(uint32_t derivationType);
 UREncodeResult *GuiGetImTokenData(void);
 UREncodeResult *GuiGetThorWalletData(void);
 UREncodeResult *GuiGetKeystoneConnectWalletDataBip39(void);

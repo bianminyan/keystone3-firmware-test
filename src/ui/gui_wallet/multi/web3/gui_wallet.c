@@ -389,30 +389,57 @@ UREncodeResult *GuiGetPetraData(void)
     return urEncode;
 }
 
-UREncodeResult *GuiGetADADataByIndex(char *walletName)
+static UREncodeResult *GuiGetADADataByDerivationAccounts(
+    uint32_t derivationType,
+    const uint32_t *accountIndexes,
+    uint32_t accountCount)
 {
-    return GuiGetADADataByDerivationType(
-            GetConnectWalletPathIndex(walletName),
-            GetConnectWalletAccountIndex(walletName));
-}
-
-UREncodeResult *GuiGetADADataByDerivationType(uint32_t derivationType, uint32_t accountIndex)
-{
+    if (accountIndexes == NULL || accountCount == 0 || accountCount > 2) {
+        return NULL;
+    }
     uint8_t mfp[4] = {0};
     GetMasterFingerPrint(mfp);
-    char* xpub = GetCurrentAccountPublicKey(GetAdaXPubTypeByIndexAndDerivationType(
-            derivationType, accountIndex));
-    char path[BUFFER_SIZE_32] = {0};
-    snprintf(path, sizeof(path), "1852'/1815'/%u'", (unsigned int)accountIndex);
-    ExtendedPublicKey xpubs[1];
-    xpubs[0].path = path;
-    xpubs[0].xpub = xpub;
+    char paths[2][BUFFER_SIZE_32] = {{0}};
+    ExtendedPublicKey xpubs[2] = {0};
+    for (uint32_t i = 0; i < accountCount; i++) {
+        uint32_t accountIndex = accountIndexes[i];
+        snprintf(
+            paths[i],
+            sizeof(paths[i]),
+            "1852'/1815'/%u'",
+            (unsigned int)accountIndex
+        );
+        xpubs[i].path = paths[i];
+        xpubs[i].xpub = GetCurrentAccountPublicKey(
+            GetAdaXPubTypeByIndexAndDerivationType(derivationType, accountIndex)
+        );
+    }
     CSliceFFI_ExtendedPublicKey keys;
     keys.data = xpubs;
-    keys.size = 1;
+    keys.size = accountCount;
     char firmwareVersion[BUFFER_SIZE_32];
     GetSoftWareVersionNumber(firmwareVersion);
     return generate_key_derivation_ur(mfp, 4, &keys, firmwareVersion);
+}
+
+UREncodeResult *GuiGetADADataByIndex(char *walletName)
+{
+    uint32_t accountIndex = GetConnectWalletAccountIndex(walletName);
+    return GuiGetADADataByDerivationAccounts(
+        GetConnectWalletPathIndex(walletName),
+        &accountIndex,
+        1
+    );
+}
+
+UREncodeResult *GuiGetEternlDataByDerivationType(uint32_t derivationType)
+{
+    const uint32_t accountIndexes[] = {0, 8};
+    return GuiGetADADataByDerivationAccounts(
+        derivationType,
+        accountIndexes,
+        sizeof(accountIndexes) / sizeof(accountIndexes[0])
+    );
 }
 UREncodeResult *GuiGetKeplrDataByIndex(uint32_t index)
 {
