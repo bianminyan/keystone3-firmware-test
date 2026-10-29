@@ -166,6 +166,11 @@ static void RustGetConnectSolflareUR(int argc, char *argv[]);
 static void RustGetConnectKeystoneNexusUR(int argc, char *argv[]);
 static void RustGetConnectOkxUR(int argc, char *argv[]);
 static void RustGetConnectBackpackUR(int argc, char *argv[]);
+static void RustGetConnectNightlyUR(int argc, char *argv[]);
+static void RustGetConnectEternlUR(int argc, char *argv[]);
+static void RustGetConnectWanderUR(int argc, char *argv[]);
+static void RustGetConnectKeplrByIndexUR(int argc, char *argv[]);
+static void RustGetConnectMintscanByIndexUR(int argc, char *argv[]);
 static void RustTestGetAddressLTCSucceed(int argc, char *argv[]);
 static void RustTestGetAddressTronSucceed(int argc, char *argv[]);
 static void RustTestGetAddressSolanaSucceed(int argc, char *argv[]);
@@ -307,6 +312,11 @@ const static UartTestCmdItem_t g_uartTestCmdTable[] = {
     {"rust test connect keystone nexus", RustGetConnectKeystoneNexusUR},
     {"rust test connect okx", RustGetConnectOkxUR},
     {"rust test connect backpack", RustGetConnectBackpackUR},
+    {"rust test connect nightly", RustGetConnectNightlyUR},
+    {"rust test connect eternl", RustGetConnectEternlUR},
+    {"rust test connect wander:", RustGetConnectWanderUR},
+    {"rust test connect keplr:", RustGetConnectKeplrByIndexUR},
+    {"rust test connect mintscan:", RustGetConnectMintscanByIndexUR},
     {"rust test solana parse:", testSolanaParseTx},
     {"rust test xrp parse:", testXrpParseTx},
     {"rust test near get address:", testNearGetAddress},
@@ -2758,41 +2768,7 @@ static void RustGetConnectSolflareUR(int argc, char *argv[])
     }
 
     printf("solflare path_index is %d\r\n", pathIndex);
-    uint8_t mfp[4] = {0};
-    GetMasterFingerPrint(mfp);
-
-    ExtendedPublicKey keys[10];
-    PtrT_CSliceFFI_ExtendedPublicKey publicKeys = SRAM_MALLOC(sizeof(CSliceFFI_ExtendedPublicKey));
-    publicKeys->data = keys;
-    if (pathIndex == 0) {
-        publicKeys->size = 10;
-        for (int i = XPUB_TYPE_SOL_BIP44_0; i <= XPUB_TYPE_SOL_BIP44_9; i++) {
-            int keyIndex = i - XPUB_TYPE_SOL_BIP44_0;
-            keys[keyIndex].path = SRAM_MALLOC(BUFFER_SIZE_32);
-            snprintf_s(keys[keyIndex].path, BUFFER_SIZE_32, "m/44'/501'/%d'", keyIndex);
-            keys[keyIndex].xpub = GetCurrentAccountPublicKey(i);
-        }
-    } else if (pathIndex == 1) {
-        publicKeys->size = 1;
-        keys[0].path = SRAM_MALLOC(BUFFER_SIZE_32);
-        snprintf_s(keys[0].path, BUFFER_SIZE_32, "m/44'/501'");
-        keys[0].xpub = GetCurrentAccountPublicKey(XPUB_TYPE_SOL_BIP44_ROOT);
-    } else {
-        publicKeys->size = 10;
-        for (int i = XPUB_TYPE_SOL_BIP44_CHANGE_0; i <= XPUB_TYPE_SOL_BIP44_CHANGE_9; i++) {
-            int keyIndex = i - XPUB_TYPE_SOL_BIP44_CHANGE_0;
-            keys[keyIndex].path = SRAM_MALLOC(BUFFER_SIZE_32);
-            snprintf_s(keys[keyIndex].path, BUFFER_SIZE_32, "m/44'/501'/%d'/0'", keyIndex);
-            keys[keyIndex].xpub = GetCurrentAccountPublicKey(i);
-        }
-    }
-
-    PtrT_UREncodeResult ur = generate_common_crypto_multi_accounts_ur(mfp, sizeof(mfp), publicKeys, "SOL");
-    PrintAllURFragments(ur);
-    for (int i = 0; i < publicKeys->size; i++) {
-        SRAM_FREE(publicKeys->data[i].path);
-    }
-    SRAM_FREE(publicKeys);
+    PrintAllURFragments(GetSolflareDataForAccountType(pathIndex));
 }
 
 static void RustGetConnectKeystoneNexusUR(int argc, char *argv[])
@@ -2822,6 +2798,75 @@ static void RustGetConnectBackpackUR(int argc, char *argv[])
     (void)argv;
     printf("RustGetConnectBackpackUR\r\n");
     PrintAllURFragments(GuiGetBackpackData());
+}
+
+static void RustGetConnectNightlyUR(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+    printf("RustGetConnectNightlyUR\r\n");
+    PrintAllURFragments(GuiGetWalletDataByCoin(false));
+}
+
+static void RustGetConnectEternlUR(int argc, char *argv[])
+{
+    int pathIndex;
+    VALUE_CHECK(argc, 1);
+    if (sscanf(argv[0], "%d", &pathIndex) != 1 || pathIndex < 0 || pathIndex > 1) {
+        printf("input err!\r\n");
+        return;
+    }
+
+    printf("RustGetConnectEternlUR,pathIndex=%d\r\n", pathIndex);
+    PrintAllURFragments(GuiGetADADataByDerivationType(pathIndex, 0));
+}
+
+static void RustGetConnectWanderUR(int argc, char *argv[])
+{
+    VALUE_CHECK(argc, 1);
+
+    uint8_t accountIndex = GetCurrentAccountIndex();
+    int32_t ret = accountIndex <= 2 ? VerifyCurrentAccountPassword(argv[0]) : ERR_GENERAL_FAIL;
+    if (ret != SUCCESS_CODE) {
+        ret = VerifyPasswordAndLogin(&accountIndex, argv[0]);
+    }
+    if (ret != SUCCESS_CODE) {
+        printf("WanderConnect=%d,accountIndex=%d,status=login_error\r\n", ret, accountIndex);
+        return;
+    }
+
+    SecretCacheSetPassword(argv[0]);
+    ret = RsaGenerateKeyPair(false, true, NULL);
+    if (ret != SUCCESS_CODE) {
+        printf("WanderConnect=%d,accountIndex=%d,status=ar_setup_error\r\n", ret, accountIndex);
+        return;
+    }
+
+    printf("WanderConnect=0,accountIndex=%d,status=ready\r\n", accountIndex);
+    PrintAllURFragments(GuiGetWanderData());
+}
+
+static void RustGetConnectCosmosWalletByIndexUR(int argc, char *argv[], const char *walletName)
+{
+    uint32_t accountIndex;
+    VALUE_CHECK(argc, 1);
+    if (sscanf(argv[0], "%u", &accountIndex) != 1 || accountIndex > 999999999U) {
+        printf("input err!\r\n");
+        return;
+    }
+
+    printf("RustGetConnect%sUR,accountIndex=%u\r\n", walletName, (unsigned int)accountIndex);
+    PrintAllURFragments(GuiGetKeplrDataByIndex(accountIndex));
+}
+
+static void RustGetConnectKeplrByIndexUR(int argc, char *argv[])
+{
+    RustGetConnectCosmosWalletByIndexUR(argc, argv, "Keplr");
+}
+
+static void RustGetConnectMintscanByIndexUR(int argc, char *argv[])
+{
+    RustGetConnectCosmosWalletByIndexUR(argc, argv, "Mintscan");
 }
 
 static void RustTestKeyDerivation(int argc, char *argv[])

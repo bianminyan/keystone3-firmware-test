@@ -798,40 +798,7 @@ static void simulator_connect_solflare(int argc, char *argv[])
         return;
     }
 
-    uint8_t mfp[4] = {0};
-    GetMasterFingerPrint(mfp);
-
-    ExtendedPublicKey keys[10];
-    PtrT_CSliceFFI_ExtendedPublicKey public_keys = SRAM_MALLOC(sizeof(CSliceFFI_ExtendedPublicKey));
-    public_keys->data = keys;
-    if (path_index == 0) {
-        public_keys->size = 10;
-        for (int i = XPUB_TYPE_SOL_BIP44_0; i <= XPUB_TYPE_SOL_BIP44_9; i++) {
-            int key_index = i - XPUB_TYPE_SOL_BIP44_0;
-            keys[key_index].path = SRAM_MALLOC(BUFFER_SIZE_32);
-            snprintf_s(keys[key_index].path, BUFFER_SIZE_32, "m/44'/501'/%d'", key_index);
-            keys[key_index].xpub = GetCurrentAccountPublicKey(i);
-        }
-    } else if (path_index == 1) {
-        public_keys->size = 1;
-        keys[0].path = SRAM_MALLOC(BUFFER_SIZE_32);
-        snprintf_s(keys[0].path, BUFFER_SIZE_32, "m/44'/501'");
-        keys[0].xpub = GetCurrentAccountPublicKey(XPUB_TYPE_SOL_BIP44_ROOT);
-    } else {
-        public_keys->size = 10;
-        for (int i = XPUB_TYPE_SOL_BIP44_CHANGE_0; i <= XPUB_TYPE_SOL_BIP44_CHANGE_9; i++) {
-            int key_index = i - XPUB_TYPE_SOL_BIP44_CHANGE_0;
-            keys[key_index].path = SRAM_MALLOC(BUFFER_SIZE_32);
-            snprintf_s(keys[key_index].path, BUFFER_SIZE_32, "m/44'/501'/%d'/0'", key_index);
-            keys[key_index].xpub = GetCurrentAccountPublicKey(i);
-        }
-    }
-
-    simulator_print_ur_result(generate_common_crypto_multi_accounts_ur(mfp, sizeof(mfp), public_keys, "SOL"));
-    for (int i = 0; i < public_keys->size; i++) {
-        SRAM_FREE(public_keys->data[i].path);
-    }
-    SRAM_FREE(public_keys);
+    simulator_print_ur_result(GetSolflareDataForAccountType(path_index));
 }
 
 static void simulator_connect_keystone_nexus(void)
@@ -853,6 +820,61 @@ static void simulator_connect_okx(void)
 static void simulator_connect_backpack(void)
 {
     simulator_print_ur_result(GuiGetBackpackData());
+}
+
+static void simulator_connect_nightly(void)
+{
+    simulator_print_ur_result(GuiGetWalletDataByCoin(false));
+}
+
+static void simulator_connect_eternl(int argc, char *argv[])
+{
+    int path_index;
+    if (argc != 1 || sscanf(argv[0], "%d", &path_index) != 1 || path_index < 0 || path_index > 1) {
+        printf("input err!\r\n");
+        return;
+    }
+
+    simulator_print_ur_result(GuiGetADADataByDerivationType(path_index, 0));
+}
+
+static void simulator_connect_wander(int argc, char *argv[])
+{
+    if (argc != 1) {
+        printf("input err!\r\n");
+        return;
+    }
+
+    uint8_t account_index = GetCurrentAccountIndex();
+    int32_t ret = account_index <= 2 ? VerifyCurrentAccountPassword(argv[0]) : ERR_GENERAL_FAIL;
+    if (ret != SUCCESS_CODE) {
+        ret = VerifyPasswordAndLogin(&account_index, argv[0]);
+    }
+    if (ret != SUCCESS_CODE) {
+        printf("WanderConnect=%d,accountIndex=%d,status=login_error\r\n", ret, account_index);
+        return;
+    }
+
+    SecretCacheSetPassword(argv[0]);
+    ret = RsaGenerateKeyPair(false, true, NULL);
+    if (ret != SUCCESS_CODE) {
+        printf("WanderConnect=%d,accountIndex=%d,status=ar_setup_error\r\n", ret, account_index);
+        return;
+    }
+
+    printf("WanderConnect=0,accountIndex=%d,status=ready\r\n", account_index);
+    simulator_print_ur_result(GuiGetWanderData());
+}
+
+static void simulator_connect_cosmos_wallet(int argc, char *argv[])
+{
+    uint32_t account_index;
+    if (argc != 1 || sscanf(argv[0], "%u", &account_index) != 1 || account_index > 999999999U) {
+        printf("input err!\r\n");
+        return;
+    }
+
+    simulator_print_ur_result(GuiGetKeplrDataByIndex(account_index));
 }
 
 static void simulator_eth_typed_data_sign(int argc, char *argv[])
@@ -1190,6 +1212,22 @@ static bool simulator_dispatch_command(char *command)
     }
     if (strcmp(command, "rust test connect backpack") == 0) {
         simulator_connect_backpack();
+        return true;
+    }
+    if (strcmp(command, "rust test connect nightly") == 0) {
+        simulator_connect_nightly();
+        return true;
+    }
+    if (dispatch_prefixed_command(command, "rust test connect eternl ", simulator_connect_eternl)) {
+        return true;
+    }
+    if (dispatch_prefixed_command(command, "rust test connect wander: ", simulator_connect_wander)) {
+        return true;
+    }
+    if (dispatch_prefixed_command(command, "rust test connect keplr: ", simulator_connect_cosmos_wallet)) {
+        return true;
+    }
+    if (dispatch_prefixed_command(command, "rust test connect mintscan: ", simulator_connect_cosmos_wallet)) {
         return true;
     }
     return false;
