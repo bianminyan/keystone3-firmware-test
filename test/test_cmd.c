@@ -1552,6 +1552,65 @@ static void SdCardTestFunc(int argc, char *argv[])
 }
 
 #ifdef WEB3_VERSION
+static uint32_t GetURFragmentCount(const char *data)
+{
+    if (data == NULL) {
+        return 0;
+    }
+
+    const char *sequence = strchr(data, '/');
+    if (sequence == NULL) {
+        return 0;
+    }
+
+    uint32_t index = 0;
+    uint32_t count = 0;
+    if (sscanf(sequence + 1, "%u-%u/", &index, &count) != 2 || count == 0) {
+        return 0;
+    }
+    return count;
+}
+
+static void PrintAllURFragments(UREncodeResult *ur)
+{
+    if (ur == NULL) {
+        printf("error_code is -1\r\n");
+        printf("error_message is null\r\n");
+        return;
+    }
+
+    printf("is_multi_part is %d\r\n", ur->is_multi_part);
+    printf("data is %s\r\n", ur->data != NULL ? ur->data : "");
+    if (ur->is_multi_part && ur->encoder != NULL) {
+        uint32_t fragmentCount = 1;
+        uint32_t expectedCount = GetURFragmentCount(ur->data);
+        uint32_t maxFragmentCount = expectedCount > 1 ? expectedCount : 256;
+        while (fragmentCount < maxFragmentCount) {
+            UREncodeMultiResult *part = get_next_part(ur->encoder);
+            if (part == NULL) {
+                break;
+            }
+            if (part->error_code != 0) {
+                free_ur_encode_muilt_result(part);
+                break;
+            }
+            if (part->data != NULL) {
+                if (ur->data != NULL && strcmp(part->data, ur->data) == 0) {
+                    free_ur_encode_muilt_result(part);
+                    break;
+                }
+                printf("data is %s\r\n", part->data);
+                fragmentCount++;
+            }
+            free_ur_encode_muilt_result(part);
+        }
+        printf("fragment_count is %u\r\n", (unsigned int)fragmentCount);
+    }
+    printf("error_code is %d\r\n", ur->error_code);
+    printf("error_message is %s\r\n", ur->error_message != NULL ? ur->error_message : "");
+    free_ur_encode_result(ur);
+}
+
 static void RustTestDecodeKeystoneBTCSignResult(int argc, char *argv[])
 {
     printf("RustTestDecodeKeystoneBTCSignResult\r\n");
