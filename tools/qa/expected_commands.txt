@@ -1,0 +1,8 @@
+address test:
+device settings test:
+firmware test:
+key store test:
+rust test connect keystone nexus
+rust test connect solflare:
+rust test eth eip1559 tx:
+rust test eth typed data:

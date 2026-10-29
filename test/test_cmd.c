@@ -58,6 +58,9 @@
 #include "gui_model.h"
 #include "flash_address.h"
 #include "cjson/cJSON.h"
+#ifdef WEB3_VERSION
+#include "gui_wallet.h"
+#endif
 
 #define CMD_MAX_ARGC                                16
 #define DEFAULT_TEST_BUFF_LEN                       1024
@@ -108,6 +111,7 @@ static void BackgroundTestFunc(int argc, char *argv[]);
 static void GetReceiveAddress(int argc, char *argv[]);
 static void AccountPublicInfoTestFunc(int argc, char *argv[]);
 static void MigrationTestFunc(int argc, char *argv[]);
+static void AddressTestFunc(int argc, char *argv[]);
 static void FingerTestFunc(int argc, char *argv[]);
 static void MotorTestFunc(int argc, char *argv[]);
 static void LcdTestFunc(int argc, char *argv[]);
@@ -118,6 +122,7 @@ static void CrcTestFunc(int argc, char *argv[]);
 static void PresettingTestFunc(int argc, char *argv[]);
 static void UsbTestFunc(int argc, char *argv[]);
 static void DeviceSettingsTestFunc(int argc, char *argv[]);
+static void FirmwareTestFunc(int argc, char *argv[]);
 static void ScreenShotFunc(int argc, char *argv[]);
 static void BpkPrintFunc(int argc, char *argv[]);
 static void SdCardTestFunc(int argc, char *argv[]);
@@ -150,6 +155,8 @@ static void RustGetConnectKeplrUR(int argc, char *argv[]);
 static void RustGetConnectXrpToolKitUR(int argc, char *argv[]);
 static void RustTestMemory(int argc, char *argv[]);
 static void RustGetConnectMetaMaskUR(int argc, char *argv[]);
+static void RustGetConnectSolflareUR(int argc, char *argv[]);
+static void RustGetConnectKeystoneNexusUR(int argc, char *argv[]);
 static void RustTestGetAddressLTCSucceed(int argc, char *argv[]);
 static void RustTestGetAddressTronSucceed(int argc, char *argv[]);
 static void RustTestGetAddressSolanaSucceed(int argc, char *argv[]);
@@ -164,6 +171,8 @@ static void testCosmosGetAddress(int argc, char *argv[]);
 static void testCardanoTx(int argc, char *argv[]);
 static void RustGetEthAddress(int argc, char *argv[]);
 static void RustParseEthPersonalMessage(int argc, char *argv[]);
+static void RustTestEthEip1559Tx(int argc, char *argv[]);
+static void RustTestEthTypedData(int argc, char *argv[]);
 static void RustParseEthContractData(int argc, char *argv[]);
 static void testXRPGetAddress(int argc, char *argv[]);
 static void testXRPSignTx(int argc, char *argv[]);
@@ -249,6 +258,7 @@ const static UartTestCmdItem_t g_uartTestCmdTable[] = {
     {"get receive address:", GetReceiveAddress},
     {"account public info test:", AccountPublicInfoTestFunc},
     {"migration test:", MigrationTestFunc},
+    {"address test:", AddressTestFunc},
     {"finger test:", FingerTestFunc},
     {"motor:", MotorTestFunc},
     {"lcd:", LcdTestFunc},
@@ -259,6 +269,7 @@ const static UartTestCmdItem_t g_uartTestCmdTable[] = {
     {"presetting:", PresettingTestFunc},
     {"usb test:", UsbTestFunc},
     {"device settings test:", DeviceSettingsTestFunc},
+    {"firmware test:", FirmwareTestFunc},
     {"screen shot", ScreenShotFunc},
     {"bpk print:", BpkPrintFunc},
     {"sd card test:", SdCardTestFunc},
@@ -277,6 +288,8 @@ const static UartTestCmdItem_t g_uartTestCmdTable[] = {
     {"rust test get connect keplr wallet ur", RustGetConnectKeplrUR},
     {"rust test get connect xrp toolkit ur", RustGetConnectXrpToolKitUR},
     {"rust test connect metamask", RustGetConnectMetaMaskUR},
+    {"rust test connect solflare:", RustGetConnectSolflareUR},
+    {"rust test connect keystone nexus", RustGetConnectKeystoneNexusUR},
     {"rust test solana parse:", testSolanaParseTx},
     {"rust test xrp parse:", testXrpParseTx},
     {"rust test near get address:", testNearGetAddress},
@@ -284,6 +297,8 @@ const static UartTestCmdItem_t g_uartTestCmdTable[] = {
     {"rust test cardano tx:", testCardanoTx},
     {"rust test get eth address", RustGetEthAddress},
     {"rust test parse eth personal message:", RustParseEthPersonalMessage},
+    {"rust test eth eip1559 tx:", RustTestEthEip1559Tx},
+    {"rust test eth typed data:", RustTestEthTypedData},
     {"rust test parse eth contract data", RustParseEthContractData},
     {"rust test xrp get address:", testXRPGetAddress},
     {"rust test xrp sign:", testXRPSignTx},
@@ -336,6 +351,14 @@ bool CompareAndRunTestCmd(const char *inputString)
     uint32_t tableSize, compareLen, argc, argvLen;
     char *inputHead, *argvHead, *argv[CMD_MAX_ARGC];
     bool content = false;
+
+    const char *solflareCmd = "rust test connect solflare ";
+    compareLen = strlen(solflareCmd);
+    if (strncmp(inputString, solflareCmd, compareLen) == 0) {
+        argv[0] = (char *)inputString + compareLen;
+        RustGetConnectSolflareUR(1, argv);
+        return true;
+    }
 
     tableSize = sizeof(g_uartTestCmdTable) / sizeof(g_uartTestCmdTable[0]);
     for (uint32_t i = 0; i < tableSize; i++) {
@@ -1072,6 +1095,10 @@ static bool AddressArgIsDecimal(const char *arg)
 
 static char *AddressGetXpubArg(char *arg)
 {
+    char *xpub = GetCurrentAccountPublicKeyByName(arg);
+    if (xpub != NULL) {
+        return xpub;
+    }
     if (!AddressArgIsDecimal(arg)) {
         return NULL;
     }
@@ -1222,7 +1249,6 @@ static void AddressTestSolana(int argc, char *argv[])
     free_simple_response_c_char(pubkey);
     AddressPrintResult(result);
 }
-
 static void AddressTestFunc(int argc, char *argv[])
 {
     if (argc <= 0) {
@@ -1459,6 +1485,26 @@ static void UsbTestFunc(int argc, char *argv[])
 static void DeviceSettingsTestFunc(int argc, char *argv[])
 {
     DeviceSettingsTest(argc, argv);
+}
+
+static void FirmwareTestFunc(int argc, char *argv[])
+{
+    char firmwareVersion[SOFTWARE_VERSION_MAX_LEN] = {0};
+    char updateVersion[SOFTWARE_VERSION_MAX_LEN] = {0};
+    char bootVersion[SOFTWARE_VERSION_MAX_LEN] = {0};
+
+    if (argc < 1 || strcmp(argv[0], "version") != 0) {
+        printf("firmware test arg err\r\n");
+        return;
+    }
+
+    GetSoftWareVersionNumber(firmwareVersion);
+    GetUpdateVersionNumber(updateVersion);
+    GetBootVersionNumber(bootVersion);
+    printf("FirmwareVersion=%s\r\n", firmwareVersion);
+    printf("FirmwareUpdateVersion=%s\r\n", updateVersion);
+    printf("FirmwareSoftwareVersion=%s\r\n", GetSoftwareVersionString());
+    printf("BootVersion=%s\r\n", bootVersion);
 }
 
 static void ScreenShotFunc(int argc, char *argv[])
@@ -2387,6 +2433,89 @@ static void RustGetConnectMetaMaskUR(int argc, char *argv[])
     printf("error_message is %s\r\n", ur->error_message);
 }
 
+static void RustGetConnectSolflareUR(int argc, char *argv[])
+{
+    int pathIndex;
+    VALUE_CHECK(argc, 1);
+    if (sscanf(argv[0], "%d", &pathIndex) != 1 || pathIndex < 0 || pathIndex > 2) {
+        printf("input err!\r\n");
+        return;
+    }
+
+    printf("solflare path_index is %d\r\n", pathIndex);
+    uint8_t mfp[4] = {0};
+    GetMasterFingerPrint(mfp);
+
+    ExtendedPublicKey keys[10];
+    PtrT_CSliceFFI_ExtendedPublicKey publicKeys = SRAM_MALLOC(sizeof(CSliceFFI_ExtendedPublicKey));
+    publicKeys->data = keys;
+    if (pathIndex == 0) {
+        publicKeys->size = 10;
+        for (int i = XPUB_TYPE_SOL_BIP44_0; i <= XPUB_TYPE_SOL_BIP44_9; i++) {
+            int keyIndex = i - XPUB_TYPE_SOL_BIP44_0;
+            keys[keyIndex].path = SRAM_MALLOC(BUFFER_SIZE_32);
+            snprintf_s(keys[keyIndex].path, BUFFER_SIZE_32, "m/44'/501'/%d'", keyIndex);
+            keys[keyIndex].xpub = GetCurrentAccountPublicKey(i);
+        }
+    } else if (pathIndex == 1) {
+        publicKeys->size = 1;
+        keys[0].path = SRAM_MALLOC(BUFFER_SIZE_32);
+        snprintf_s(keys[0].path, BUFFER_SIZE_32, "m/44'/501'");
+        keys[0].xpub = GetCurrentAccountPublicKey(XPUB_TYPE_SOL_BIP44_ROOT);
+    } else {
+        publicKeys->size = 10;
+        for (int i = XPUB_TYPE_SOL_BIP44_CHANGE_0; i <= XPUB_TYPE_SOL_BIP44_CHANGE_9; i++) {
+            int keyIndex = i - XPUB_TYPE_SOL_BIP44_CHANGE_0;
+            keys[keyIndex].path = SRAM_MALLOC(BUFFER_SIZE_32);
+            snprintf_s(keys[keyIndex].path, BUFFER_SIZE_32, "m/44'/501'/%d'/0'", keyIndex);
+            keys[keyIndex].xpub = GetCurrentAccountPublicKey(i);
+        }
+    }
+
+    PtrT_UREncodeResult ur = generate_common_crypto_multi_accounts_ur(mfp, sizeof(mfp), publicKeys, "SOL");
+    printf("encode ur\r\n");
+    if (ur->error_code == 0) {
+        printf("is_multi_part is %d\r\n", ur->is_multi_part);
+        printf("data is %s\r\n", ur->data);
+        printf("error_code is %d\r\n", ur->error_code);
+    } else {
+        printf("error_code is %d\r\n", ur->error_code);
+        printf("error_message is %s\r\n", ur->error_message);
+    }
+    for (int i = 0; i < publicKeys->size; i++) {
+        SRAM_FREE(publicKeys->data[i].path);
+    }
+    SRAM_FREE(publicKeys);
+    free_ur_encode_result(ur);
+}
+
+static void RustGetConnectKeystoneNexusUR(int argc, char *argv[])
+{
+    printf("RustGetConnectKeystoneNexusUR\r\n");
+    PtrT_UREncodeResult ur = NULL;
+    if (GetMnemonicType() == MNEMONIC_TYPE_SLIP39) {
+        ur = GuiGetKeystoneConnectWalletDataSlip39();
+    } else {
+        ur = GuiGetKeystoneConnectWalletDataBip39();
+    }
+
+    printf("encode ur\r\n");
+    if (ur == NULL) {
+        printf("error_code is -1\r\n");
+        printf("error_message is failed to generate Keystone Nexus UR\r\n");
+        return;
+    }
+    if (ur->error_code == 0) {
+        printf("is_multi_part is %d\r\n", ur->is_multi_part);
+        printf("data is %s\r\n", ur->data);
+        printf("error_code is %d\r\n", ur->error_code);
+    } else {
+        printf("error_code is %d\r\n", ur->error_code);
+        printf("error_message is %s\r\n", ur->error_message);
+    }
+    free_ur_encode_result(ur);
+}
+
 static void RustTestKeyDerivation(int argc, char *argv[])
 {
     int32_t index;
@@ -2404,13 +2533,29 @@ static void RustTestKeyDerivation(int argc, char *argv[])
     printf("FreeHeapSize = %d\n", xPortGetFreeHeapSize());
 }
 
+static bool ParseOptionalEthPath(int argc, char *argv[], int pathArgIndex, char **path)
+{
+    *path = "m/44'/60'/0'/0/0";
+    if (argc == pathArgIndex) {
+        return true;
+    }
+    if (argc != pathArgIndex + 1) {
+        return false;
+    }
+    *path = argv[pathArgIndex];
+    return true;
+}
 
 static void testEthTx(int argc, char *argv[])
 {
     int32_t index;
-    VALUE_CHECK(argc, 2);
+    char *path;
+    if (!ParseOptionalEthPath(argc, argv, 2, &path)) {
+        printf("input err!\r\n");
+        return;
+    }
     sscanf(argv[0], "%d", &index);
-    URParseResult *result = test_get_eth_sign_request();
+    URParseResult *result = test_get_eth_sign_request_for_c_path(path);
     char *xpub = "xpub6ELHKXNimKbxMCytPh7EdC2QXx46T9qLDJWGnTraz1H9kMMFdcduoU69wh9cxP12wDxqAAfbaESWGYt5rREsX1J8iR2TEunvzvddduAPYcY";
     TransactionParseResult_DisplayETH *eth = eth_parse(result->data, xpub);
     printf("parse result: \r\n");
@@ -2425,6 +2570,48 @@ static void testEthTx(int argc, char *argv[])
     printf("sign result error_code: %d\r\n", sign_result->error_code);
     printf("sign result error_message: %s\r\n", sign_result->error_message);
     printf("sign result data: %s\r\n", sign_result->data);
+}
+
+static void RustTestEthEip1559Tx(int argc, char *argv[])
+{
+    int32_t index;
+    char *path;
+    if (!ParseOptionalEthPath(argc, argv, 2, &path)) {
+        printf("input err!\r\n");
+        return;
+    }
+    sscanf(argv[0], "%d", &index);
+    URParseResult *result = test_get_eth_eip1559_sign_request_for_c_path(path);
+    uint8_t seed[64];
+    int len = GetMnemonicType() == MNEMONIC_TYPE_BIP39 ? sizeof(seed) : GetCurrentAccountEntropyLen();
+    GetAccountSeed(index, seed, argv[1]);
+    UREncodeResult *sign_result = eth_sign_tx(result->data, seed, len);
+    printf("sign result error_code: %d\r\n", sign_result->error_code);
+    printf("sign result error_message: %s\r\n", sign_result->error_message);
+    printf("sign result data: %s\r\n", sign_result->data);
+    free_ur_encode_result(sign_result);
+    free_ur_parse_result(result);
+}
+
+static void RustTestEthTypedData(int argc, char *argv[])
+{
+    int32_t index;
+    char *path;
+    if (!ParseOptionalEthPath(argc, argv, 3, &path)) {
+        printf("input err!\r\n");
+        return;
+    }
+    sscanf(argv[0], "%d", &index);
+    URParseResult *result = test_get_eth_typed_data_sign_request_for_c_path(argv[2], path);
+    uint8_t seed[64];
+    int len = GetMnemonicType() == MNEMONIC_TYPE_BIP39 ? sizeof(seed) : GetCurrentAccountEntropyLen();
+    GetAccountSeed(index, seed, argv[1]);
+    UREncodeResult *sign_result = eth_sign_tx(result->data, seed, len);
+    printf("sign result error_code: %d\r\n", sign_result->error_code);
+    printf("sign result error_message: %s\r\n", sign_result->error_message);
+    printf("sign result data: %s\r\n", sign_result->data);
+    free_ur_encode_result(sign_result);
+    free_ur_parse_result(result);
 }
 
 static void testSolanaTx(int argc, char *argv[])
@@ -2877,9 +3064,13 @@ static void RustParseEthPersonalMessage(int argc, char *argv[])
 {
 
     int32_t index;
-    VALUE_CHECK(argc, 2);
+    char *path;
+    if (!ParseOptionalEthPath(argc, argv, 2, &path)) {
+        printf("input err!\r\n");
+        return;
+    }
     sscanf(argv[0], "%d", &index);
-    URParseResult *result = test_get_eth_sign_request_for_personal_message();
+    URParseResult *result = test_get_eth_sign_request_for_personal_message_c_path(path);
     char *xpub = "xpub6ELHKXNimKbxMCytPh7EdC2QXx46T9qLDJWGnTraz1H9kMMFdcduoU69wh9cxP12wDxqAAfbaESWGYt5rREsX1J8iR2TEunvzvddduAPYcY";
 
     PtrT_TransactionParseResult_DisplayETHPersonalMessage eth = eth_parse_personal_message(result->data, xpub);
@@ -2892,7 +3083,7 @@ static void RustParseEthPersonalMessage(int argc, char *argv[])
     free_TransactionParseResult_DisplayETHPersonalMessage(eth);
     uint8_t seed[64];
     int len = GetMnemonicType() == MNEMONIC_TYPE_BIP39 ? sizeof(seed) : GetCurrentAccountEntropyLen();
-    GetAccountSeed(GetCurrentAccountIndex(), seed, SecretCacheGetPassword());
+    GetAccountSeed(index, seed, argv[1]);
     UREncodeResult *sign_result = eth_sign_tx(result->data, seed, len);
     printf("sign result error_code: %d\r\n", sign_result->error_code);
     printf("sign result error_message: %s\r\n", sign_result->error_message);

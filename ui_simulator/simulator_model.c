@@ -145,6 +145,10 @@ void SetShutdownTimeOut(uint32_t timeOut)
 {
 }
 
+void ClearShutdownTime(void)
+{
+}
+
 void SetLockTimeOut(uint32_t timeOut)
 {
 }
