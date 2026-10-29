@@ -2943,6 +2943,15 @@ static bool ParseOptionalEthPath(int argc, char *argv[], int pathArgIndex, char 
     return true;
 }
 
+static char *GetEthXpubForTestPath(const char *path)
+{
+    int account = 0;
+    if (path != NULL && sscanf(path, "m/44'/60'/%d'", &account) == 1 && account >= 1 && account <= 9) {
+        return GetCurrentAccountPublicKey(XPUB_TYPE_ETH_LEDGER_LIVE_0 + account);
+    }
+    return GetCurrentAccountPublicKey(XPUB_TYPE_ETH_BIP44_STANDARD);
+}
+
 static void testEthTx(int argc, char *argv[])
 {
     int32_t index;
@@ -2953,7 +2962,7 @@ static void testEthTx(int argc, char *argv[])
     }
     sscanf(argv[0], "%d", &index);
     URParseResult *result = test_get_eth_sign_request_for_c_path(path);
-    char *xpub = GetCurrentAccountPublicKey(XPUB_TYPE_ETH_BIP44_STANDARD);
+    char *xpub = GetEthXpubForTestPath(path);
     TransactionParseResult_DisplayETH *eth = eth_parse(result->data, xpub);
     printf("parse result: \r\n");
     printf("parse result overview from: %s\r\n", eth->data->overview->from);
@@ -3474,7 +3483,7 @@ static void RustParseEthPersonalMessage(int argc, char *argv[])
     }
     sscanf(argv[0], "%d", &index);
     URParseResult *result = test_get_eth_sign_request_for_personal_message_c_path(path);
-    char *xpub = GetCurrentAccountPublicKey(XPUB_TYPE_ETH_BIP44_STANDARD);
+    char *xpub = GetEthXpubForTestPath(path);
 
     PtrT_TransactionParseResult_DisplayETHPersonalMessage eth = eth_parse_personal_message(result->data, xpub);
 
