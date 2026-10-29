@@ -31,15 +31,13 @@ check_marker src/device_settings.c 'strcmp(argv[0], "automation")'
 check_marker src/managers/keystore.c 'strcmp(argv[0], "save_new_entropy_auto")'
 check_marker src/managers/keystore.c 'strcmp(argv[0], "save_s39_auto")'
 check_marker rust/rust_c/src/test_cmd/general_test_cmd.rs "test_get_eth_typed_data_sign_request_for_c_path"
-
-case "$(git branch --show-current)" in
-    *-automation-core)
-        if grep -Fq '{"migration test:"' "$command_file"; then
-            echo "version-specific migration command found in automation core" >&2
-            failed=1
-        fi
-        ;;
-esac
+check_marker test/test_cmd.c 'strcmp(argv[0], "ar_setup")'
+check_marker test/test_cmd.c 'strcmp(argv[0], "ar_receive_probe")'
+check_marker test/test_cmd.c 'strcmp(argv[0], "ar_receive_rebuild_probe")'
+check_marker test/test_cmd.c 'strcmp(argv[0], "address_display_probe")'
+check_marker test/test_cmd.c 'strcmp(argv[0], "reboot_to_msc")'
+check_marker test/test_cmd.c "LoadAndValidateArKey"
+check_marker src/device_settings.c "SetMigrationInstallMode"
 
 if [ "$failed" -ne 0 ]; then
     exit 1

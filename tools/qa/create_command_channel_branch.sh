@@ -12,8 +12,7 @@ new_version=$1
 previous_version=$2
 release_branch="release/v$new_version"
 previous_release="release/v$previous_version"
-previous_core="qa/$previous_version-automation-core"
-new_core="qa/$new_version-automation-core"
+previous_command="qa/$previous_version-command-channel"
 new_command="qa/$new_version-command-channel"
 repo_root=$(git rev-parse --show-toplevel)
 
@@ -22,27 +21,24 @@ if [ -n "$(git status --porcelain)" ]; then
     exit 1
 fi
 
-for required_ref in "$release_branch" "$previous_release" "$previous_core"; do
+for required_ref in "$release_branch" "$previous_release" "$previous_command"; do
     if ! git show-ref --verify --quiet "refs/heads/$required_ref"; then
         echo "missing local branch: $required_ref" >&2
         exit 1
     fi
 done
 
-for new_ref in "$new_core" "$new_command"; do
-    if git show-ref --verify --quiet "refs/heads/$new_ref"; then
-        echo "branch already exists: $new_ref" >&2
-        exit 1
-    fi
-done
+if git show-ref --verify --quiet "refs/heads/$new_command"; then
+    echo "branch already exists: $new_command" >&2
+    exit 1
+fi
 
-git switch -c "$new_core" "$previous_core"
-git rebase --onto "$release_branch" "$previous_release" "$new_core"
+git switch -c "$new_command" "$previous_command"
+git rebase --onto "$release_branch" "$previous_release" "$new_command"
 "$repo_root/tools/qa/check_automation.sh"
 
-git switch -c "$new_command" "$new_core"
-
-echo "created $new_core and $new_command"
-echo "add only $new_version-specific migration probes to $new_command"
+echo "created $new_command with the complete automation suite"
+echo "regular commands and AR migration probes were migrated together"
+echo "adapt only the code that changed in release/v$new_version"
 echo "before pushing, run:"
-echo "  git range-diff $previous_release..$previous_core $release_branch..$new_core"
+echo "  git range-diff $previous_release..$previous_command $release_branch..$new_command"
