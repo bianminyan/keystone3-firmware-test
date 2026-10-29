@@ -30,6 +30,7 @@ check_marker rust/rust_c/Cargo.toml 'simulator-multi-coins = ["test_cmd", "simul
 check_marker src/device_settings.c 'strcmp(argv[0], "automation")'
 check_marker src/managers/keystore.c 'strcmp(argv[0], "save_new_entropy_auto")'
 check_marker src/managers/keystore.c 'strcmp(argv[0], "save_s39_auto")'
+check_marker src/managers/keystore.c 'strcmp(passphrase, "**EMPTY**")'
 check_marker rust/rust_c/src/test_cmd/general_test_cmd.rs "test_get_eth_typed_data_sign_request_for_c_path"
 check_marker test/test_cmd.c 'strcmp(argv[0], "ar_setup")'
 check_marker test/test_cmd.c 'strcmp(argv[0], "ar_receive_probe")'

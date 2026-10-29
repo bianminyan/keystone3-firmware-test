@@ -1410,7 +1410,11 @@ void KeyStoreTest(int argc, char *argv[])
         printf("set last lock device time done\n");
     } else if (strcmp(argv[0], "set_passphrase") == 0) {
         VALUE_CHECK(argc, 3);
-        ret = SetPassphrase(GetCurrentAccountIndex(), argv[1], argv[2]);
+        char *passphrase = argv[1];
+        if (strcmp(passphrase, "__EMPTY__") == 0 || strcmp(passphrase, "**EMPTY**") == 0) {
+            passphrase = "";
+        }
+        ret = SetPassphrase(GetCurrentAccountIndex(), passphrase, argv[2]);
         printf("SetPassphrase=%d\r\n", ret);
     } else if (strcmp(argv[0], "get_passphrase") == 0) {
         for (accountIndex = 0; accountIndex < 3; accountIndex++) {
