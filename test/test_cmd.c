@@ -2810,29 +2810,14 @@ static void RustGetConnectSolflareUR(int argc, char *argv[])
 
 static void RustGetConnectKeystoneNexusUR(int argc, char *argv[])
 {
+    (void)argc;
+    (void)argv;
     printf("RustGetConnectKeystoneNexusUR\r\n");
-    PtrT_UREncodeResult ur = NULL;
     if (GetMnemonicType() == MNEMONIC_TYPE_SLIP39) {
-        ur = GuiGetKeystoneConnectWalletDataSlip39();
+        PrintAllURFragments(GuiGetKeystoneConnectWalletDataSlip39());
     } else {
-        ur = GuiGetKeystoneConnectWalletDataBip39();
+        PrintAllURFragments(GuiGetKeystoneConnectWalletDataBip39());
     }
-
-    printf("encode ur\r\n");
-    if (ur == NULL) {
-        printf("error_code is -1\r\n");
-        printf("error_message is failed to generate Keystone Nexus UR\r\n");
-        return;
-    }
-    if (ur->error_code == 0) {
-        printf("is_multi_part is %d\r\n", ur->is_multi_part);
-        printf("data is %s\r\n", ur->data);
-        printf("error_code is %d\r\n", ur->error_code);
-    } else {
-        printf("error_code is %d\r\n", ur->error_code);
-        printf("error_message is %s\r\n", ur->error_message);
-    }
-    free_ur_encode_result(ur);
 }
 
 static void RustGetConnectOkxUR(int argc, char *argv[])
