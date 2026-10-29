@@ -391,13 +391,19 @@ UREncodeResult *GuiGetPetraData(void)
 
 UREncodeResult *GuiGetADADataByIndex(char *walletName)
 {
-    uint32_t index = GetConnectWalletAccountIndex(walletName);
+    return GuiGetADADataByDerivationType(
+            GetConnectWalletPathIndex(walletName),
+            GetConnectWalletAccountIndex(walletName));
+}
+
+UREncodeResult *GuiGetADADataByDerivationType(uint32_t derivationType, uint32_t accountIndex)
+{
     uint8_t mfp[4] = {0};
     GetMasterFingerPrint(mfp);
     char* xpub = GetCurrentAccountPublicKey(GetAdaXPubTypeByIndexAndDerivationType(
-            GetConnectWalletPathIndex(walletName), index));
+            derivationType, accountIndex));
     char path[BUFFER_SIZE_32] = {0};
-    snprintf(path, sizeof(path), "1852'/1815'/%u'", (unsigned int)index);
+    snprintf(path, sizeof(path), "1852'/1815'/%u'", (unsigned int)accountIndex);
     ExtendedPublicKey xpubs[1];
     xpubs[0].path = path;
     xpubs[0].xpub = xpub;
@@ -618,14 +624,13 @@ UREncodeResult *GuiGetOkxWalletData(void)
     return urEncode;
 }
 
-UREncodeResult *GuiGetSolflareData(void)
+UREncodeResult *GetSolflareDataForAccountType(int accountType)
 {
-    SOLAccountType accountType = GetSolflareAccountType();
     uint8_t mfp[4] = {0};
     GetMasterFingerPrint(mfp);
 
     ExtendedPublicKey keys[10];
-    PtrT_CSliceFFI_ExtendedPublicKey public_keys = BuildSOLAccountKeys(accountType, keys);
+    PtrT_CSliceFFI_ExtendedPublicKey public_keys = BuildSOLAccountKeys((SOLAccountType)accountType, keys);
     UREncodeResult *urEncode = generate_common_crypto_multi_accounts_ur(mfp, sizeof(mfp), public_keys, "SOL");
     CHECK_CHAIN_PRINT(urEncode);
     for (int i = 0; i < public_keys->size; i++) {
@@ -633,6 +638,11 @@ UREncodeResult *GuiGetSolflareData(void)
     }
     SRAM_FREE(public_keys);
     return urEncode;
+}
+
+UREncodeResult *GuiGetSolflareData(void)
+{
+    return GetSolflareDataForAccountType(GetSolflareAccountType());
 }
 
 UREncodeResult *GuiGetHeliumData(void)
