@@ -26,6 +26,14 @@ check_marker() {
 
 check_marker ui_simulator/main.c "SIMULATOR_COMMAND_PORT 8765"
 check_marker ui_simulator/main.c "SimulatorCommandServerIsHandlingCommand"
+check_marker ui_simulator/main.c '"rust test sign psbt dynamic:"'
+check_marker ui_simulator/main.c '"rust test sign btc message dynamic:"'
+check_marker ui_simulator/main.c '"rust test sign eth batch dynamic:"'
+check_marker ui_simulator/main.c '"rust test connect nightly"'
+check_marker ui_simulator/main.c '"rust test connect eternl "'
+check_marker ui_simulator/main.c '"rust test connect wander: "'
+check_marker ui_simulator/main.c '"rust test connect keplr: "'
+check_marker ui_simulator/main.c '"rust test connect mintscan: "'
 check_marker rust/rust_c/Cargo.toml 'simulator-multi-coins = ["test_cmd", "simulator", "multi-coins"]'
 check_marker src/device_settings.c 'strcmp(argv[0], "automation")'
 check_marker src/managers/keystore.c 'strcmp(argv[0], "save_new_entropy_auto")'

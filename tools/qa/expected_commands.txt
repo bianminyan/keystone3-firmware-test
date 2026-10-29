@@ -3,7 +3,17 @@ device settings test:
 firmware test:
 key store test:
 migration test:
+rust test connect backpack
+rust test connect eternl
+rust test connect keplr:
 rust test connect keystone nexus
+rust test connect mintscan:
+rust test connect nightly
+rust test connect okx
 rust test connect solflare:
+rust test connect wander:
 rust test eth eip1559 tx:
 rust test eth typed data:
+rust test sign btc message dynamic:
+rust test sign eth batch dynamic:
+rust test sign psbt dynamic:
