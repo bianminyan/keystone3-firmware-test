@@ -1322,6 +1322,59 @@ static int32_t MigrationPrepareAddressDisplayProbe(uint8_t *accountIndex, char *
     }
     return ret;
 }
+
+static void MigrationProbeWanderConnect(const char *password)
+{
+    uint8_t accountIndex = 0;
+    int32_t ret = VerifyPasswordAndLogin(&accountIndex, (char *)password);
+    if (ret != SUCCESS_CODE) {
+        printf("MigrationWanderConnect=%d,accountIndex=%d,status=login_error\r\n", ret, accountIndex);
+        printf("MigrationWanderConnectQr=absent\r\n");
+        printf("MigrationWanderConnectDone=1\r\n");
+        return;
+    }
+
+    SecretCacheSetPassword((char *)password);
+    SimpleResponse_c_char *publicKey = NULL;
+    ret = RsaGenerateKeyPair(false, false, &publicKey);
+    if (ret != SUCCESS_CODE || publicKey == NULL || publicKey->data == NULL) {
+        const char *status = ArKeyNeedsSetup(ret) ? "setup_required" : "ar_validation_error";
+        printf("MigrationWanderConnect=%d,accountIndex=%d,status=%s\r\n", ret, accountIndex, status);
+        printf("MigrationWanderConnectQr=absent\r\n");
+        if (ArKeyNeedsSetup(ret)) {
+            printf("MigrationWanderConnectNotice=ar_address_setup_required\r\n");
+        }
+        if (publicKey != NULL) {
+            free_simple_response_c_char(publicKey);
+        }
+        ClearSecretCache();
+        printf("MigrationWanderConnectDone=1\r\n");
+        return;
+    }
+
+    uint8_t mfp[4] = {0};
+    GetMasterFingerPrint(mfp);
+    UREncodeResult *ur = get_connect_arconnect_wallet_ur_from_xpub(
+        mfp,
+        sizeof(mfp),
+        publicKey->data
+    );
+    free_simple_response_c_char(publicKey);
+    ClearSecretCache();
+
+    bool qrReady = ur != NULL && ur->error_code == SUCCESS_CODE && ur->data != NULL;
+    printf(
+        "MigrationWanderConnect=%d,accountIndex=%d,status=%s\r\n",
+        qrReady ? SUCCESS_CODE : ERR_GENERAL_FAIL,
+        accountIndex,
+        qrReady ? "qr" : "qr_error"
+    );
+    printf("MigrationWanderConnectQr=%s\r\n", qrReady ? "present" : "absent");
+    if (ur != NULL) {
+        PrintAllURFragments(ur);
+    }
+    printf("MigrationWanderConnectDone=1\r\n");
+}
 #endif
 
 static void MigrationTestFunc(int argc, char *argv[])
@@ -1407,6 +1460,15 @@ static void MigrationTestFunc(int argc, char *argv[])
 #else
         printf("MigrationArReceive=-1,status=unsupported\r\n");
         printf("MigrationArReceiveDone=1\r\n");
+#endif
+    } else if (strcmp(argv[0], "wander_connect_probe") == 0) {
+#ifdef WEB3_VERSION
+        VALUE_CHECK(argc, 2);
+        MigrationProbeWanderConnect(argv[1]);
+#else
+        printf("MigrationWanderConnect=-1,accountIndex=0,status=unsupported\r\n");
+        printf("MigrationWanderConnectQr=absent\r\n");
+        printf("MigrationWanderConnectDone=1\r\n");
 #endif
     } else if (strcmp(argv[0], "address_display_probe") == 0) {
 #ifdef WEB3_VERSION
