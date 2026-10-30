@@ -36,6 +36,8 @@ extern bool g_reboot;
 #include "user_memory.h"
 #include "user_utils.h"
 #include "simulator_cmd_server.h"
+#include "seed_phrase_test.h"
+#include "forget_password_test.h"
 
 #ifndef _WIN32
 #include <arpa/inet.h>
@@ -610,6 +612,16 @@ static bool parse_optional_eth_path(int argc, char *argv[], int path_arg_index, 
     return true;
 }
 
+static char *simulator_get_eth_xpub_for_path(const char *path)
+{
+    int account = 0;
+    if (path != NULL && sscanf(path, "m/44'/60'/%d'", &account) == 1 &&
+            account >= 1 && account <= 9) {
+        return GetCurrentAccountPublicKey(XPUB_TYPE_ETH_LEDGER_LIVE_0 + account);
+    }
+    return GetCurrentAccountPublicKey(XPUB_TYPE_ETH_BIP44_STANDARD);
+}
+
 static void simulator_eth_sign(URParseResult *request, int argc, char *argv[])
 {
     if (argc != 2 || request == NULL) {
@@ -646,7 +658,18 @@ static void simulator_eth_legacy_sign(int argc, char *argv[])
         return;
     }
     char *sign_argv[2] = {argv[0], argv[1]};
-    simulator_eth_sign(test_get_eth_sign_request_for_c_path(path), 2, sign_argv);
+    URParseResult *request = test_get_eth_sign_request_for_c_path(path);
+    char *xpub = simulator_get_eth_xpub_for_path(path);
+    if (request != NULL && request->data != NULL && xpub != NULL) {
+        TransactionParseResult_DisplayETH *parsed = eth_parse(request->data, xpub);
+        if (parsed != NULL && parsed->data != NULL && parsed->data->overview != NULL) {
+            printf("parse result overview from: %s\r\n", parsed->data->overview->from);
+        }
+        if (parsed != NULL) {
+            free_TransactionParseResult_DisplayETH(parsed);
+        }
+    }
+    simulator_eth_sign(request, 2, sign_argv);
 }
 
 static void simulator_eth_personal_sign(int argc, char *argv[])
@@ -657,7 +680,19 @@ static void simulator_eth_personal_sign(int argc, char *argv[])
         return;
     }
     char *sign_argv[2] = {argv[0], argv[1]};
-    simulator_eth_sign(test_get_eth_sign_request_for_personal_message_c_path(path), 2, sign_argv);
+    URParseResult *request = test_get_eth_sign_request_for_personal_message_c_path(path);
+    char *xpub = simulator_get_eth_xpub_for_path(path);
+    if (request != NULL && request->data != NULL && xpub != NULL) {
+        PtrT_TransactionParseResult_DisplayETHPersonalMessage parsed =
+            eth_parse_personal_message(request->data, xpub);
+        if (parsed != NULL && parsed->data != NULL) {
+            printf("parse result from: %s\r\n", parsed->data->from);
+        }
+        if (parsed != NULL) {
+            free_TransactionParseResult_DisplayETHPersonalMessage(parsed);
+        }
+    }
+    simulator_eth_sign(request, 2, sign_argv);
 }
 
 static void simulator_eth_eip1559_sign(int argc, char *argv[])
@@ -1200,6 +1235,12 @@ static bool simulator_dispatch_command(char *command)
         SecretCacheSetWalletName("Wallet 1");
     }
     if (dispatch_prefixed_command(command, "key store test:", simulator_key_store_test)) {
+        return true;
+    }
+    if (dispatch_prefixed_command(command, "seed phrase test:", SeedPhraseTestFunc)) {
+        return true;
+    }
+    if (dispatch_prefixed_command(command, "forget password test:", ForgetPasswordTestFunc)) {
         return true;
     }
     if (dispatch_prefixed_command(command, "address test:", simulator_address_test)) {

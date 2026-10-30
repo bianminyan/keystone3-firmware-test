@@ -58,6 +58,8 @@
 #include "gui_model.h"
 #include "flash_address.h"
 #include "cjson/cJSON.h"
+#include "seed_phrase_test.h"
+#include "forget_password_test.h"
 #ifdef WEB3_VERSION
 #include "gui_wallet.h"
 #endif
@@ -266,6 +268,8 @@ const static UartTestCmdItem_t g_uartTestCmdTable[] = {
     {"hash and salt:", HashAndSaltFunc},
     {"sha512:", Sha512Func},
     {"key store test:", KeyStoreTestFunc},
+    {"seed phrase test:", SeedPhraseTestFunc},
+    {"forget password test:", ForgetPasswordTestFunc},
     {"log test:", LogTestFunc},
     {"eth db contract test:", ETHDBContractsTest},
     {"background test:", BackgroundTestFunc},

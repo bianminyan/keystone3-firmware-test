@@ -38,6 +38,8 @@ file(GLOB_RECURSE EXTERNAL
 file(GLOB_RECURSE SIMULATOR_SRC
     ui_simulator/*.c
 )
+list(APPEND SIMULATOR_SRC test/seed_phrase_test.c)
+list(APPEND SIMULATOR_SRC test/forget_password_test.c)
 
 if(NOT BTC_ONLY) 
     list(APPEND SRC_INCLUDE_PATH src/webusb_protocol/general src/webusb_protocol/general/eapdu_services)
@@ -62,6 +64,7 @@ include_directories(
     external/lvgl/src
     ui_simulator
     ui_simulator/lib/rust-builds
+    test
     ${SRC_INCLUDE_PATH}
     ${EXTERNAL_INCLUDE_PATH}
     ${GUI_INCLUDE_PATH}

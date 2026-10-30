@@ -452,10 +452,31 @@ uint8_t SimulatorGetAccountNum(void)
 
 int32_t SimulatorSaveAccountSecret(uint8_t accountIndex, const AccountSecret_t *accountSecret, const char *password)
 {
-    cJSON *rootJson = cJSON_CreateObject();
+    uint8_t buffer[JSON_MAX_LEN] = {0};
+    OperateStorageDataFunc readFunc = FindSimulatorStorageFunc(
+        SIMULATOR_USER1_SECRET_ADDR + accountIndex * 0x1000, true);
+    if (readFunc != NULL) {
+        readFunc(SIMULATOR_USER1_SECRET_ADDR + accountIndex * 0x1000,
+                 buffer, sizeof(buffer));
+    }
+    cJSON *rootJson = cJSON_Parse((char *)buffer);
+    if (rootJson == NULL) {
+        rootJson = cJSON_CreateObject();
+    }
     if (rootJson == NULL) {
         return ERR_GENERAL_FAIL;
     }
+    // A password change rewrites only the secret payload. Preserve the
+    // account-public-info "param" array and any other simulator metadata in
+    // the same JSON file; recreating the whole object makes the next login
+    // lose mnemonic type and entropy length.
+    cJSON_DeleteItemFromObject(rootJson, "entropy");
+    cJSON_DeleteItemFromObject(rootJson, "seed");
+    cJSON_DeleteItemFromObject(rootJson, "slip39_ems");
+    cJSON_DeleteItemFromObject(rootJson, "reserved_data");
+    cJSON_DeleteItemFromObject(rootJson, "entropy_len");
+    cJSON_DeleteItemFromObject(rootJson, "password");
+    cJSON_DeleteItemFromObject(rootJson, SIMULATOR_ACCOUNT_BLOB_AUTH_KEY_JSON);
     InsertJsonU8Array(rootJson, accountSecret->entropy, ENTROPY_MAX_LEN, "entropy");
     InsertJsonU8Array(rootJson, accountSecret->seed, SEED_LEN, "seed");
     InsertJsonU8Array(rootJson, accountSecret->slip39EmsOrTonEntropyL32, SLIP39_EMS_LEN, "slip39_ems");
@@ -501,9 +522,16 @@ int32_t SimulatorLoadAccountSecret(uint8_t accountIndex, AccountSecret_t *accoun
     GetJsonArrayData(rootJson, accountSecret->seed, SEED_LEN, "seed");
     GetJsonArrayData(rootJson, accountSecret->slip39EmsOrTonEntropyL32, SLIP39_EMS_LEN, "slip39_ems");
     GetJsonArrayData(rootJson, accountSecret->reservedData, SE_DATA_RESERVED_LEN, "reserved_data");
-    uint8_t param[64] = {0};
-    GetJsonArrayData(rootJson, param, 64, "param");
-    accountSecret->entropyLen = param[0];
+    cJSON *entropyLenJson = cJSON_GetObjectItem(rootJson, "entropy_len");
+    if (cJSON_IsNumber(entropyLenJson)) {
+        accountSecret->entropyLen = (uint8_t)entropyLenJson->valueint;
+    } else {
+        // Keep compatibility with simulator secrets written by the legacy
+        // storage format, where entropyLen lived in param[0].
+        uint8_t param[64] = {0};
+        GetJsonArrayData(rootJson, param, sizeof(param), "param");
+        accountSecret->entropyLen = param[0];
+    }
 
     cJSON_Delete(rootJson);
 
