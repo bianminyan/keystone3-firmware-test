@@ -38,6 +38,7 @@ extern bool g_reboot;
 #include "simulator_cmd_server.h"
 #include "seed_phrase_test.h"
 #include "forget_password_test.h"
+#include "password_test.h"
 
 #ifndef _WIN32
 #include <arpa/inet.h>
@@ -1241,6 +1242,9 @@ static bool simulator_dispatch_command(char *command)
         return true;
     }
     if (dispatch_prefixed_command(command, "forget password test:", ForgetPasswordTestFunc)) {
+        return true;
+    }
+    if (dispatch_prefixed_command(command, "password test:", PasswordTestFunc)) {
         return true;
     }
     if (dispatch_prefixed_command(command, "address test:", simulator_address_test)) {

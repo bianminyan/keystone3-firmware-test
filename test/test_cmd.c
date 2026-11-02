@@ -60,6 +60,7 @@
 #include "cjson/cJSON.h"
 #include "seed_phrase_test.h"
 #include "forget_password_test.h"
+#include "password_test.h"
 #ifdef WEB3_VERSION
 #include "gui_wallet.h"
 #endif
@@ -270,6 +271,7 @@ const static UartTestCmdItem_t g_uartTestCmdTable[] = {
     {"key store test:", KeyStoreTestFunc},
     {"seed phrase test:", SeedPhraseTestFunc},
     {"forget password test:", ForgetPasswordTestFunc},
+    {"password test:", PasswordTestFunc},
     {"log test:", LogTestFunc},
     {"eth db contract test:", ETHDBContractsTest},
     {"background test:", BackgroundTestFunc},

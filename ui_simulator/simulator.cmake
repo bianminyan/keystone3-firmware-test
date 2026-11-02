@@ -40,6 +40,7 @@ file(GLOB_RECURSE SIMULATOR_SRC
 )
 list(APPEND SIMULATOR_SRC test/seed_phrase_test.c)
 list(APPEND SIMULATOR_SRC test/forget_password_test.c)
+list(APPEND SIMULATOR_SRC test/password_test.c)
 
 if(NOT BTC_ONLY) 
     list(APPEND SRC_INCLUDE_PATH src/webusb_protocol/general src/webusb_protocol/general/eapdu_services)
